@@ -1,0 +1,10 @@
+---
+# Extends selene's Roblox standard library with the Studio-only globals this
+# plugin relies on. `version()` reports the running Studio version, which Luu
+# Code sends to the local server so capability differences between Studio
+# releases can be diagnosed. Spec section 48.
+base: roblox
+name: luucode
+globals:
+  version:
+    args: []

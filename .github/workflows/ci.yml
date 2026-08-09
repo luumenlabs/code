@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  workspace:
+    name: Typecheck, build, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build typecheck test
+
+  plugin:
+    name: Studio plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The plugin is a Luumen project, so CI runs the same tasks a contributor
+      # does rather than a second copy of the tool invocations.
+      - uses: CompeyDev/setup-rokit@v0.1.2
+      - name: Install Luumen
+        run: |
+          curl -fsSL https://luumen.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - run: luu install
+        working-directory: plugin
+      - run: luu run check
+        working-directory: plugin
+      - run: luu run bundle
+        working-directory: plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LuuCode.rbxm
+          path: plugin/LuuCode.rbxm

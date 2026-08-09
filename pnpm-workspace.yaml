@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+
+# pnpm blocks install scripts by default. These two need theirs: Electron
+# downloads its binary, and esbuild installs its platform binary.
+allowBuilds:
+  electron: true
+  esbuild: true

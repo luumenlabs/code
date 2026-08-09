@@ -1,0 +1,57 @@
+/**
+ * The normalized shape of a coding-agent session.
+ *
+ * Claude Code and Codex speak different stream formats, and future agents will
+ * speak others. Those differences are absorbed by the adapters so nothing
+ * downstream, and nothing on the Roblox side, has to know which agent is
+ * running. Spec sections 6 and 38.
+ */
+
+export type AgentId = "claude" | "codex";
+
+export interface AgentInfo {
+  id: AgentId;
+  label: string;
+  /** Resolved executable path, or null when it was not found. */
+  command: string | null;
+  version: string | null;
+  installed: boolean;
+  /** Why the agent cannot be used, phrased for the user. Spec section 44. */
+  problem: string | null;
+  installHint: string;
+}
+
+export type AgentState = "idle" | "starting" | "thinking" | "working" | "stopped" | "error";
+
+export type AgentEvent =
+  | { type: "session"; sessionId: string; model: string | null }
+  | { type: "assistant"; id: string; text: string }
+  | { type: "thinking"; id: string; text: string }
+  | { type: "tool-use"; id: string; name: string; input: unknown }
+  | { type: "tool-result"; id: string; isError: boolean; text: string }
+  | { type: "state"; state: AgentState; message?: string }
+  | { type: "turn-complete"; summary: string | null }
+  | { type: "error"; message: string };
+
+/**
+ * One rendered, persisted transcript entry.
+ *
+ * Roblox operations are part of the transcript, not a separate log: reopening a
+ * conversation should show what the agent actually did to the place, not just
+ * what it said about it. Spec sections 33 and 45.
+ */
+export type TranscriptEntry =
+  | { kind: "user"; id: string; text: string; at: number }
+  | { kind: "assistant"; id: string; text: string; at: number }
+  | { kind: "thinking"; id: string; text: string; at: number }
+  | { kind: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; at: number }
+  | { kind: "activity"; id: string; at: number; activity: import("@luumen/code-protocol").ActivityEvent }
+  | { kind: "notice"; id: string; text: string; tone: "info" | "error"; at: number };
+
+export interface AgentSessionSnapshot {
+  agent: AgentId | null;
+  state: AgentState;
+  sessionId: string | null;
+  model: string | null;
+  message: string | null;
+}

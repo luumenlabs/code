@@ -1,0 +1,9 @@
+# Tools used to build and check the Luu Code Studio plugin.
+# Install them with `rokit install`.
+
+[tools]
+rojo = "rojo-rbx/rojo@7.7.0"
+stylua = "JohnnyMorganz/StyLua@2.5.2"
+selene = "Kampfkarren/selene@0.31.0"
+luau-lsp = "JohnnyMorganz/luau-lsp@1.66.1"
+lune = "lune-org/lune@0.10.4"

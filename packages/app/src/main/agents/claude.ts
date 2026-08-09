@@ -1,0 +1,255 @@
+/**
+ * Claude Code adapter, on the Claude Agent SDK.
+ *
+ * The earlier version shelled out to `claude --print --output-format
+ * stream-json` and did not work. The SDK is the supported way to drive Claude
+ * Code programmatically: it owns the session lifecycle, streams typed messages,
+ * and takes the model, reasoning effort, and MCP servers as options rather than
+ * as flags whose behaviour shifts between releases.
+ *
+ * Authentication is still the user's own — the SDK runs the `claude` binary
+ * they already installed and signed in.
+ */
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { Options as ClaudeQueryOptions, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { effectiveOption, findModel } from "../../shared/models.js";
+import type { ModelSelection } from "../../shared/models.js";
+import { nextId } from "./adapter.js";
+import type { AgentAdapter, StartOptions } from "./adapter.js";
+
+type SdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
+
+/**
+ * `ultrathink` is a prompt-level instruction, not an API effort, and
+ * `ultracode` is a Claude Code setting normalised onto `xhigh`. Everything else
+ * maps straight through.
+ */
+function sdkEffort(effort: string | undefined): SdkEffort | undefined {
+  if (!effort || effort === "ultrathink") return undefined;
+  if (effort === "ultracode") return "xhigh" as SdkEffort;
+  return effort as SdkEffort;
+}
+
+/** Claude Code selects the 1M variant through the slug: `claude-opus-5[1m]`. */
+function apiModelId(selection: ModelSelection | undefined): string | undefined {
+  if (!selection) return undefined;
+
+  const info = findModel(selection.model);
+  if (!info) return selection.model;
+
+  const context = info.options.find((option) => option.id === "contextWindow");
+  if (!context) return selection.model;
+
+  return effectiveOption(selection, context) === "1m" ? `${selection.model}[1m]` : selection.model;
+}
+
+export class ClaudeAdapter implements AgentAdapter {
+  readonly id = "claude" as const;
+
+  private options: StartOptions | null = null;
+  private queue: SDKUserMessage[] = [];
+  private notify: (() => void) | null = null;
+  private abort: AbortController | null = null;
+  private sessionId: string | null = null;
+  private active = false;
+
+  get running(): boolean {
+    return this.active;
+  }
+
+  async start(options: StartOptions): Promise<void> {
+    this.options = options;
+    this.active = true;
+    this.sessionId = options.resumeSessionId ?? null;
+    options.onEvent({ type: "state", state: "idle" });
+  }
+
+  async send(text: string): Promise<void> {
+    const options = this.options;
+    if (!options) throw new Error("Claude Code is not running.");
+
+    const selection = options.modelSelection;
+    const effort = selection?.options.find((entry) => entry.id === "effort")?.value as string | undefined;
+
+    // Ultrathink is asked for in the prompt itself, not sent as an API effort.
+    const prompt = effort === "ultrathink" ? `ultrathink\n\n${text}` : text;
+
+    this.queue.push(userMessage(prompt));
+    this.notify?.();
+
+    // A run is already streaming; the queued message joins it.
+    if (this.abort) return;
+
+    await this.run(options, selection, effort);
+  }
+
+  private async run(options: StartOptions, selection: ModelSelection | undefined, effort: string | undefined): Promise<void> {
+    const abort = new AbortController();
+    this.abort = abort;
+
+    options.onEvent({ type: "state", state: "thinking" });
+
+    const model = apiModelId(selection);
+    const fastMode = selection?.options.find((entry) => entry.id === "fastMode")?.value === true;
+    const settings = {
+      ...(fastMode ? { fastMode: true } : {}),
+      ...(effort === "ultracode" ? { ultracode: true } : {}),
+    };
+
+    const queryOptions: ClaudeQueryOptions = {
+      cwd: options.cwd,
+      ...(model ? { model } : {}),
+      systemPrompt: { type: "preset", preset: "claude_code" },
+      ...(sdkEffort(effort) ? { effort: sdkEffort(effort) } : {}),
+      permissionMode: options.permissionMode as ClaudeQueryOptions["permissionMode"],
+      ...(Object.keys(settings).length > 0 ? { settings } : {}),
+      ...(this.sessionId ? { resume: this.sessionId } : {}),
+      // Luu Code's Roblox tools, handed to the agent as an MCP server.
+      mcpServers: {
+        "luu-code": { command: options.mcp.command, args: options.mcp.args, env: options.mcp.env },
+      },
+      abortController: abort,
+    };
+
+    try {
+      for await (const message of query({ prompt: this.prompts(abort.signal), options: queryOptions })) {
+        this.handle(message, options);
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        options.onEvent({ type: "error", message: describe(error) });
+        options.onEvent({ type: "state", state: "error" });
+      }
+    } finally {
+      this.abort = null;
+      if (this.active) options.onEvent({ type: "state", state: "idle" });
+    }
+  }
+
+  /**
+   * Feeds queued messages to the SDK, staying open between turns so a follow-up
+   * continues the same conversation instead of starting another process.
+   */
+  private async *prompts(signal: AbortSignal): AsyncGenerator<SDKUserMessage> {
+    for (;;) {
+      while (this.queue.length > 0) {
+        const next = this.queue.shift();
+        if (next) yield next;
+      }
+
+      if (signal.aborted || !this.active) return;
+
+      await new Promise<void>((resolve) => {
+        this.notify = resolve;
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+
+      this.notify = null;
+    }
+  }
+
+  private handle(message: SDKMessage, options: StartOptions): void {
+    const emit = options.onEvent;
+
+    if (message.type === "system" && message.subtype === "init") {
+      this.sessionId = message.session_id;
+      emit({ type: "session", sessionId: message.session_id, model: message.model ?? null });
+      return;
+    }
+
+    if (message.type === "assistant") {
+      let sawTool = false;
+
+      for (const block of message.message.content) {
+        if (block.type === "text" && block.text) {
+          emit({ type: "assistant", id: nextId("m"), text: block.text });
+        } else if (block.type === "thinking" && block.thinking) {
+          emit({ type: "thinking", id: nextId("t"), text: block.thinking });
+        } else if (block.type === "tool_use") {
+          sawTool = true;
+          emit({ type: "tool-use", id: block.id, name: block.name, input: block.input });
+        }
+      }
+
+      emit({ type: "state", state: sawTool ? "working" : "thinking" });
+      return;
+    }
+
+    if (message.type === "user") {
+      const content = message.message.content;
+      if (typeof content === "string") return;
+
+      for (const block of content) {
+        if (block.type !== "tool_result") continue;
+        emit({
+          type: "tool-result",
+          id: block.tool_use_id,
+          isError: block.is_error === true,
+          text: renderToolResult(block.content),
+        });
+      }
+      return;
+    }
+
+    if (message.type === "result") {
+      emit({ type: "turn-complete", summary: "result" in message ? String(message.result ?? "") : null });
+      emit({ type: "state", state: "idle" });
+    }
+  }
+
+  interrupt(): void {
+    this.abort?.abort();
+    this.abort = null;
+    this.options?.onEvent({ type: "state", state: "idle", message: "Interrupted." });
+  }
+
+  async stop(): Promise<void> {
+    this.active = false;
+    this.abort?.abort();
+    this.abort = null;
+    this.queue = [];
+    this.notify?.();
+    this.options?.onEvent({ type: "state", state: "stopped" });
+  }
+}
+
+function userMessage(text: string): SDKUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text }] },
+    parent_tool_use_id: null,
+    session_id: "",
+  } as SDKUserMessage;
+}
+
+function renderToolResult(content: unknown): string {
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        const entry = block as { type?: string; text?: string };
+        if (entry.type === "text") return entry.text ?? "";
+        if (entry.type === "image") return "[image]";
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return content === undefined ? "" : JSON.stringify(content);
+}
+
+function describe(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/not authenticated|login|unauthorized/i.test(message)) {
+    return `${message}\n\nRun \`claude\` once in a terminal to sign in.`;
+  }
+
+  if (/ENOENT|not found/i.test(message)) {
+    return `${message}\n\nClaude Code was not found. Install it from https://claude.com/claude-code.`;
+  }
+
+  return message;
+}

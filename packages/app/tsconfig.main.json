@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The main process is bundled by esbuild, so TypeScript only typechecks.
+    // Electron's ESM entry cannot import the `electron` module, so the bundle
+    // output is CommonJS and this config has to allow CommonJS globals.
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["node", "electron"],
+    "lib": ["ES2023"]
+  },
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"]
+}

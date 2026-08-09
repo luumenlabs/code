@@ -1,0 +1,5 @@
+std = "luucode"
+
+[lints]
+mixed_table = "allow"
+shadowing = "allow"
