@@ -6,7 +6,7 @@
  * rules out turning this into a general local tooling surface.
  */
 import type { CapabilityReport, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
-import type { AgentEvent, AgentId, AgentInfo, AgentSessionSnapshot, TranscriptEntry } from "./agent.js";
+import type { AgentEvent, AgentInfo, AgentSessionSnapshot, Attachment, TranscriptEntry } from "./agent.js";
 import type { Thread, ThreadIndex } from "./threads.js";
 
 export interface HarnessSnapshot {
@@ -27,14 +27,25 @@ export interface LuuCodeBridge {
   snapshot(): Promise<HarnessSnapshot>;
   refreshAgents(): Promise<AgentInfo[]>;
 
-  startAgent(id: AgentId): Promise<AgentSessionSnapshot>;
-  stopAgent(): Promise<void>;
-  sendMessage(text: string): Promise<void>;
+  /**
+   * Sends a message, starting the CLI behind the chosen model if it is not
+   * already running. There is no separate "start the agent" step: the user
+   * picks a model, and the CLI that serves it follows.
+   */
+  sendMessage(text: string, attachments?: Attachment[]): Promise<void>;
   interruptAgent(): Promise<void>;
 
-  // Conversation history. Spec section 45.
   setModel(selection: import("./models.js").ModelSelection): Promise<import("./models.js").ModelSelection | null>;
+  /** Picks a model and, with it, the CLI that serves it. */
+  chooseModel(slug: string): Promise<import("./models.js").ModelSelection>;
 
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<void>;
+  closeWindow(): Promise<void>;
+  isWindowMaximized(): Promise<boolean>;
+  onWindowStateChanged(listener: (maximized: boolean) => void): () => void;
+
+  // Conversation history. Spec section 45.
   newThread(): Promise<Thread>;
   openThread(id: string): Promise<Thread | null>;
   renameThread(id: string, title: string): Promise<ThreadIndex>;

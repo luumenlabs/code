@@ -30,16 +30,20 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
 
   const label = full ? "Full access" : none ? "No access" : `${allowed.length} of ${PERMISSION_GROUPS.length} allowed`;
 
+  // Full access is the permissive state, so it is the one worth flagging.
+  // Restricting the agent is the safe direction and reads as neutral.
+  const tone = full ? "text-[var(--warning)]" : "text-muted-foreground";
+
   return (
     <Popover>
       <PopoverTrigger
         className={cn(
           "flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] transition-colors outline-none",
           "hover:bg-accent focus-visible:ring-[2px] focus-visible:ring-ring/60",
-          full ? "text-muted-foreground" : "text-[var(--warning)]",
+          tone,
         )}
       >
-        {full ? <ShieldCheck className="size-3.5" /> : <ShieldAlert className="size-3.5" />}
+        {full ? <ShieldAlert className="size-3.5" /> : <ShieldCheck className="size-3.5" />}
         {label}
         <ChevronDown className="size-3 opacity-60" />
       </PopoverTrigger>

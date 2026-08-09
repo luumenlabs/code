@@ -17,9 +17,9 @@ import { AgentManager } from "./agents/manager.js";
 import { createElectronScreenshotProvider } from "./screenshot.js";
 import { ThreadStore } from "./threads.js";
 import { fromAgentEvent, fromServerEvent, userEntry } from "./transcript.js";
-import type { AgentEvent, AgentId, TranscriptEntry } from "../shared/agent.js";
+import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
-import { createSelection } from "../shared/models.js";
+import { createSelection, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 
 /**
@@ -75,10 +75,9 @@ async function createWindow(): Promise<void> {
     autoHideMenuBar: true,
     // The window chrome is part of the app: the title bar carries the Studio
     // connection state, which the user needs visible at all times.
-    titleBarStyle: process.platform === "linux" ? "default" : "hidden",
-    ...(process.platform === "win32"
-      ? { titleBarOverlay: { color: "#171717", symbolColor: "#a3a3a3", height: 40 } }
-      : {}),
+    // No titleBarOverlay: Windows only lets it take two colours, so it never
+    // matches the rest of the chrome. The app draws its own controls instead.
+    titleBarStyle: "hidden",
     ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 13 } } : {}),
     webPreferences: {
       preload: join(appRoot(), "dist", "main", "preload.cjs"),
@@ -102,6 +101,10 @@ async function createWindow(): Promise<void> {
   } else {
     await window.loadFile(join(appRoot(), "dist", "renderer", "index.html"));
   }
+
+  // The controls need to know which glyph to show.
+  window.on("maximize", () => broadcast("window-state", true));
+  window.on("unmaximize", () => broadcast("window-state", false));
 
   window.on("closed", () => {
     window = null;
@@ -252,43 +255,42 @@ function registerIpc(): void {
 
   ipcMain.handle("refresh-agents", () => requireAgents().list(true));
 
-  ipcMain.handle("start-agent", async (_event, id: AgentId) => {
-    const store = requireThreads();
-    const active =
-      store.active() ??
-      store.create(requirePlace(), id, createSelection(id));
-
-    // Only resume when the same agent produced the stored session id; a Codex
-    // id means nothing to Claude Code.
-    const resume = active.agent === id ? active.agentSessionId : null;
-
-    // A model chosen for a different provider does not carry over.
-    const selection = active.modelSelection && active.agent === id ? active.modelSelection : createSelection(id);
-
-    requireAgents().setModelSelection(selection);
-    const snapshot = await requireAgents().start(id, resume);
-
-    store.setMeta(active.id, { agent: id, modelSelection: selection });
-    broadcast("threads", store.index());
-    return snapshot;
+  ipcMain.handle("window-minimize", () => window?.minimize());
+  ipcMain.handle("window-toggle-maximize", () => {
+    if (!window) return;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
   });
+  ipcMain.handle("window-close", () => window?.close());
+  ipcMain.handle("window-is-maximized", () => window?.isMaximized() ?? false);
 
-  ipcMain.handle("stop-agent", () => requireAgents().stop());
-
-  ipcMain.handle("send-message", async (_event, text: string) => {
+  ipcMain.handle("send-message", async (_event, text: string, attachments: Attachment[] = []) => {
     const store = requireThreads();
     const place = requirePlace();
-    const agent = requireAgents().status().agent;
+    const manager = requireAgents();
 
     // A message always belongs to a thread, so create one if this is the first.
-    if (!store.active()) {
-      const created = store.create(place, agent, agent ? createSelection(agent) : null);
-      requireAgents().setWorkingDirectory(scratchDirFor(created.projectId));
+    let active = store.active();
+
+    if (!active) {
+      const agent = manager.status().agent;
+      active = store.create(place, agent, agent ? createSelection(agent) : null);
+      manager.setWorkingDirectory(scratchDirFor(active.projectId));
       broadcast("threads", store.index());
     }
 
-    record(userEntry(text));
-    await requireAgents().send(text);
+    // The CLI is implied by the model, so it is brought up here rather than
+    // being something the user has to remember to start.
+    const selection = active.modelSelection;
+    const agent = findModel(selection?.model)?.provider ?? active.agent;
+
+    if (!agent) throw new Error("Pick a model first.");
+
+    manager.setModelSelection(selection);
+    await manager.ensure(agent, active.agent === agent ? active.agentSessionId : null);
+
+    record(userEntry(text, attachments));
+    await manager.send(text, attachments);
   });
 
   ipcMain.handle("interrupt-agent", () => requireAgents().interrupt());
@@ -317,6 +319,33 @@ function registerIpc(): void {
 
     store.setMeta(active.id, { modelSelection: selection });
     requireAgents().setModelSelection(selection);
+    broadcast("threads", store.index());
+    return selection;
+  });
+
+  /**
+   * Picking a model picks the CLI behind it.
+   *
+   * A GPT model means Codex, a Claude model means Claude Code; asking for both
+   * separately was asking the same question twice. Switching provider ends the
+   * running session, because the other CLI cannot continue it.
+   */
+  ipcMain.handle("choose-model", async (_event, slug: string) => {
+    const model = findModel(slug);
+    if (!model) throw new Error(`Unknown model: ${slug}`);
+
+    const store = requireThreads();
+    const manager = requireAgents();
+
+    const active = store.active() ?? store.create(requirePlace(), model.provider, createSelection(model.provider, slug));
+    const selection = createSelection(model.provider, slug);
+
+    if (active.agent !== null && active.agent !== model.provider) await manager.stop();
+
+    store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
+    manager.setWorkingDirectory(scratchDirFor(active.projectId));
+    manager.setModelSelection(selection);
+
     broadcast("threads", store.index());
     return selection;
   });

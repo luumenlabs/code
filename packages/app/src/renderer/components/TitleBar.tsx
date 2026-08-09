@@ -7,6 +7,7 @@
  */
 import { CirclePlay, Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
 import { Wordmark } from "@/components/Brand";
+import { WindowControls } from "@/components/WindowControls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -26,16 +27,13 @@ export function TitleBar({
   const session = snapshot?.status.sessions.find((entry) => entry.active) ?? snapshot?.status.sessions[0] ?? null;
   const running = session?.run.running ?? false;
   const errors = harness.output.filter((entry) => entry.type === "error").length;
-
-  // Windows draws its own controls over the right edge of the title bar.
-  const reserveControls = snapshot?.platform === "win32";
+  const platform = snapshot?.platform ?? "win32";
 
   return (
     <header
       className={cn(
-        "drag-region flex h-topbar shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-3",
-        snapshot?.platform === "darwin" && "pl-[86px]",
-        reserveControls && "pr-[150px]",
+        "drag-region flex h-topbar shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar pl-3",
+        platform === "darwin" ? "pr-3 pl-[86px]" : "pr-0",
       )}
     >
       <Wordmark className="shrink-0" />
@@ -63,7 +61,7 @@ export function TitleBar({
 
       <div className="flex-1" />
 
-      <div className="no-drag flex items-center gap-1">
+      <div className="no-drag flex items-center gap-1 pr-1">
         {session &&
           (running ? (
             <Hint label="Stop the playtest">
@@ -100,6 +98,8 @@ export function TitleBar({
           </Button>
         </Hint>
       </div>
+
+      <WindowControls platform={platform} />
     </header>
   );
 }

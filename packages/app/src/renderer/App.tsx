@@ -1,4 +1,5 @@
 import * as React from "react";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { PairingDialog } from "@/components/PairingDialog";
 import { RightDock } from "@/components/RightDock";
@@ -14,6 +15,25 @@ export function App(): React.JSX.Element {
   const [draft, setDraft] = React.useState("");
   const [dockOpen, setDockOpen] = React.useState(true);
   const [dockTab, setDockTab] = React.useState<DockTab>("studio");
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+  // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+
+      if (event.key === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      } else if (event.key === "n") {
+        event.preventDefault();
+        void harness.newThread();
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [harness]);
 
   // The first runtime error is worth interrupting for: it is usually the thing
   // the agent is about to react to, and the user wants to see it too.
@@ -31,7 +51,7 @@ export function App(): React.JSX.Element {
         <TitleBar harness={harness} dockOpen={dockOpen} onToggleDock={() => setDockOpen((open) => !open)} />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar harness={harness} />
+          <Sidebar harness={harness} onSearch={() => setPaletteOpen(true)} />
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Transcript items={harness.timeline} onExample={setDraft} />
@@ -42,6 +62,7 @@ export function App(): React.JSX.Element {
         </div>
       </div>
 
+      <CommandPalette harness={harness} open={paletteOpen} onOpenChange={setPaletteOpen} />
       <PairingDialog request={harness.pendingPairing} />
     </TooltipProvider>
   );

@@ -21,6 +21,22 @@ export interface AgentInfo {
   installHint: string;
 }
 
+/**
+ * An image the user attached to a message.
+ *
+ * Screenshots are how people describe a Roblox problem — a broken GUI, a part
+ * in the wrong place — so the composer takes them directly. Carried as base64
+ * because that is what both the SDK and the transcript need, and neither should
+ * depend on a file still being on disk later.
+ */
+export interface Attachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** Base64, without the data-URL prefix. */
+  data: string;
+}
+
 export type AgentState = "idle" | "starting" | "thinking" | "working" | "stopped" | "error";
 
 export type AgentEvent =
@@ -41,7 +57,7 @@ export type AgentEvent =
  * what it said about it. Spec sections 33 and 45.
  */
 export type TranscriptEntry =
-  | { kind: "user"; id: string; text: string; at: number }
+  | { kind: "user"; id: string; text: string; at: number; attachments?: Attachment[] }
   | { kind: "assistant"; id: string; text: string; at: number }
   | { kind: "thinking"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; at: number }

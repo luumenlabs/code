@@ -12,8 +12,28 @@
  * this adapter.
  */
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { JsonLineReader, describeExit, nextId, spawnAgent } from "./adapter.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Attachment } from "../../shared/agent.js";
+import { JsonLineReader, describeExit, extensionFor, nextId, spawnAgent } from "./adapter.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
+
+/**
+ * Attachments live in the transcript as base64, but Codex only takes paths, so
+ * they are spilled to a temp directory the OS will clean up.
+ */
+function writeAttachments(attachments: Attachment[]): string[] {
+  if (attachments.length === 0) return [];
+
+  const directory = mkdtempSync(join(tmpdir(), "luu-code-"));
+
+  return attachments.map((attachment, index) => {
+    const path = join(directory, `${index + 1}.${extensionFor(attachment.mimeType)}`);
+    writeFileSync(path, Buffer.from(attachment.data, "base64"));
+    return path;
+  });
+}
 
 export class CodexAdapter implements AgentAdapter {
   readonly id = "codex" as const;
@@ -40,7 +60,7 @@ export class CodexAdapter implements AgentAdapter {
     options.onEvent({ type: "state", state: "idle" });
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments: Attachment[] = []): Promise<void> {
     const options = this.options;
     if (!options) throw new Error("Codex is not running.");
     if (this.child) throw new Error("Codex is still working on the previous message.");
@@ -66,9 +86,12 @@ export class CodexAdapter implements AgentAdapter {
     // different thread entirely.
     const resumeTarget = this.resumeId ? [this.resumeId] : ["--last"];
 
+    // Codex takes images as file paths, so attachments are written out first.
+    const images = writeAttachments(attachments).flatMap((path) => ["-i", path]);
+
     const args = this.hasConversation
-      ? ["exec", "resume", ...resumeTarget, "--json", "--skip-git-repo-check", ...overrides, text]
-      : ["exec", "--json", "--skip-git-repo-check", ...overrides, text];
+      ? ["exec", "resume", ...resumeTarget, "--json", "--skip-git-repo-check", ...images, ...overrides, text]
+      : ["exec", "--json", "--skip-git-repo-check", ...images, ...overrides, text];
 
     this.stderr = "";
     options.onEvent({ type: "state", state: "thinking" });

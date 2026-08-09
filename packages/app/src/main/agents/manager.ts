@@ -7,7 +7,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentEvent, AgentId, AgentInfo, AgentSessionSnapshot } from "../../shared/agent.js";
+import type { AgentEvent, AgentId, AgentInfo, AgentSessionSnapshot, Attachment } from "../../shared/agent.js";
 import type { AgentAdapter, McpServerSpec } from "./adapter.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
@@ -105,9 +105,21 @@ export class AgentManager {
     return this.snapshot;
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments?: Attachment[]): Promise<void> {
     if (!this.adapter) throw new Error("No coding agent is running. Choose one first.");
-    await this.adapter.send(text);
+    await this.adapter.send(text, attachments);
+  }
+
+  /**
+   * Starts the agent only if it is not the one already running.
+   *
+   * The user picks a model, not a CLI, so the CLI has to come up on its own.
+   * Restarting the one that is already live would throw away the conversation
+   * it is holding.
+   */
+  async ensure(id: AgentId, resumeSessionId?: string | null): Promise<AgentSessionSnapshot> {
+    if (this.adapter?.id === id && this.adapter.running) return this.snapshot;
+    return this.start(id, resumeSessionId);
   }
 
   interrupt(): void {

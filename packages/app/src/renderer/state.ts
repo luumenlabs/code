@@ -8,12 +8,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OutputEntry, PairingRequest, ServerEvent } from "@luumen/code-protocol";
-import type { AgentEvent, AgentId, TranscriptEntry } from "../shared/agent.js";
+import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
+import { createSelection, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 import type { ThreadIndex } from "../shared/threads.js";
 
 export type TimelineItem = TranscriptEntry;
+export type { Attachment };
 
 const MAX_OUTPUT = 500;
 
@@ -28,9 +30,9 @@ export interface Harness {
   pendingPairing: PairingRequest | null;
   modelSelection: ModelSelection | null;
   setModelSelection(selection: ModelSelection): void;
-  send(text: string): Promise<void>;
-  startAgent(id: AgentId): Promise<void>;
-  stopAgent(): Promise<void>;
+  /** Picks a model, and with it the CLI that serves it. */
+  chooseModel(slug: string): void;
+  send(text: string, attachments?: Attachment[]): Promise<void>;
   interrupt(): Promise<void>;
   refresh(): Promise<void>;
   run(op: string, params?: unknown): Promise<unknown>;
@@ -121,19 +123,16 @@ export function useHarness(): Harness {
     };
   }, [refresh, upsert]);
 
-  const send = useCallback(async (text: string) => {
-    await window.luuCode.sendMessage(text);
+  const chooseModel = useCallback((slug: string) => {
+    // Optimistic, like setModelSelection: the picker should close on the value
+    // the user just clicked, not a round trip later.
+    setSelection(createSelection(findModel(slug)?.provider ?? "claude", slug));
+    void window.luuCode.chooseModel(slug).then(setSelection).catch(() => undefined);
   }, []);
 
-  const startAgent = useCallback(async (id: AgentId) => {
-    const session = await window.luuCode.startAgent(id);
-    setSnapshot((current) => (current ? { ...current, session } : current));
+  const send = useCallback(async (text: string, attachments?: Attachment[]) => {
+    await window.luuCode.sendMessage(text, attachments);
   }, []);
-
-  const stopAgent = useCallback(async () => {
-    await window.luuCode.stopAgent();
-    await refresh();
-  }, [refresh]);
 
   const interrupt = useCallback(async () => {
     await window.luuCode.interruptAgent();
@@ -208,9 +207,8 @@ export function useHarness(): Harness {
     pendingPairing,
     modelSelection,
     setModelSelection,
+    chooseModel,
     send,
-    startAgent,
-    stopAgent,
     interrupt,
     refresh,
     run,

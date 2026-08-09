@@ -6,7 +6,7 @@
  * guarantee they eventually diverge.
  */
 import type { ServerEvent } from "@luumen/code-protocol";
-import type { AgentEvent, TranscriptEntry } from "../shared/agent.js";
+import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 
 /** Luu Code's own tools appear as Roblox activity, not as raw tool rows. */
 const ROBLOX_TOOL_PREFIX = "mcp__luu-code__";
@@ -25,8 +25,14 @@ function nextId(prefix: string): string {
   return `${prefix}_${counter}_${Date.now().toString(36)}`;
 }
 
-export function userEntry(text: string): TranscriptEntry {
-  return { kind: "user", id: nextId("u"), at: Date.now(), text };
+export function userEntry(text: string, attachments: Attachment[] = []): TranscriptEntry {
+  return {
+    kind: "user",
+    id: nextId("u"),
+    at: Date.now(),
+    text,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
 }
 
 export function fromAgentEvent(event: AgentEvent, existing: (id: string) => TranscriptEntry | null): TranscriptEntry | null {

@@ -7,17 +7,7 @@
  * session where it can.
  */
 import * as React from "react";
-import {
-  ChevronRight,
-  Folder,
-  MessageSquare,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ChevronRight, Folder, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,47 +22,11 @@ import type { Harness } from "@/state";
 import { groupThreads, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
 
-export function Sidebar({ harness }: { harness: Harness }): React.JSX.Element {
-  const [query, setQuery] = React.useState("");
+export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () => void }): React.JSX.Element {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [renaming, setRenaming] = React.useState<string | null>(null);
-  const search = React.useRef<HTMLInputElement>(null);
 
-  // Ctrl/Cmd+K focuses search, Ctrl/Cmd+N starts a conversation.
-  React.useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-
-      if (event.key === "k") {
-        event.preventDefault();
-        search.current?.focus();
-      } else if (event.key === "n") {
-        event.preventDefault();
-        void harness.newThread();
-      }
-    };
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [harness]);
-
-  const groups = React.useMemo(() => {
-    if (!harness.threads) return [];
-
-    const all = groupThreads(harness.threads);
-    const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return all;
-
-    return all
-      .map((group) => ({
-        project: group.project,
-        threads: group.threads.filter(
-          (thread) =>
-            thread.title.toLowerCase().includes(needle) || group.project.name.toLowerCase().includes(needle),
-        ),
-      }))
-      .filter((group) => group.threads.length > 0);
-  }, [harness.threads, query]);
+  const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
 
   const toggle = (projectId: string): void => {
     setCollapsed((current) => {
@@ -85,46 +39,29 @@ export function Sidebar({ harness }: { harness: Harness }): React.JSX.Element {
 
   return (
     <aside className="flex h-full min-h-0 w-sidebar shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
-      <div className="flex flex-col gap-2 p-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            ref={search}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search"
-            spellCheck={false}
-            className={cn(
-              "h-7 w-full rounded-md border border-transparent bg-accent/50 pr-6 pl-7 text-[12px] outline-none",
-              "placeholder:text-muted-foreground focus:border-border focus:bg-background",
-            )}
-            style={{ userSelect: "text", cursor: "auto" }}
-          />
-          {query.length > 0 ? (
-            <button
-              onClick={() => setQuery("")}
-              className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3" />
-            </button>
-          ) : (
-            <kbd className="absolute top-1/2 right-1.5 -translate-y-1/2 font-mono text-[9.5px] text-muted-foreground/70">
-              ⌘K
-            </kbd>
-          )}
-        </div>
-
+      <div className="flex flex-col gap-1.5 p-2">
         <Button variant="outline" size="sm" className="justify-start" onClick={() => void harness.newThread()}>
           <Plus />
           New chat
         </Button>
+
+        {/* Opens the palette rather than filtering in place: searching is a
+            thing you do to the whole app, not just to this list. */}
+        <button
+          onClick={onSearch}
+          className="flex h-7 items-center gap-2 rounded-md px-2 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Search className="size-3.5" />
+          <span className="flex-1 text-left">Search</span>
+          <kbd className="font-mono text-[9.5px] text-muted-foreground/70">⌘K</kbd>
+        </button>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 px-2 pb-3">
           {groups.length === 0 && (
             <p className="px-1.5 pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-              {query.length > 0 ? "No conversations match." : "No conversations yet. Describe a change to start one."}
+              No conversations yet. Describe a change to start one.
             </p>
           )}
 
@@ -230,7 +167,7 @@ function ThreadRow({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="hidden size-6 shrink-0 text-muted-foreground group-hover:flex data-[state=open]:flex"
+              className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             >
               <MoreHorizontal />
             </Button>

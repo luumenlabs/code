@@ -8,7 +8,7 @@
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { AgentEvent, AgentId } from "../../shared/agent.js";
+import type { AgentEvent, AgentId, Attachment } from "../../shared/agent.js";
 
 /** How to launch the Luu Code MCP server, in the form each CLI wants it. */
 export interface McpServerSpec {
@@ -40,10 +40,16 @@ export interface StartOptions {
 export interface AgentAdapter {
   readonly id: AgentId;
   start(options: StartOptions): Promise<void>;
-  send(text: string): Promise<void>;
+  send(text: string, attachments?: Attachment[]): Promise<void>;
   interrupt(): void;
   stop(): Promise<void>;
   readonly running: boolean;
+}
+
+/** File extension for an attachment, so a written temp file is recognisable. */
+export function extensionFor(mimeType: string): string {
+  const subtype = mimeType.split("/")[1] ?? "png";
+  return subtype === "jpeg" ? "jpg" : subtype.replace(/[^a-z0-9]/gi, "") || "png";
 }
 
 /** Splits a stream into lines and hands each parsed JSON object to the sink. */

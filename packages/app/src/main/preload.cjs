@@ -15,12 +15,17 @@ contextBridge.exposeInMainWorld("luuCode", {
   snapshot: () => ipcRenderer.invoke("snapshot"),
   refreshAgents: () => ipcRenderer.invoke("refresh-agents"),
 
-  startAgent: (id) => ipcRenderer.invoke("start-agent", id),
-  stopAgent: () => ipcRenderer.invoke("stop-agent"),
-  sendMessage: (text) => ipcRenderer.invoke("send-message", text),
+  sendMessage: (text, attachments) => ipcRenderer.invoke("send-message", text, attachments ?? []),
   interruptAgent: () => ipcRenderer.invoke("interrupt-agent"),
 
   setModel: (selection) => ipcRenderer.invoke("set-model", selection),
+  chooseModel: (slug) => ipcRenderer.invoke("choose-model", slug),
+
+  minimizeWindow: () => ipcRenderer.invoke("window-minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window-toggle-maximize"),
+  closeWindow: () => ipcRenderer.invoke("window-close"),
+  isWindowMaximized: () => ipcRenderer.invoke("window-is-maximized"),
+  onWindowStateChanged: (listener) => subscribe("window-state", listener),
 
   newThread: () => ipcRenderer.invoke("new-thread"),
   openThread: (id) => ipcRenderer.invoke("open-thread", id),

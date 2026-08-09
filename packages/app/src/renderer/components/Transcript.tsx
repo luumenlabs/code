@@ -122,10 +122,25 @@ function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
   switch (item.kind) {
     case "user":
       return (
-        <div className="flex justify-end">
-          <div className="selectable max-w-[80%] rounded-2xl rounded-br-md bg-primary/15 px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
-            {item.text}
-          </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {item.attachments && item.attachments.length > 0 && (
+            <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
+              {item.attachments.map((attachment) => (
+                <img
+                  key={attachment.id}
+                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                  alt={attachment.name}
+                  className="max-h-40 rounded-lg border object-cover"
+                />
+              ))}
+            </div>
+          )}
+
+          {item.text.length > 0 && (
+            <div className="selectable max-w-[80%] rounded-2xl rounded-br-md bg-primary/15 px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
+              {item.text}
+            </div>
+          )}
         </div>
       );
 

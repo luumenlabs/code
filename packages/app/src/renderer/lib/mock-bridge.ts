@@ -14,7 +14,7 @@ import type { ActivityEvent, OutputEntry, ServerEvent } from "@luumen/code-proto
 import type { AgentEvent, TranscriptEntry } from "../../shared/agent.js";
 import type { HarnessSnapshot, LuuCodeBridge } from "../../shared/bridge.js";
 import type { Thread, ThreadIndex } from "../../shared/threads.js";
-import { createSelection } from "../../shared/models.js";
+import { createSelection, findModel } from "../../shared/models.js";
 
 const SELECTION = createSelection("claude", "claude-opus-5");
 
@@ -225,10 +225,14 @@ export function installMockBridge(): void {
   const bridge: LuuCodeBridge = {
     snapshot: async () => SNAPSHOT,
     refreshAgents: async () => SNAPSHOT.agents,
-    startAgent: async () => SNAPSHOT.session,
-    stopAgent: async () => undefined,
-    sendMessage: async (text) => {
-      emitTranscript({ kind: "user", id: `u${Date.now()}`, at: Date.now(), text });
+    sendMessage: async (text, attachments) => {
+      emitTranscript({
+        kind: "user",
+        id: `u${Date.now()}`,
+        at: Date.now(),
+        text,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      });
       setTimeout(
         () => emitTranscript({ kind: "assistant", id: `m${Date.now()}`, at: Date.now(), text: `Sure — working on: ${text}` }),
         400,
@@ -237,6 +241,13 @@ export function installMockBridge(): void {
     interruptAgent: async () => undefined,
 
     setModel: async (selection) => selection,
+    chooseModel: async (slug) => createSelection(findModel(slug)?.provider ?? "claude", slug),
+
+    minimizeWindow: async () => undefined,
+    toggleMaximizeWindow: async () => undefined,
+    closeWindow: async () => undefined,
+    isWindowMaximized: async () => false,
+    onWindowStateChanged: () => () => undefined,
 
     newThread: async () =>
       ({ ...THREADS.threads[0]!, id: "t_new", title: "New chat", agentSessionId: null, modelSelection: SELECTION, items: [] }) as Thread,

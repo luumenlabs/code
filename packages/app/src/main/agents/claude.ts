@@ -13,6 +13,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options as ClaudeQueryOptions, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { effectiveOption, findModel } from "../../shared/models.js";
+import type { Attachment } from "../../shared/agent.js";
 import type { ModelSelection } from "../../shared/models.js";
 import { nextId } from "./adapter.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
@@ -64,7 +65,7 @@ export class ClaudeAdapter implements AgentAdapter {
     options.onEvent({ type: "state", state: "idle" });
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments: Attachment[] = []): Promise<void> {
     const options = this.options;
     if (!options) throw new Error("Claude Code is not running.");
 
@@ -74,7 +75,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // Ultrathink is asked for in the prompt itself, not sent as an API effort.
     const prompt = effort === "ultrathink" ? `ultrathink\n\n${text}` : text;
 
-    this.queue.push(userMessage(prompt));
+    this.queue.push(userMessage(prompt, attachments));
     this.notify?.();
 
     // A run is already streaming; the queued message joins it.
@@ -213,10 +214,19 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 }
 
-function userMessage(text: string): SDKUserMessage {
+function userMessage(text: string, attachments: Attachment[]): SDKUserMessage {
+  // Images first: the model reads the picture, then the instruction about it.
+  const content = [
+    ...attachments.map((attachment) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: attachment.mimeType, data: attachment.data },
+    })),
+    ...(text.length > 0 ? [{ type: "text" as const, text }] : []),
+  ];
+
   return {
     type: "user",
-    message: { role: "user", content: [{ type: "text", text }] },
+    message: { role: "user", content },
     parent_tool_use_id: null,
     session_id: "",
   } as SDKUserMessage;
