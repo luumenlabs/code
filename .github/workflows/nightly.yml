@@ -44,8 +44,16 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-          LAST=$(gh release list --limit 30 --json tagName,isPrerelease,targetCommitish \
-            --jq 'map(select(.isPrerelease)) | .[0].targetCommitish // ""')
+          # `gh release list --json` has no commit field — only `gh release view`
+          # does. The checkout above is full-depth, so resolve the tag locally
+          # rather than paying a second API round-trip per release.
+          LAST_TAG=$(gh release list --limit 30 --json tagName,isPrerelease \
+            --jq 'map(select(.isPrerelease)) | .[0].tagName // ""')
+
+          LAST=""
+          if [ -n "$LAST_TAG" ]; then
+            LAST=$(git rev-list -n 1 "$LAST_TAG" 2>/dev/null || true)
+          fi
 
           if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$GITHUB_SHA" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
