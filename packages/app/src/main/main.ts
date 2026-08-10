@@ -15,15 +15,18 @@ import type { LuuCodeServer } from "@luumen/code-server";
 import type { PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
+import { PluginInstaller } from "./plugin.js";
 import { createElectronScreenshotProvider } from "./screenshot.js";
 import { SettingsStore } from "./settings.js";
 import { ThreadStore } from "./threads.js";
 import { fromAgentEvent, fromServerEvent, userEntry } from "./transcript.js";
+import { Updater } from "./updater.js";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
 import { createSelection, defaultModel, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 import type { AppSettings } from "../shared/settings.js";
+import type { UpdateStatus, VersionStatus } from "../shared/update.js";
 
 /**
  * The place the agent is currently pointed at.
@@ -82,6 +85,10 @@ let server: LuuCodeServer | null = null;
 let agents: AgentManager | null = null;
 let threads: ThreadStore | null = null;
 let settings: SettingsStore | null = null;
+let updater: Updater | null = null;
+let plugin: PluginInstaller | null = null;
+/** Resolved once at startup, then reused for both the agents and the UI. */
+let mcpScript = "";
 
 /**
  * The model the next message will use.
@@ -209,12 +216,20 @@ async function nameThread(threadId: string, message: string): Promise<void> {
  * Checked against the filesystem instead of resolved through the module system:
  * the main process is bundled, and Electron loads that bundle through the
  * ESM→CJS translator where `createRequire`'s usual anchors are unavailable.
+ *
+ * A packaged build carries its own bundled copy in resources, outside the asar,
+ * so it is a real file a terminal can point at. That copy is the shipped
+ * `luu-code-mcp`: there is no npm package to install and no second version to
+ * drift.
  */
 function resolveMcpScript(): string {
   const root = appRoot();
 
   const candidates = [
-    // Packaged, and pnpm's per-package link in development.
+    // Shipped with the app, outside the asar so it can be spawned directly.
+    join(process.resourcesPath, "mcp", "luu-code-mcp.cjs"),
+    join(root, "dist", "mcp", "luu-code-mcp.cjs"),
+    // pnpm's per-package link in development.
     join(root, "node_modules", "@luumen", "code-server", "bin", "luu-code-mcp.js"),
     // Workspace sibling.
     join(root, "..", "server", "bin", "luu-code-mcp.js"),
@@ -231,6 +246,36 @@ function resolveMcpScript(): string {
   }
 
   return found;
+}
+
+/**
+ * The command that runs this build's MCP server from a terminal.
+ *
+ * It points at the app's own binary, run as plain Node, and at the script that
+ * shipped with it — so it needs nothing installed and cannot be a different
+ * version from the app that wrote it.
+ */
+function mcpCommandLine(): string {
+  const quote = (value: string): string => (/[\s"]/.test(value) ? `"${value}"` : value);
+  return `${quote(process.execPath)} ${quote(mcpScript)}`;
+}
+
+function requireUpdater(): Updater {
+  if (!updater) throw new Error("The updater is not ready.");
+  return updater;
+}
+
+function requirePlugin(): PluginInstaller {
+  if (!plugin) throw new Error("The plugin installer is not ready.");
+  return plugin;
+}
+
+function versionStatus(): VersionStatus {
+  return {
+    update: requireUpdater().current(),
+    plugin: requirePlugin().status(),
+    mcpCommand: mcpCommandLine(),
+  };
 }
 
 /**
@@ -279,6 +324,20 @@ async function bootstrap(): Promise<void> {
   threads = new ThreadStore(app.getPath("userData"));
   settings = new SettingsStore(app.getPath("userData"));
 
+  mcpScript = resolveMcpScript();
+
+  // The installer first: the updater reports through a callback that describes
+  // both, and an update event can arrive the moment it is constructed.
+  plugin = new PluginInstaller(channel, app.getPath("userData"), appRoot());
+
+  updater = new Updater(channel, (status: UpdateStatus) =>
+    broadcast("update", { update: status, plugin: requirePlugin().status(), mcpCommand: mcpCommandLine() }),
+  );
+
+  // Only if the user has already said yes. The first install is always a
+  // button press; this is what keeps it matching afterwards.
+  if (requireSettings().current().plugin.autoInstall && plugin.needsInstall()) plugin.install();
+
   server = await createLuuCodeServer({
     screenshotProvider: createElectronScreenshotProvider(),
   });
@@ -301,7 +360,7 @@ async function bootstrap(): Promise<void> {
   agents = new AgentManager({
     stateDir: app.getPath("userData"),
     luuCodeHome: process.env.LUU_CODE_HOME,
-    mcpScriptPath: resolveMcpScript(),
+    mcpScriptPath: mcpScript,
     onEvent: (event: AgentEvent) => {
       broadcast("agent-event", event);
 
@@ -324,6 +383,9 @@ async function bootstrap(): Promise<void> {
 
   registerIpc();
   await createWindow();
+
+  // Checks only, and never in front of the window opening.
+  requireUpdater().start();
 
   // Probing `codex app-server` takes a moment, so it happens after the window
   // is up: the catalogue arrives as an event rather than holding the app back.
@@ -364,7 +426,8 @@ function registerIpc(): void {
       settings: requireSettings().current(),
       session: manager.status(),
       serverPort: local.port,
-      mcpCommand: process.platform === "win32" ? "luu-code-mcp.cmd" : "luu-code-mcp",
+      mcpCommand: mcpCommandLine(),
+      versions: versionStatus(),
       platform: process.platform,
       channel,
       threads: store.index(),
@@ -382,6 +445,14 @@ function registerIpc(): void {
   ipcMain.handle("update-settings", (_event, patch: Partial<AppSettings>) => {
     const next = requireSettings().update(patch);
     broadcast("settings", next);
+
+    // Turning the switch on is the permission, so it acts immediately rather
+    // than waiting for the next launch to do what was just asked for.
+    if (next.plugin.autoInstall && requirePlugin().needsInstall()) {
+      requirePlugin().install();
+      broadcast("update", versionStatus());
+    }
+
     return next;
   });
 
@@ -389,6 +460,46 @@ function registerIpc(): void {
     const next = requireSettings().reset();
     broadcast("settings", next);
     return next;
+  });
+
+  // ---- Versions ------------------------------------------------------------
+
+  ipcMain.handle("version-status", () => versionStatus());
+
+  ipcMain.handle("check-update", async () => {
+    await requireUpdater().check();
+    return versionStatus();
+  });
+
+  ipcMain.handle("download-update", async () => {
+    await requireUpdater().download();
+    return versionStatus();
+  });
+
+  ipcMain.handle("install-update", () => {
+    requireUpdater().install();
+    return versionStatus();
+  });
+
+  ipcMain.handle("install-plugin", () => {
+    requirePlugin().install();
+    const status = versionStatus();
+    broadcast("update", status);
+    return status;
+  });
+
+  ipcMain.handle("uninstall-plugin", () => {
+    requirePlugin().uninstall();
+    const status = versionStatus();
+    broadcast("update", status);
+    return status;
+  });
+
+  ipcMain.handle("open-releases", () => shell.openExternal(requireUpdater().current().releaseUrl));
+
+  ipcMain.handle("reveal-plugin-folder", () => {
+    const directory = requirePlugin().status().directory;
+    if (directory) void shell.openPath(directory);
   });
 
   ipcMain.handle("window-minimize", () => window?.minimize());
@@ -562,6 +673,7 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   // Anything buffered has to reach disk before the process goes away.
   threads?.flush();
+  updater?.stop();
   void agents?.stop();
   void server?.close();
 });

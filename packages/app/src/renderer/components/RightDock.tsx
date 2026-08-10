@@ -201,8 +201,8 @@ function StudioEmpty(): React.JSX.Element {
         Open your place in Roblox Studio. The Luu Code panel there shows a six-digit code — approve it here.
       </p>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        No panel in Studio? Run <code className="font-mono text-foreground/80">luu build</code> in{" "}
-        <code className="font-mono text-foreground/80">plugin/</code>, then restart Studio.
+        No panel in Studio? Install the plugin from <span className="text-foreground/80">Settings → Updates</span>, then
+        restart Studio.
       </p>
     </div>
   );
@@ -235,7 +235,9 @@ function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Elemen
 
 function McpSetup({ command, port }: { command: string; port: number }): React.JSX.Element {
   const [copied, setCopied] = React.useState(false);
-  const snippet = `claude mcp add luu-code -- ${command}`;
+  // Points at the MCP server that shipped with this build, run through the
+  // app's own binary — so there is nothing to install and no second version.
+  const snippet = `claude mcp add luu-code -e ELECTRON_RUN_AS_NODE=1 -- ${command}`;
 
   const copy = async (): Promise<void> => {
     await navigator.clipboard.writeText(snippet);

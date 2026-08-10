@@ -1,0 +1,115 @@
+name: Release
+
+# Cutting a release is pushing a tag. Everything below derives from it, so the
+# tag is the single place a version is decided.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The app, the Studio plugin, and the MCP server are built from the same commit
+# and stamped with the same version, because a release where those three differ
+# is the failure this whole pipeline exists to prevent.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  plugin:
+    name: Studio plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+      - name: Install Luumen
+        run: |
+          curl -fsSL https://luumen.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The plugin reports its version to the app over the wire, so it carries
+      # the release version rather than whatever was last committed.
+      - name: Stamp the version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^Constants.PLUGIN_VERSION = .*/Constants.PLUGIN_VERSION = \"${VERSION}\"/" plugin/src/Constants.luau
+          grep PLUGIN_VERSION plugin/src/Constants.luau
+
+      - run: luu install
+        working-directory: plugin
+      - run: luu run check
+        working-directory: plugin
+      - run: luu run bundle
+        working-directory: plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-plugin
+          path: plugin/LuuCode.rbxm
+          if-no-files-found: error
+
+  app:
+    name: App (${{ matrix.os }})
+    needs: plugin
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not throw away installers that already
+      # built; the draft release keeps whatever arrived.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set the version from the tag
+        shell: bash
+        run: node .github/scripts/set-version.mjs "${GITHUB_REF_NAME#v}"
+
+      # Packaged as a resource, so the app can install a plugin that matches
+      # itself instead of asking the user to find the right .rbxm.
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-plugin
+          path: packages/app/build/plugin
+
+      - run: pnpm turbo run build typecheck test
+
+      - name: Package and publish
+        working-directory: packages/app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned for now. Adding CSC_LINK and CSC_KEY_PASSWORD here, and
+          # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID for
+          # notarization, is all that is needed to turn signing on.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --config electron-builder.cjs --publish always
+
+  publish:
+    name: Publish the release
+    needs: [plugin, app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-plugin
+          path: dist
+
+      # electron-builder leaves a draft; the plugin goes in beside the
+      # installers before anyone can see a half-built release.
+      - name: Attach the plugin and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist/LuuCode.rbxm --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

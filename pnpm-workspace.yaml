@@ -3,6 +3,12 @@ packages:
 
 # pnpm blocks install scripts by default. These two need theirs: Electron
 # downloads its binary, and esbuild installs its platform binary.
+#
+# electron-winstaller arrives with electron-builder and is answered with a flat
+# no: its install script downloads Squirrel.Windows, and Luu Code ships an NSIS
+# installer instead. Saying so explicitly is what stops pnpm refusing to run
+# anything until the question is answered.
 allowBuilds:
   electron: true
+  electron-winstaller: false
   esbuild: true

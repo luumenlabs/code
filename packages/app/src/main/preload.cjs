@@ -40,6 +40,15 @@ contextBridge.exposeInMainWorld("luuCode", {
   updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
   resetSettings: () => ipcRenderer.invoke("reset-settings"),
 
+  versionStatus: () => ipcRenderer.invoke("version-status"),
+  checkForUpdate: () => ipcRenderer.invoke("check-update"),
+  downloadUpdate: () => ipcRenderer.invoke("download-update"),
+  installUpdate: () => ipcRenderer.invoke("install-update"),
+  installPlugin: () => ipcRenderer.invoke("install-plugin"),
+  uninstallPlugin: () => ipcRenderer.invoke("uninstall-plugin"),
+  openReleases: () => ipcRenderer.invoke("open-releases"),
+  revealPluginFolder: () => ipcRenderer.invoke("reveal-plugin-folder"),
+
   execute: (op, params) => ipcRenderer.invoke("execute", op, params),
 
   onServerEvent: (listener) => subscribe("server-event", listener),
@@ -48,5 +57,6 @@ contextBridge.exposeInMainWorld("luuCode", {
   onTranscript: (listener) => subscribe("transcript", listener),
   onCatalogue: (listener) => subscribe("catalogue", listener),
   onSettingsChanged: (listener) => subscribe("settings", listener),
+  onVersionStatus: (listener) => subscribe("update", listener),
   onModelSelectionChanged: (listener) => subscribe("model-selection", listener),
 });

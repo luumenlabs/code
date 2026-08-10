@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Luu Code: the first-party Roblox Studio harness for coding agents.",
   "license": "MIT",
+  "author": "luumenlabs",
+  "homepage": "https://github.com/luumenlabs/code",
   "main": "./dist/main/main.cjs",
   "scripts": {
     "build": "node scripts/build-main.mjs && vite build",
@@ -13,7 +15,8 @@
     "dev": "node scripts/dev.mjs",
     "icons": "node scripts/render-icons.mjs",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "package": "npm run build && electron-builder --config electron-builder.cjs --publish never"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.226",
@@ -35,6 +38,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.30.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3"
@@ -45,6 +49,7 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.3.1",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.24.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

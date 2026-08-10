@@ -9,6 +9,7 @@ import type { CapabilityReport, PermissionGroup, ServerEvent, SessionStatus } fr
 import type { AgentEvent, AgentInfo, AgentSessionSnapshot, Attachment, TranscriptEntry } from "./agent.js";
 import type { AppSettings } from "./settings.js";
 import type { Thread, ThreadIndex } from "./threads.js";
+import type { VersionStatus } from "./update.js";
 
 export interface HarnessSnapshot {
   status: SessionStatus;
@@ -21,7 +22,10 @@ export interface HarnessSnapshot {
   settings: AppSettings;
   session: AgentSessionSnapshot;
   serverPort: number;
+  /** The command that runs this build's own MCP server. */
   mcpCommand: string;
+  /** App update, Studio plugin, and the MCP command they all share. */
+  versions: VersionStatus;
   /** Drives platform-specific chrome, such as room for window controls. */
   platform: string;
   /** Release or nightly, so the chrome can say which build this is. */
@@ -73,6 +77,18 @@ export interface LuuCodeBridge {
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   resetSettings(): Promise<AppSettings>;
 
+  // Versions. The app, the Studio plugin, and the MCP server move together.
+  versionStatus(): Promise<VersionStatus>;
+  checkForUpdate(): Promise<VersionStatus>;
+  downloadUpdate(): Promise<VersionStatus>;
+  /** Quits and installs. The app does not come back until the installer is done. */
+  installUpdate(): Promise<VersionStatus>;
+  /** Writes the plugin this build carries into the Studio plugins folder. */
+  installPlugin(): Promise<VersionStatus>;
+  uninstallPlugin(): Promise<VersionStatus>;
+  openReleases(): Promise<void>;
+  revealPluginFolder(): Promise<void>;
+
   /** Runs a Roblox operation from the UI, for the manual controls. */
   execute(op: string, params?: unknown): Promise<unknown>;
 
@@ -85,6 +101,8 @@ export interface LuuCodeBridge {
     listener: (payload: { models: import("./models.js").ModelInfo[]; problem: string | null }) => void,
   ): () => void;
   onSettingsChanged(listener: (settings: AppSettings) => void): () => void;
+  /** Fires as a check runs, a download progresses, or the plugin is written. */
+  onVersionStatus(listener: (status: VersionStatus) => void): () => void;
   onModelSelectionChanged(listener: (selection: import("./models.js").ModelSelection) => void): () => void;
   /** The main process persists the transcript; this echoes what it stored. */
   onTranscript(listener: (entry: TranscriptEntry) => void): () => void;

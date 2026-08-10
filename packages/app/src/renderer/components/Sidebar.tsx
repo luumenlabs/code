@@ -7,7 +7,7 @@
  * session where it can.
  */
 import * as React from "react";
-import { ChevronRight, Folder, Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
+import { ArrowUpCircle, ChevronRight, Folder, Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
 import { groupThreads, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
+import { updateWaiting } from "../../shared/update.js";
 
 export function Sidebar({
   harness,
@@ -28,6 +29,7 @@ export function Sidebar({
   settingsOpen,
   onToggleSettings,
   onExitSettings,
+  onOpenUpdates,
 }: {
   harness: Harness;
   onSearch: () => void;
@@ -35,6 +37,8 @@ export function Sidebar({
   onToggleSettings: () => void;
   /** Opening a chat is a request to look at the chat, not at settings. */
   onExitSettings: () => void;
+  /** The update notice goes straight to the section that can act on it. */
+  onOpenUpdates: () => void;
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [renaming, setRenaming] = React.useState<string | null>(null);
@@ -147,6 +151,8 @@ export function Sidebar({
       {/* Settings belongs at the bottom of the sidebar, out of the way of the
           conversation but always reachable. */}
       <div className="shrink-0 border-t border-sidebar-border p-2">
+        <UpdateNotice harness={harness} onOpen={onOpenUpdates} />
+
         <button
           onClick={onToggleSettings}
           data-active={settingsOpen}
@@ -157,6 +163,45 @@ export function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Sits above Settings when there is a newer build.
+ *
+ * A version behind is not an error and never interrupts what the user is doing,
+ * so it is a quiet row in the one place they already look for app-level things
+ * — and it opens straight onto the button that acts on it.
+ */
+function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => void }): React.JSX.Element | null {
+  const update = harness.versions?.update;
+  if (!update || !updateWaiting(update)) return null;
+
+  const label =
+    update.state === "ready"
+      ? "Restart to update"
+      : update.state === "downloading"
+        ? `Downloading… ${update.percent}%`
+        : `Update to ${update.availableVersion}`;
+
+  return (
+    <button
+      onClick={onOpen}
+      className={cn(
+        "mb-1 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[11.5px] transition-colors",
+        update.state === "ready"
+          ? "border-[var(--success)]/35 bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/15"
+          : "border-primary/35 bg-primary/10 text-primary hover:bg-primary/15",
+      )}
+    >
+      {update.state === "downloading" ? (
+        <Loader2 className="size-3.5 shrink-0 animate-spin" />
+      ) : (
+        <ArrowUpCircle className="size-3.5 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      {update.channel === "nightly" && <span className="shrink-0 text-[9.5px] opacity-70">nightly</span>}
+    </button>
   );
 }
 

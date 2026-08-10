@@ -34,8 +34,20 @@ export interface FavouriteSelection extends ModelSelection {
   id: string;
 }
 
+export interface PluginSettings {
+  /**
+   * Keep the Studio plugin matching the app.
+   *
+   * Off until the user says otherwise: this writes to a folder outside the
+   * app's own storage, and nothing should touch a user's Studio install
+   * because it seemed convenient. Turning it on is the permission.
+   */
+  autoInstall: boolean;
+}
+
 export interface AppSettings {
   titleGeneration: TitleGenerationSettings;
+  plugin: PluginSettings;
   /**
    * Extra model slugs to offer for a provider, for models the CLI knows about
    * but does not advertise. Keyed by agent id.
@@ -71,6 +83,7 @@ export function autoTitleProvider(installed: AgentId[]): AgentId | null {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   titleGeneration: { enabled: true, provider: "auto", model: null },
+  plugin: { autoInstall: false },
   customModels: {},
   favourites: [],
   showThinking: true,
@@ -94,6 +107,7 @@ export function withDefaults(stored: unknown): AppSettings {
       provider: title.provider ?? DEFAULT_SETTINGS.titleGeneration.provider,
       model: title.model ?? DEFAULT_SETTINGS.titleGeneration.model,
     },
+    plugin: { autoInstall: value.plugin?.autoInstall ?? DEFAULT_SETTINGS.plugin.autoInstall },
     customModels: value.customModels ?? {},
     favourites: readFavourites(stored),
     showThinking: value.showThinking ?? DEFAULT_SETTINGS.showThinking,

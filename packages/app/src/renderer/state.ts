@@ -15,11 +15,24 @@ import type { ModelInfo, ModelSelection } from "../shared/models.js";
 import { DEFAULT_SETTINGS } from "../shared/settings.js";
 import type { AppSettings } from "../shared/settings.js";
 import type { ThreadIndex } from "../shared/threads.js";
+import type { VersionStatus } from "../shared/update.js";
 
 export type TimelineItem = TranscriptEntry;
 export type { Attachment };
 
 const MAX_OUTPUT = 500;
+
+/**
+ * The version buttons. Each one returns the whole status, so the caller never
+ * has to know which parts of it a given action moved.
+ */
+export interface VersionActions {
+  checkForUpdate: () => Promise<VersionStatus>;
+  downloadUpdate: () => Promise<VersionStatus>;
+  installUpdate: () => Promise<VersionStatus>;
+  installPlugin: () => Promise<VersionStatus>;
+  uninstallPlugin: () => Promise<VersionStatus>;
+}
 
 export interface Harness {
   snapshot: HarnessSnapshot | null;
@@ -34,6 +47,10 @@ export interface Harness {
   settings: AppSettings;
   updateSettings(patch: Partial<AppSettings>): void;
   resetSettings(): void;
+  /** App update, Studio plugin, and the MCP command. Null until it arrives. */
+  versions: VersionStatus | null;
+  /** Runs one of the version actions and folds the result back in. */
+  versionAction(action: keyof VersionActions): Promise<void>;
   busy: boolean;
   runBusy: boolean;
   pendingPairing: PairingRequest | null;
@@ -66,6 +83,7 @@ export function useHarness(): Harness {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelProblem, setModelProblem] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [versions, setVersions] = useState<VersionStatus | null>(null);
 
   const refresh = useCallback(async () => {
     const next = await window.luuCode.snapshot();
@@ -75,6 +93,7 @@ export function useHarness(): Harness {
     setTimeline(next.thread?.items ?? []);
     setSelection(next.modelSelection);
     setSettings(next.settings);
+    setVersions(next.versions);
     setModelProblem(next.modelProblem);
 
     if (next.models.length > 0) {
@@ -149,6 +168,7 @@ export function useHarness(): Harness {
 
     const offSettings = window.luuCode.onSettingsChanged(setSettings);
     const offSelection = window.luuCode.onModelSelectionChanged(setSelection);
+    const offVersions = window.luuCode.onVersionStatus(setVersions);
 
     return () => {
       offServer();
@@ -158,8 +178,16 @@ export function useHarness(): Harness {
       offCatalogue();
       offSettings();
       offSelection();
+      offVersions();
     };
   }, [refresh, upsert]);
+
+  const versionAction = useCallback(async (action: keyof VersionActions) => {
+    // Every one of these answers with the whole status, so there is no partial
+    // state to reconcile — and a failure leaves what was already on screen.
+    const next = await window.luuCode[action]().catch(() => null);
+    if (next) setVersions(next);
+  }, []);
 
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings((current) => ({ ...current, ...patch }) as AppSettings);
@@ -248,6 +276,8 @@ export function useHarness(): Harness {
     settings,
     updateSettings,
     resetSettings,
+    versions,
+    versionAction,
     busy,
     runBusy,
     pendingPairing,

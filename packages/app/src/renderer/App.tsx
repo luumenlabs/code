@@ -5,6 +5,7 @@ import { PairingDialog } from "@/components/PairingDialog";
 import { RightDock } from "@/components/RightDock";
 import type { DockTab } from "@/components/RightDock";
 import { SettingsView } from "@/components/settings/SettingsView";
+import type { Section } from "@/components/settings/SettingsView";
 import { Sidebar } from "@/components/Sidebar";
 import { TitleBar } from "@/components/TitleBar";
 import { Transcript } from "@/components/Transcript";
@@ -18,6 +19,7 @@ export function App(): React.JSX.Element {
   const [dockTab, setDockTab] = React.useState<DockTab>("studio");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsSection, setSettingsSection] = React.useState<Section>("general");
 
   // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
   React.useEffect(() => {
@@ -64,10 +66,19 @@ export function App(): React.JSX.Element {
             settingsOpen={settingsOpen}
             onToggleSettings={() => setSettingsOpen((open) => !open)}
             onExitSettings={() => setSettingsOpen(false)}
+            onOpenUpdates={() => {
+              setSettingsSection("updates");
+              setSettingsOpen(true);
+            }}
           />
 
           {settingsOpen ? (
-            <SettingsView harness={harness} onClose={() => setSettingsOpen(false)} />
+            <SettingsView
+              harness={harness}
+              section={settingsSection}
+              onSectionChange={setSettingsSection}
+              onClose={() => setSettingsOpen(false)}
+            />
           ) : (
             <>
               <main className="flex min-h-0 min-w-0 flex-1 flex-col">

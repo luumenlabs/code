@@ -19,6 +19,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run build typecheck test
 
+  # Packaging breaks on things typechecking cannot see — an icon in the wrong
+  # format, a resource path that only exists on one platform, a file list that
+  # drops something the app needs at runtime. Catching that at a tag is
+  # catching it too late, so every platform packages on every PR. `--dir` stops
+  # short of building installers, which is the slow half.
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=@luumen/code-app
+
+      - name: Package, without building installers
+        working-directory: packages/app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --config electron-builder.cjs --publish never --dir
+
   plugin:
     name: Studio plugin
     runs-on: ubuntu-latest

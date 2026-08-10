@@ -75,6 +75,37 @@ luu run check      # stylua, selene, luau-lsp
 
 Restart Studio to pick up a new build.
 
+## Releasing
+
+The tag decides the version. Nothing in the repo needs bumping first — CI stamps
+every manifest and the plugin's `PLUGIN_VERSION` from the tag, so the app, the
+Studio plugin, and the MCP server always ship as one version.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+That runs `.github/workflows/release.yml`: the plugin is built once on Linux,
+the app is packaged on Windows, macOS, and Linux, and everything lands in a
+draft GitHub release that the last job publishes. Nightlies run themselves from
+`nightly.yml` at 05:00 UTC, skip when nothing has changed, and publish as
+prereleases on their own update channel.
+
+Packaging locally:
+
+```bash
+pnpm --filter @luumen/code-app run package    # installers into packages/app/release/
+```
+
+Set `LUU_CODE_CHANNEL=nightly` to build the nightly identity instead — its own
+application id, product name, purple icon, and update feed, so it installs
+beside a release build rather than over it.
+
+Builds are unsigned. The hooks for signing are in `electron-builder.cjs` and the
+workflows; adding `CSC_LINK`/`CSC_KEY_PASSWORD` and the Apple notarization
+secrets is all that is needed to turn them on. Until then macOS cannot install
+its own updates, and the app says so rather than failing quietly.
+
 ## Adding an operation
 
 Operations are defined once and flow outward from there.

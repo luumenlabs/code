@@ -1,0 +1,149 @@
+name: Nightly
+
+# The same pipeline as a release, with a different identity.
+#
+# A nightly is a prerelease on its own update channel, installs beside a release
+# build, and carries the purple icon — so running one is a decision, not an
+# accident, and a nightly can never offer a release build as its update.
+on:
+  schedule:
+    # 05:00 UTC, after a day's commits have landed.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if nothing changed since the last nightly"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  decide:
+    name: Anything to build?
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A nightly identical to yesterday's is noise: it costs three platform
+      # builds and tells nobody anything.
+      - id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('-')[0]")
+          VERSION="${BASE}-nightly.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+          LAST=$(gh release list --limit 30 --json tagName,isPrerelease,targetCommitish \
+            --jq 'map(select(.isPrerelease)) | .[0].targetCommitish // ""')
+
+          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$GITHUB_SHA" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing new since the last nightly ($LAST)."
+          fi
+
+  plugin:
+    name: Studio plugin
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+      - name: Install Luumen
+        run: |
+          curl -fsSL https://luumen.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Stamp the version
+        run: |
+          sed -i "s/^Constants.PLUGIN_VERSION = .*/Constants.PLUGIN_VERSION = \"${{ needs.decide.outputs.version }}\"/" plugin/src/Constants.luau
+          grep PLUGIN_VERSION plugin/src/Constants.luau
+
+      - run: luu install
+        working-directory: plugin
+      - run: luu run check
+        working-directory: plugin
+      - run: luu run bundle
+        working-directory: plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-plugin-nightly
+          path: plugin/LuuCode.rbxm
+          if-no-files-found: error
+
+  app:
+    name: App (${{ matrix.os }})
+    needs: [decide, plugin]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set the nightly version
+        shell: bash
+        run: node .github/scripts/set-version.mjs "${{ needs.decide.outputs.version }}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-plugin-nightly
+          path: packages/app/build/plugin
+
+      - run: pnpm turbo run build typecheck test
+
+      - name: Package and publish
+        working-directory: packages/app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Everything downstream of this reads the channel: the app id, the
+          # product name, the icon, and the update feed the build will follow
+          # for the rest of its life.
+          LUU_CODE_CHANNEL: nightly
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --config electron-builder.cjs --publish always
+
+  publish:
+    name: Publish the nightly
+    needs: [decide, plugin, app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-plugin-nightly
+          path: dist
+
+      - name: Attach the plugin and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          gh release upload "$TAG" dist/LuuCode.rbxm --clobber
+          # Never --latest: a nightly must not become what the Download button
+          # on the README points at.
+          gh release edit "$TAG" --draft=false --prerelease
