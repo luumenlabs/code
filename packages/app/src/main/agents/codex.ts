@@ -144,19 +144,28 @@ export class CodexAdapter implements AgentAdapter {
       /**
        * Nobody is here to approve anything.
        *
-       * Codex decides what needs approval partly from whether it trusts the
-       * project directory, and Luu Code runs the agent in a scratch folder
-       * under the app's own storage — a path no user has ever marked trusted,
-       * and never will. Untrusted plus non-interactive means every MCP call
-       * came back to the model as "user cancelled MCP tool call", which is a
-       * confusing thing to read when no user was asked and nothing was
-       * cancelled.
+       * A sandboxed Codex session treats an MCP call as leaving the sandbox
+       * and asks first. `codex exec` has no one to ask, so the request is
+       * dropped and the model is told "user cancelled MCP tool call" — no user
+       * was asked, and nothing was cancelled. Every Roblox tool call failed
+       * this way, which made Luu Code look disconnected when it was paired and
+       * working.
        *
-       * Approvals off, sandbox untouched: the shell stays constrained by
-       * whatever policy the user's own config sets, and the Roblox tools are
-       * checked by Luu Code's permissions, which is where the user can
-       * actually see and change them.
+       * Measured, not guessed: with `workspace-write` the call is cancelled,
+       * with `danger-full-access` the same call returns. The approval policy on
+       * its own changes nothing either way.
+       *
+       * The trade this makes is real and worth stating. Codex's sandbox guards
+       * the filesystem, and the filesystem it would be guarding here is an
+       * empty scratch folder that holds none of the user's work — the game
+       * lives in Studio. The boundary that matters for this product is Luu
+       * Code's own permissions, which every Roblox operation is checked
+       * against, and which the user can see and revoke mid-conversation. What
+       * is given up is protection against a shell command the agent was told
+       * not to run, in a directory with nothing in it.
        */
+      "-s",
+      "danger-full-access",
       "-c",
       `approval_policy=${toml("never")}`,
       "-c",
