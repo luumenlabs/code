@@ -69,7 +69,10 @@ function ControlButton({
       title={label}
       onClick={onClick}
       className={cn(
-        "grid h-full w-[46px] place-items-center text-muted-foreground transition-colors",
+        // Near enough square at the bar's height. Windows' own buttons are
+        // 46x32 and read as squares; the same width against a 56px bar read as
+        // three tall slabs, which is what the height came down for.
+        "grid h-full w-[44px] place-items-center text-muted-foreground transition-colors",
         danger ? "hover:bg-[#e81123] hover:text-white" : "hover:bg-accent hover:text-foreground",
       )}
     >

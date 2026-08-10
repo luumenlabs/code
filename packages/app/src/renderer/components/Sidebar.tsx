@@ -22,6 +22,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
+import { Notice } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,7 +33,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { isBusyState } from "@/state";
+import { isBusyState, settingsWaiting } from "@/state";
 import type { Harness } from "@/state";
 import { archivedThreads, groupThreads, projectIdentity, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
@@ -60,6 +61,11 @@ export function Sidebar({
 
   const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
   const connected = (harness.snapshot?.status.sessions.length ?? 0) > 0;
+
+  // Everything inside Settings that wants dealing with, as one number. The app's
+  // own update is not in it: that already has a row of its own directly above,
+  // and counting it twice would make one thing look like two.
+  const waiting = settingsWaiting(harness);
 
   const toggle = (projectId: string): void => {
     setCollapsed((current) => {
@@ -172,7 +178,8 @@ export function Sidebar({
           className="row flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px]"
         >
           <Settings className="size-3.5 shrink-0 text-muted-foreground" />
-          Settings
+          <span className="flex-1">Settings</span>
+          <Notice count={waiting.total} />
         </button>
       </div>
     </aside>

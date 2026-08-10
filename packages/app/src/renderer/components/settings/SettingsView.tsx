@@ -30,10 +30,10 @@ import {
 import { PERMISSION_GROUPS } from "@luumen/code-protocol";
 import type { PermissionGroup } from "@luumen/code-protocol";
 import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../../shared/settings.js";
-import { compareVersions } from "../../../shared/models.js";
+import { agentBehind, pluginWaiting } from "../../../shared/update.js";
 import type { AgentInfo } from "../../../shared/agent.js";
 import type { Channel, PluginStatus, UpdateStatus } from "../../../shared/update.js";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge, Notice, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,6 +41,7 @@ import { Switch } from "@/components/ui/switch";
 import { Hint } from "@/components/ui/tooltip";
 import { PROVIDER_LABEL, ProviderIcon } from "@/components/ProviderIcon";
 import { cn } from "@/lib/utils";
+import { settingsWaiting } from "@/state";
 import type { Harness } from "@/state";
 
 export type Section = "general" | "providers" | "permissions" | "connection" | "updates";
@@ -75,6 +76,7 @@ export function SettingsView({
   onClose: () => void;
 }): React.JSX.Element {
   const setSection = onSectionChange;
+  const waiting = settingsWaiting(harness);
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -104,6 +106,10 @@ export function SettingsView({
           >
             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             {label}
+            {/* The same count the Settings button carried, split back into the
+                sections it was made of — so pressing the mark always lands on
+                the thing it was counting. */}
+            <Notice count={id === "providers" ? waiting.providers : id === "updates" ? waiting.plugin : 0} />
           </button>
         ))}
       </div>
@@ -201,18 +207,6 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
 }
 
 /**
- * Whether the installed CLI is older than what npm publishes.
- *
- * Behind is the only state worth drawing. A null `latestVersion` means the
- * registry was unreachable, which is not the same as up to date and must not
- * read like a problem with the user's machine.
- */
-function isBehind(agent: AgentInfo): boolean {
-  if (!agent.installed || !agent.version || !agent.latestVersion) return false;
-  return compareVersions(agent.version, agent.latestVersion) < 0;
-}
-
-/**
  * The version, when there is a newer one — and the command, one click away.
  *
  * The badge is the whole affordance: amber and carrying an arrow, it says an
@@ -279,7 +273,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
     >
       {agents.map((agent) => {
         const models = harness.models.filter((model) => model.provider === agent.id);
-        const behind = isBehind(agent);
+        const behind = agentBehind(agent);
 
         return (
           <div key={agent.id} className="border-b py-4 last:border-b-0">
@@ -515,6 +509,9 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
   const matched = status.installed && status.installedVersion === status.bundledVersion;
   const canInstall = status.supported && status.bundledVersion !== null;
   const isDev = harness.snapshot?.channel === "dev";
+  // The same test the mark on the tab was counted from, so following it lands
+  // on a row that is visibly the thing it promised.
+  const waiting = pluginWaiting(status, harness.snapshot?.channel ?? "release");
 
   // The main process already says why it cannot install, when it cannot. The
   // renderer used to carry its own copy of one of those sentences, which meant
@@ -534,12 +531,20 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
           <div className="flex items-center gap-2">
             <Blocks className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="text-[13.5px] font-medium">Studio plugin</span>
-            {matched && (
+            {/* Worn in the same amber as a provider that has fallen behind: to
+                the user these are one kind of thing — a piece of Luu Code that
+                is not the version the rest of it is. */}
+            {matched ? (
               <Badge variant="success">
                 <CircleCheck className="size-3" />
                 Matched
               </Badge>
-            )}
+            ) : waiting ? (
+              <Badge variant="warning">
+                {status.installed ? <ArrowUpCircle className="size-3" /> : <CircleX className="size-3" />}
+                {status.installed ? (status.installedVersion ?? "installed") : "Not installed"}
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{detail}</p>
         </div>

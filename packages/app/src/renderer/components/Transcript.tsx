@@ -93,55 +93,35 @@ export function Transcript({
   const turns = splitTurns(visible);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
-        {/* The column width matches the composer's card, so the conversation and
-            the box you answer in line up down both edges. */}
-        <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-7 py-7">
-          {turns.map((turn, index) => (
-            <Turn
-              key={turn[0]!.id}
-              items={turn}
-              busy={busy}
-              // The turn in progress has the live "Working for" line under it
-              // already; a second, frozen clock beside it would be nonsense.
-              live={busy && index === turns.length - 1}
-            />
-          ))}
+    <ScrollArea
+      className="min-h-0 flex-1"
+      viewportRef={viewport}
+      onScrollCapture={onScroll}
+      /* The conversation dissolves rather than being clipped where it runs
+         under the title bar — see `.fade-under-topbar`. */
+      viewportClassName="fade-under-topbar"
+    >
+      {/* The column width matches the composer's card, so the conversation and
+          the box you answer in line up down both edges.
 
-          {busy && <Working state={state} since={turns[turns.length - 1]?.[0]?.at ?? null} />}
-        </div>
-      </ScrollArea>
+          The top inset is the fade's own height, so a conversation short enough
+          to sit still is never dimmed by an effect meant for one that is
+          scrolling. */}
+      <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-7 pt-[var(--transcript-fade)] pb-7">
+        {turns.map((turn, index) => (
+          <Turn
+            key={turn[0]!.id}
+            items={turn}
+            busy={busy}
+            // The turn in progress has the live "Working for" line under it
+            // already; a second, frozen clock beside it would be nonsense.
+            live={busy && index === turns.length - 1}
+          />
+        ))}
 
-      {/*
-        Where the conversation goes under the title bar.
-
-        The bar is the chat's own colour now, so a message scrolling past it
-        would otherwise cut off against nothing — a hard edge in the middle of
-        the surface. This softens the last few pixels instead, so text reads as
-        passing beneath the chrome rather than being clipped by it.
-
-        Opaque at the very top, then gone within 20px. Both halves matter: a
-        fade that starts translucent leaves the clip visible through it — you
-        see the line where the header ends, drawn across whatever text is
-        passing — and a fade that stays strong for 40px wipes out a line you
-        were reading. So it is solid exactly where the cut is and clear again
-        almost immediately.
-
-        It fades to `--background` rather than to black on purpose: the point
-        is to be indistinguishable from the bar above it, and the bar is that
-        token. Any other colour, black included, would hide one seam by adding
-        a second.
-      */}
-      <div
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 z-10 h-5",
-          "bg-gradient-to-b from-background to-transparent backdrop-blur-[1px]",
-          "[mask-image:linear-gradient(to_bottom,black_50%,transparent)]",
-        )}
-      />
-    </div>
+        {busy && <Working state={state} since={turns[turns.length - 1]?.[0]?.at ?? null} />}
+      </div>
+    </ScrollArea>
   );
 }
 

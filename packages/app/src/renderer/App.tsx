@@ -62,8 +62,6 @@ export function App(): React.JSX.Element {
           dockOpen={dockOpen}
           dockVisible={dockOpen && !settingsOpen}
           onToggleDock={() => setDockOpen((open) => !open)}
-          dockTab={dockTab}
-          onDockTabChange={setDockTab}
         />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -100,7 +98,7 @@ export function App(): React.JSX.Element {
                 <Composer harness={harness} value={draft} onValueChange={setDraft} />
               </main>
 
-              {dockOpen && <RightDock harness={harness} tab={dockTab} />}
+              {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
             </>
           )}
         </div>

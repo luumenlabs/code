@@ -28,4 +28,31 @@ export function Badge({ className, variant, ...props }: BadgeProps): React.JSX.E
   return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
+/**
+ * How many things behind this button are asking to be dealt with.
+ *
+ * Built from the warning badge rather than given its own amber so the mark on
+ * a button and the badge on the row it leads to are provably the same colour:
+ * the count is a promise that something further in wears this, and following it
+ * has to end at the thing you were promised.
+ *
+ * Nothing to say means nothing drawn — a zero is a number, and a number reads
+ * as a thing to look at.
+ */
+export function Notice({ count, className }: { count: number; className?: string }): React.JSX.Element | null {
+  if (count < 1) return null;
+
+  return (
+    <span
+      className={cn(
+        badgeVariants({ variant: "warning" }),
+        "min-w-[18px] justify-center rounded-full px-1 tabular-nums",
+        className,
+      )}
+    >
+      {count}
+    </span>
+  );
+}
+
 export { badgeVariants };

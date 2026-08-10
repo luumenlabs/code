@@ -188,7 +188,8 @@ async function createWindow(): Promise<void> {
     // No titleBarOverlay: Windows only lets it take two colours, so it never
     // matches the rest of the chrome. The app draws its own controls instead.
     titleBarStyle: "hidden",
-    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 13 } } : {}),
+    // Centred in the title bar; move it and this moves with it.
+    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 10 } } : {}),
     webPreferences: {
       preload: join(appRoot(), "dist", "main", "preload.cjs"),
       contextIsolation: true,

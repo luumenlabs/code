@@ -4,10 +4,18 @@ import { cn } from "@/lib/utils";
 
 export const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & { viewportRef?: React.Ref<HTMLDivElement> }
->(({ className, children, viewportRef, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
+    viewportRef?: React.Ref<HTMLDivElement>;
+    /** For effects that belong to the scrolled content rather than the frame — a
+     *  mask, say, which has to sit on the thing that moves. */
+    viewportClassName?: string;
+  }
+>(({ className, children, viewportRef, viewportClassName, ...props }, ref) => (
   <ScrollAreaPrimitive.Root ref={ref} className={cn("relative overflow-hidden", className)} {...props}>
-    <ScrollAreaPrimitive.Viewport ref={viewportRef} className="size-full rounded-[inherit] [&>div]:!block">
+    <ScrollAreaPrimitive.Viewport
+      ref={viewportRef}
+      className={cn("size-full rounded-[inherit] [&>div]:!block", viewportClassName)}
+    >
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

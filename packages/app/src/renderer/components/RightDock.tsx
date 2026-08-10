@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Copy,
   KeyRound,
+  ScrollText,
   Trash2,
   TriangleAlert,
   Unplug,
@@ -44,17 +45,30 @@ const TONE: Record<OutputEntry["type"], string> = {
 };
 
 /**
- * The dock, starting at its content.
+ * The dock, opening straight onto its content.
  *
- * The Studio/Output switcher used to sit in a full-height row of its own, which
- * put two 56px bars on top of each other once the title bar took the dock's
- * surface — the tabs read as floating below a band of nothing. The switcher now
- * lives in the title bar's dock segment, where that space already was, and the
- * panel opens straight onto what it is showing.
+ * The Studio/Output switcher has been in two wrong places. A full-height row of
+ * its own stacked two bars on top of each other; the title bar's dock segment
+ * fixed that but put the switcher on the same row as the panel toggle, so
+ * opening the dock shoved the toggle across the window by the dock's width.
+ *
+ * It sits along the bottom now. Nothing above it can move when the dock opens,
+ * the panel starts at what it is showing, and the switcher is next to the
+ * composer — which is where your hands already are.
  */
-export function RightDock({ harness, tab }: { harness: Harness; tab: DockTab }): React.JSX.Element | null {
+export function RightDock({
+  harness,
+  tab,
+  onTabChange,
+}: {
+  harness: Harness;
+  tab: DockTab;
+  onTabChange: (tab: DockTab) => void;
+}): React.JSX.Element | null {
   const snapshot = harness.snapshot;
   if (!snapshot) return null;
+
+  const errors = harness.output.filter((entry) => entry.type === "error").length;
 
   return (
     <aside className="flex h-full min-h-0 w-dock shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar">
@@ -65,38 +79,28 @@ export function RightDock({ harness, tab }: { harness: Harness; tab: DockTab }):
           <OutputTab entries={harness.output} onClear={harness.clearOutput} />
         )}
       </div>
-    </aside>
-  );
-}
 
-/**
- * The switcher, rendered by the title bar.
- *
- * Exported from here rather than written there because what the dock shows is
- * the dock's business; the title bar only lends it the row.
- */
-export function DockTabs({
-  tab,
-  onTabChange,
-  errors,
-}: {
-  tab: DockTab;
-  onTabChange: (tab: DockTab) => void;
-  errors: number;
-}): React.JSX.Element {
-  return (
-    <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)}>
-      <TabsList>
-        <TabsTrigger value="studio">
-          <Blocks className="size-3" />
-          Studio
-        </TabsTrigger>
-        <TabsTrigger value="output">
-          Output
-          {errors > 0 && <span className="ml-0.5 text-destructive">{errors}</span>}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)}>
+          {/* Full width, halves each: two destinations along the foot of a panel
+              read as a switch, where a small pill floating left reads as a
+              control for whatever happens to be above it. */}
+          <TabsList className="flex w-full">
+            <TabsTrigger value="studio" className="flex-1 justify-center">
+              <Blocks className="size-3" />
+              Studio
+            </TabsTrigger>
+            <TabsTrigger value="output" className="flex-1 justify-center">
+              {/* The same icon the transcript gives an Output line, so the tab
+                  and the rows it holds are recognisably the same thing. */}
+              <ScrollText className="size-3" />
+              Output
+              {errors > 0 && <span className="ml-0.5 text-destructive">{errors}</span>}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+    </aside>
   );
 }
 

@@ -21,9 +21,13 @@
 
   /* Structure. Named rather than sprinkled as magic numbers so the whole app
      stays on one rhythm. */
-  --topbar-height: 56px;
+  --topbar-height: 44px;
   --sidebar-width: 276px;
   --dock-width: 340px;
+  /* How far the transcript takes to disappear under the title bar. Longer than
+     the bar is tall on purpose: the ramp has to finish before the bar begins,
+     not at it. */
+  --transcript-fade: 56px;
   --sidebar-inset: 0.5rem;
   --row-gap: 0.125rem;
 
@@ -246,6 +250,31 @@
 }
 
 @layer utilities {
+  /*
+    Where the transcript passes under the title bar.
+
+    This was an overlay tinted with `--background`, and an overlay can only ever
+    hide the cut by painting over it: the moment a line of text crossed it you
+    saw exactly where the bar began, because the paint began there too. Masking
+    the scroller instead takes the text's own alpha to zero, so it is gone
+    before it reaches the bar rather than covered up at it.
+
+    The stops are eased rather than a straight ramp. Linear alpha reads as a
+    band with two edges of its own — the eye finds the start and the end of it —
+    while a curve that leaves slowly and lands hard has neither.
+  */
+  .fade-under-topbar {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      rgb(0 0 0 / 0.03) calc(var(--transcript-fade) * 0.22),
+      rgb(0 0 0 / 0.16) calc(var(--transcript-fade) * 0.44),
+      rgb(0 0 0 / 0.45) calc(var(--transcript-fade) * 0.64),
+      rgb(0 0 0 / 0.8) calc(var(--transcript-fade) * 0.83),
+      #000 var(--transcript-fade)
+    );
+  }
+
   .drag-region {
     -webkit-app-region: drag;
   }

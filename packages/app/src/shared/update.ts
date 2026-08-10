@@ -11,6 +11,9 @@
  * Each channel updates only from itself: a nightly never offers a release build
  * and a release never offers a nightly.
  */
+import { compareVersions } from "./models.js";
+import type { AgentInfo } from "./agent.js";
+
 /**
  * Which build this is.
  *
@@ -76,4 +79,35 @@ export interface VersionStatus {
 /** True when the app should be nudging the user to update. */
 export function updateWaiting(status: UpdateStatus): boolean {
   return status.state === "available" || status.state === "downloading" || status.state === "ready";
+}
+
+/**
+ * Whether an installed CLI is older than what npm publishes.
+ *
+ * Behind is the only state worth counting. A null `latestVersion` means the
+ * registry was unreachable, which is not the same as up to date and must never
+ * read like a problem with the user's machine. Not installed is not counted
+ * either: that is a provider the user has chosen not to have, not one that has
+ * fallen behind.
+ */
+export function agentBehind(agent: AgentInfo): boolean {
+  if (!agent.installed || !agent.version || !agent.latestVersion) return false;
+  return compareVersions(agent.version, agent.latestVersion) < 0;
+}
+
+/**
+ * Whether the Studio plugin is missing, or older than the copy this build
+ * carries.
+ *
+ * Dev is excluded for the same reason it is excluded from auto-install: there
+ * the plugin belongs to `luu dev`, which rebuilds it on every save, so the file
+ * on disk disagreeing with the app is the normal state rather than something to
+ * point at. Same rule as `PluginManager.needsInstall` in the main process — the
+ * mark and the automatic install must never disagree about whether there is
+ * anything to do.
+ */
+export function pluginWaiting(status: PluginStatus, channel: Channel): boolean {
+  if (channel === "dev") return false;
+  if (!status.supported || status.bundledVersion === null) return false;
+  return !status.installed || status.installedVersion !== status.bundledVersion;
 }

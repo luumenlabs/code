@@ -15,6 +15,7 @@ import type { ModelInfo, ModelSelection } from "../shared/models.js";
 import { DEFAULT_SETTINGS } from "../shared/settings.js";
 import type { AppSettings } from "../shared/settings.js";
 import type { ThreadIndex } from "../shared/threads.js";
+import { agentBehind, pluginWaiting } from "../shared/update.js";
 import type { VersionStatus } from "../shared/update.js";
 
 export type TimelineItem = TranscriptEntry;
@@ -25,6 +26,25 @@ const MAX_OUTPUT = 500;
 /** The states that mean a turn is in flight. */
 export function isBusyState(state: AgentState | undefined): boolean {
   return state === "starting" || state === "thinking" || state === "working";
+}
+
+/**
+ * What inside Settings is asking to be dealt with, counted once.
+ *
+ * The mark on the Settings button and the marks on the sections it opens are
+ * the same arithmetic run at two depths, so they are worked out in one place:
+ * a total that does not add up to the sections under it is worse than no total
+ * at all, because it sends the user looking for something that is not there.
+ *
+ * The app's own update is deliberately absent. It already has a row of its own
+ * above the button, and counting it here would show one thing as two.
+ */
+export function settingsWaiting(harness: Harness): { providers: number; plugin: number; total: number } {
+  const providers = (harness.snapshot?.agents ?? []).filter(agentBehind).length;
+  const plugin =
+    harness.versions && harness.snapshot && pluginWaiting(harness.versions.plugin, harness.snapshot.channel) ? 1 : 0;
+
+  return { providers, plugin, total: providers + plugin };
 }
 
 /**

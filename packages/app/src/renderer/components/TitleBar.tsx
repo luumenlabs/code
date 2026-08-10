@@ -7,8 +7,6 @@
  */
 import { CirclePlay, Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
 import { Wordmark } from "@/components/Brand";
-import { DockTabs } from "@/components/RightDock";
-import type { DockTab } from "@/components/RightDock";
 import { WindowControls } from "@/components/WindowControls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,8 +19,6 @@ export function TitleBar({
   dockOpen,
   dockVisible,
   onToggleDock,
-  dockTab,
-  onDockTabChange,
 }: {
   harness: Harness;
   dockOpen: boolean;
@@ -33,15 +29,37 @@ export function TitleBar({
    */
   dockVisible: boolean;
   onToggleDock: () => void;
-  /** The dock's switcher lives up here; the panel below opens on its content. */
-  dockTab: DockTab;
-  onDockTabChange: (tab: DockTab) => void;
 }): React.JSX.Element {
   const snapshot = harness.snapshot;
   const session = snapshot?.status.sessions.find((entry) => entry.active) ?? snapshot?.status.sessions[0] ?? null;
   const running = session?.run.running ?? false;
   const errors = harness.output.filter((entry) => entry.type === "error").length;
   const platform = snapshot?.platform ?? "win32";
+
+  // Built once and placed in whichever segment happens to be last, so the same
+  // buttons land at the same distance from the window's right edge either way.
+  const pinned = (
+    <Pinned platform={platform} dockOpen={dockOpen} onToggleDock={onToggleDock} errors={errors}>
+      {/* The label is on the button; a tooltip repeating it is noise. */}
+      {session &&
+        (running ? (
+          <Button variant="ghost" size="sm" onClick={() => void harness.run("run.stop")} disabled={harness.runBusy}>
+            {harness.runBusy ? <Loader2 className="animate-spin" /> : <Square />}
+            Stop
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void harness.run("run.start", { mode: "play" })}
+            disabled={harness.runBusy}
+          >
+            {harness.runBusy ? <Loader2 className="animate-spin" /> : <Play />}
+            Play
+          </Button>
+        ))}
+    </Pinned>
+  );
 
   return (
     /**
@@ -82,7 +100,7 @@ export function TitleBar({
         )}
       </div>
 
-      <div className={cn("relative flex min-w-0 flex-1 items-center gap-3 pl-3", platform === "darwin" && "pr-3")}>
+      <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
         {session ? (
           // Only the playtest gets a badge. "Edit" is the resting state of every
           // Studio session, so labelling it said nothing and read like a button.
@@ -104,42 +122,7 @@ export function TitleBar({
 
         <div className="flex-1" />
 
-        <div className="no-drag flex items-center gap-1 pr-1">
-        {/* The label is on the button; a tooltip repeating it is noise. */}
-          {session &&
-            (running ? (
-              <Button variant="ghost" size="sm" onClick={() => void harness.run("run.stop")} disabled={harness.runBusy}>
-                {harness.runBusy ? <Loader2 className="animate-spin" /> : <Square />}
-                Stop
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void harness.run("run.start", { mode: "play" })}
-                disabled={harness.runBusy}
-              >
-                {harness.runBusy ? <Loader2 className="animate-spin" /> : <Play />}
-                Play
-              </Button>
-            ))}
-
-          <Hint label="Studio panel">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onToggleDock}
-              className={cn("relative", dockOpen && "bg-accent text-foreground")}
-            >
-              <PanelRight />
-              {!dockOpen && errors > 0 && (
-                <span className="absolute top-1 right-1 size-1.5 rounded-full bg-destructive" />
-              )}
-            </Button>
-          </Hint>
-        </div>
-
-        {!dockVisible && <WindowControls platform={platform} />}
+        {!dockVisible && pinned}
       </div>
 
       {/*
@@ -147,20 +130,69 @@ export function TitleBar({
 
         Same reason as the sidebar segment: a panel whose surface starts below
         the title bar reads as a block floating in the window rather than as a
-        column of it. It carries the dock's switcher, so the row is doing work
-        rather than being a band of empty panel above the tabs.
+        column of it.
       */}
       {dockVisible && (
-        <div className="flex w-dock shrink-0 items-center gap-2 border-l border-sidebar-border bg-sidebar pl-2">
-          <div className="no-drag">
-            <DockTabs tab={dockTab} onTabChange={onDockTabChange} errors={errors} />
-          </div>
-
-          <span className="flex-1" />
-
-          <WindowControls platform={platform} />
+        <div className="flex w-dock shrink-0 items-center justify-end border-l border-sidebar-border bg-sidebar">
+          {pinned}
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * The buttons that must not move, and the window's own.
+ *
+ * Play and the dock switch used to sit with the chat, which meant opening the
+ * dock carried them left by the dock's width: you had to go and find the button
+ * you had just pressed in order to press it again. Grouping them with the
+ * window buttons fixes that without a hack, because whichever segment renders
+ * last ends at the right edge of the window — so the cluster keeps the same
+ * offset from that edge in both states and nothing in it moves.
+ *
+ * Play changes its own width when it becomes Stop, but only its left edge: what
+ * is to the right of it is fixed, so the switch stays put through that too.
+ */
+function Pinned({
+  platform,
+  dockOpen,
+  onToggleDock,
+  errors,
+  children,
+}: {
+  platform: string;
+  dockOpen: boolean;
+  onToggleDock: () => void;
+  /** Shown as a dot while the dock is shut, since the Output tab is out of sight. */
+  errors: number;
+  /** The app's own controls, to the left of the window's. */
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        "no-drag flex items-center gap-1 self-stretch",
+        // macOS keeps its traffic lights on the left, so the switch is the last
+        // thing in the row and needs the edge inset itself.
+        platform === "darwin" && "pr-2",
+      )}
+    >
+      {children}
+
+      <Hint label="Studio panel">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onToggleDock}
+          className={cn("relative", dockOpen && "bg-accent text-foreground")}
+        >
+          <PanelRight />
+          {!dockOpen && errors > 0 && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-destructive" />}
+        </Button>
+      </Hint>
+
+      <WindowControls platform={platform} />
+    </div>
   );
 }
