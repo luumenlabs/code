@@ -28,7 +28,7 @@ You bring Claude Code or Codex. Luu Code brings Studio. There are no credits, no
 
 ## Install
 
-1. **[Download Luu Code](https://github.com/luumenlabs/code/releases/latest)** and run the installer — Windows, macOS, and Linux.
+1. **[Download Luu Code](https://github.com/luumenlabs/code/releases/latest)** and run the installer — Windows.
 2. Open **Settings → Updates** and press **Install** next to the Studio plugin, then restart Studio. The app carries the plugin that matches it, so there is no `.rbxm` to find and nothing to keep in step by hand.
 3. Make sure **Claude Code** or **Codex** is installed and signed in. Luu Code drives whichever you have — it does not ship a model.
 

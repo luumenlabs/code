@@ -22,15 +22,19 @@ jobs:
   # Packaging breaks on things typechecking cannot see — an icon in the wrong
   # format, a resource path that only exists on one platform, a file list that
   # drops something the app needs at runtime. Catching that at a tag is
-  # catching it too late, so every platform packages on every PR. `--dir` stops
-  # short of building installers, which is the slow half.
+  # catching it too late, so every platform we ship packages on every PR.
+  # `--dir` stops short of building installers, which is the slow half.
   package:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # Windows only, matching what release.yml and nightly.yml ship. This
+        # list exists to cover what gets released — restore macos-latest here
+        # the moment it goes back into those, or the first macOS packaging
+        # break will surface at a tag instead of on the PR that caused it.
+        os: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

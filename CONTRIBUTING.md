@@ -112,10 +112,15 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 That runs `.github/workflows/release.yml`: the plugin is built once on Linux,
-the app is packaged on Windows, macOS, and Linux, and everything lands in a
-draft GitHub release that the last job publishes. Nightlies run themselves from
-`nightly.yml` at 05:00 UTC, skip when nothing has changed, and publish as
-prereleases on their own update channel.
+the app is packaged on Windows, and everything lands in a draft GitHub release
+that the last job publishes. Nightlies run themselves from `nightly.yml` at
+05:00 UTC, skip when nothing has changed, and publish as prereleases on their
+own update channel.
+
+Windows is the only platform that ships today. There is no Linux build — Luu
+Code drives Studio, and Studio does not run there. macOS is paused rather than
+dropped; the matrices in `ci.yml`, `release.yml`, and `nightly.yml` are where it
+comes back, and all three want `macos-latest` restored together.
 
 Packaging locally:
 

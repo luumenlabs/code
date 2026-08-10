@@ -62,7 +62,10 @@ jobs:
       # built; the draft release keeps whatever arrived.
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # Windows only for now. There is no Linux build — Luu Code drives Studio,
+        # and Studio does not run there. macOS is paused, not dropped: add
+        # macos-latest back here, and to ci.yml and nightly.yml alongside it.
+        os: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
