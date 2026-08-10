@@ -1,5 +1,5 @@
 /**
- * Permissions, where the user is actually deciding to act. Spec sections 25 and 26.
+ * Permissions, where the user is actually deciding to act.
  *
  * These belong next to the send button, not parked in a sidebar: the question
  * "what is this agent allowed to do to my place" is asked at the moment you
@@ -15,12 +15,12 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 const PERMISSIONS: Array<{ id: PermissionGroup; label: string; detail: string; icon: React.ElementType }> = [
-  { id: "inspect", label: "Inspect Studio", detail: "Read the DataModel, scripts, and runtime state", icon: Eye },
-  { id: "edit", label: "Edit the place", detail: "Create, change, and delete instances and scripts", icon: Pencil },
+  { id: "inspect", label: "Look around", detail: "Read your instances, scripts, and what the game is doing", icon: Eye },
+  { id: "edit", label: "Change the place", detail: "Create, edit, and delete instances and scripts", icon: Pencil },
   { id: "playtest", label: "Playtest", detail: "Start and stop the game", icon: MonitorPlay },
-  { id: "exec", label: "Run Luau", detail: "Execute code inside your Studio session", icon: SquareTerminal },
-  { id: "input", label: "Send input", detail: "Click and type in the running game", icon: Gamepad2 },
-  { id: "screenshot", label: "Screenshots", detail: "Capture the Studio window", icon: Camera },
+  { id: "exec", label: "Run Luau", detail: "Run code inside your Studio session", icon: SquareTerminal },
+  { id: "input", label: "Play the game", detail: "Click and type in the running game", icon: Gamepad2 },
+  { id: "screenshot", label: "Screenshots", detail: "See your Studio window", icon: Camera },
 ];
 
 export function AccessChip({ permissions }: { permissions: PermissionSettings }): React.JSX.Element {
@@ -52,7 +52,7 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
         <div className="border-b px-3 py-2.5">
           <div className="text-[12.5px] font-medium">Agent access</div>
           <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-            What the agent may do to the connected place.
+            What the agent is allowed to do to your place.
           </p>
         </div>
 

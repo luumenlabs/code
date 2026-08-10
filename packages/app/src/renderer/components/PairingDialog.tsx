@@ -1,5 +1,5 @@
 /**
- * Pairing approval. Spec sections 8 and 26.
+ * Pairing approval.
  *
  * Connecting Studio is the one moment that genuinely deserves to interrupt the
  * user: approving it hands an agent control of their open place. The code is
@@ -24,8 +24,7 @@ export function PairingDialog({ request }: { request: PairingRequest | null }): 
               </div>
               <DialogTitle>Connect to Roblox Studio?</DialogTitle>
               <DialogDescription>
-                <b className="font-medium text-foreground">{request.place.name}</b> wants to let Luu Code inspect and
-                change it.
+                Studio wants to connect <b className="font-medium text-foreground">{request.place.name}</b> to Luu Code.
               </DialogDescription>
             </DialogHeader>
 
@@ -38,8 +37,7 @@ export function PairingDialog({ request }: { request: PairingRequest | null }): 
 
             <p className="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
               <ShieldCheck className="mt-px size-3.5 shrink-0" />
-              Only approve if the codes match. Once connected, the agent can read and change scripts, run the game, and
-              send input to it.
+              Approve only if the codes match. After that, the agent can change your scripts, run the game, and play it.
             </p>
 
             <div className="mt-4 flex gap-2">

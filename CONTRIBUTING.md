@@ -20,7 +20,7 @@ packages/protocol/   Shared operation, value, and error definitions
 packages/server/     Local server: Studio bridge, permissions, CLI, MCP
 packages/app/        Electron harness and agent adapters
 plugin/              Roblox Studio plugin (Luau)
-docs/                Architecture, protocol, MCP, plugin, security
+assets/              Icons and shared art
 ```
 
 ## Prerequisites
@@ -50,7 +50,7 @@ luu dev            # rebuild into the Studio plugins folder on every save
 luu run check      # stylua, selene, luau-lsp
 ```
 
-Restart Studio to pick up a new build. See [docs/plugin.md](docs/plugin.md).
+Restart Studio to pick up a new build.
 
 ## Adding an operation
 
@@ -99,7 +99,7 @@ Describe intent:
 
 - `plugin: read script source through ScriptEditorService`
 - `server: route commands by realm instead of recency`
-- `docs: explain the Nil tag`
+- `app: name a thread from its first message`
 
 ## Pull requests
 

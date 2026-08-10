@@ -84,13 +84,13 @@ export function Sidebar({
         <div className="flex flex-col gap-4 px-2 pb-3">
           {drafting && groups.length > 0 && (
             <p className="px-1.5 pt-1 text-[11px] leading-relaxed text-muted-foreground">
-              New chat — it appears here once you send the first message.
+              New chat — it lands here when you send.
             </p>
           )}
 
           {groups.length === 0 && (
             <p className="px-1.5 pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-              No conversations yet. Describe a change to start one.
+              No chats yet. Ask for a change to start one.
             </p>
           )}
 
@@ -204,7 +204,7 @@ function ThreadRow({
       </button>
 
       <DropdownMenu>
-        <Hint label="Thread options">
+        <Hint label="Chat options">
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"

@@ -11,6 +11,7 @@
     "build:main": "node scripts/build-main.mjs",
     "build:renderer": "vite build",
     "dev": "node scripts/dev.mjs",
+    "icons": "node scripts/render-icons.mjs",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "start": "npm run build && electron ."
   },

@@ -19,7 +19,7 @@ interface Command {
   hint?: string;
   shortcut?: string;
   icon: React.ElementType;
-  group: "Actions" | "Recent threads";
+  group: "Actions" | "Recent chats";
   run: () => void;
   disabled?: boolean;
 }
@@ -70,7 +70,7 @@ export function CommandPalette({
       },
       {
         id: "screenshot",
-        label: "Capture the Studio window",
+        label: "Screenshot Studio",
         icon: SquareTerminal,
         group: "Actions",
         disabled: !place,
@@ -99,7 +99,7 @@ export function CommandPalette({
             label: thread.title,
             hint: `${group.project.name} · ${relativeTime(thread.updatedAt)}`,
             icon: MessageSquare,
-            group: "Recent threads",
+            group: "Recent chats",
             run: close(() => void harness.openThread(thread.id)),
           })),
         )
@@ -142,7 +142,7 @@ export function CommandPalette({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="top-[18%] max-w-[560px] translate-y-0 overflow-hidden p-0" onKeyDown={onKeyDown}>
-        <DialogTitle className="sr-only">Search commands and threads</DialogTitle>
+        <DialogTitle className="sr-only">Search commands and chats</DialogTitle>
 
         <div className="relative border-b">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -150,7 +150,7 @@ export function CommandPalette({
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search commands and threads…"
+            placeholder="Search commands and chats…"
             spellCheck={false}
             className="h-12 w-full bg-transparent pr-3 pl-10 text-[13.5px] outline-none placeholder:text-muted-foreground"
             style={{ userSelect: "text", cursor: "auto" }}

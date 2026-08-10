@@ -43,9 +43,7 @@ function requirePlace(): { placeId: number; name: string } {
   const place = connectedPlace();
 
   if (!place) {
-    throw new Error(
-      "Connect Roblox Studio first. Conversations are filed against the place they are about, so there is nowhere to put this one yet.",
-    );
+    throw new Error("Connect Roblox Studio first — a chat belongs to a place.");
   }
 
   return place;
@@ -55,6 +53,18 @@ function requirePlace(): { placeId: number; name: string } {
 // bundled, so a module-relative path would depend on the bundle layout.
 const appRoot = (): string => app.getAppPath();
 const isDev = !app.isPackaged;
+
+/**
+ * The app icon, copied out of the repo's asset bank at build time.
+ *
+ * Windows wants the .ico for the taskbar, everything else takes the PNG.
+ * Missing icons are not worth failing to start over, so this can return null.
+ */
+function iconPath(): string | null {
+  const file = process.platform === "win32" ? "icon.ico" : "icon.png";
+  const path = join(appRoot(), "dist", "icons", file);
+  return existsSync(path) ? path : null;
+}
 
 let window: BrowserWindow | null = null;
 let server: LuuCodeServer | null = null;
@@ -81,6 +91,8 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 async function createWindow(): Promise<void> {
+  const icon = iconPath();
+
   window = new BrowserWindow({
     // Wide enough that the thread list, the conversation, and the Studio dock
     // can all be open without the conversation being squeezed.
@@ -90,6 +102,7 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     backgroundColor: "#171717",
     title: "Luu Code",
+    ...(icon ? { icon } : {}),
     autoHideMenuBar: true,
     // The window chrome is part of the app: the title bar carries the Studio
     // connection state, which the user needs visible at all times.
@@ -239,6 +252,16 @@ function record(entry: TranscriptEntry): void {
 }
 
 async function bootstrap(): Promise<void> {
+  // Windows groups taskbar buttons and picks the icon by this id; without it,
+  // a development run shows up as Electron.
+  if (process.platform === "win32") app.setAppUserModelId("dev.luumen.code");
+
+  // macOS takes the dock icon from the bundle once packaged, but not before.
+  if (process.platform === "darwin" && app.dock) {
+    const icon = iconPath();
+    if (icon) app.dock.setIcon(icon);
+  }
+
   threads = new ThreadStore(app.getPath("userData"));
   settings = new SettingsStore(app.getPath("userData"));
 

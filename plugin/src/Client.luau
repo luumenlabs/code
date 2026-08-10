@@ -205,7 +205,7 @@ local function handshake(): boolean
 	local body = response.body
 
 	if body == nil then
-		setStatus("disconnected", "The local server returned an unreadable response")
+		setStatus("disconnected", "Luu Code sent something this plugin could not read")
 		return false
 	end
 
@@ -214,25 +214,25 @@ local function handshake(): boolean
 		state.endpointId = body.endpointId
 		state.pairingCode = nil
 		saveToken(body.token)
-		setStatus("connected", string.format("Connected as %s", state.place.name))
+		setStatus("connected", "Luu Code can work in this place now")
 		return true
 	end
 
 	if body.status == "pairing" then
 		state.sessionId = body.sessionId
 		state.pairingCode = body.pairingCode
-		setStatus("pairing", "Approve this Studio session in Luu Code")
+		setStatus("pairing", "Approve this code in Luu Code to connect")
 
 		if waitForApproval() then
 			state.pairingCode = nil
-			setStatus("connected", string.format("Connected as %s", state.place.name))
+			setStatus("connected", "Luu Code can work in this place now")
 			return true
 		end
 
 		return false
 	end
 
-	setStatus("disconnected", body.error and body.error.message or "The local server declined the connection")
+	setStatus("disconnected", body.error and body.error.message or "Luu Code turned down the connection")
 	return false
 end
 
@@ -285,7 +285,7 @@ local function sync(wait: boolean): boolean
 			-- The server no longer knows this session. Pair again rather than
 			-- retrying forever against something that will never answer.
 			Client.forgetToken()
-			setStatus("disconnected", "Luu Code needs this Studio session to reconnect")
+			setStatus("disconnected", "Luu Code lost this session. Reconnect to pair again.")
 		else
 			setStatus("disconnected", response.error or "Lost contact with Luu Code")
 		end

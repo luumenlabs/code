@@ -18,6 +18,7 @@
     "test": "turbo run test",
     "dev": "turbo run dev --filter=@luumen/code-app",
     "serve": "turbo run build --filter=@luumen/code-server && node packages/server/bin/luu-code.js serve",
+    "assets:icons": "pnpm --filter @luumen/code-app run icons",
     "plugin:install": "cd plugin && luu install",
     "plugin:build": "cd plugin && luu build",
     "plugin:dev": "cd plugin && luu dev",

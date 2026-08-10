@@ -15,12 +15,13 @@
  * whole class of module-format problems.
  */
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
+const repoRoot = resolve(root, "..", "..");
 
 await build({
   entryPoints: [join(root, "src", "main", "main.ts")],
@@ -55,5 +56,15 @@ await build({
 
 mkdirSync(join(root, "dist", "main"), { recursive: true });
 copyFileSync(join(root, "src", "main", "preload.cjs"), join(root, "dist", "main", "preload.cjs"));
+
+// The window and taskbar icons come from the shared asset bank at the repo
+// root, copied in so the packaged app carries them.
+mkdirSync(join(root, "dist", "icons"), { recursive: true });
+
+for (const icon of ["icon.png", "icon.ico", "icon.icns"]) {
+  const source = join(repoRoot, "assets", icon);
+  if (existsSync(source)) copyFileSync(source, join(root, "dist", "icons", icon));
+  else console.warn(`Missing ${icon} — run \`pnpm assets:icons\`.`);
+}
 
 console.log("Built the main process.");

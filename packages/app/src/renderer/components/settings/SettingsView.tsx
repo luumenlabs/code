@@ -1,10 +1,10 @@
 /**
  * Settings.
  *
- * Sectioned rather than a single scrolling wall, and deliberately short: every
- * row here is something a user has a reason to change. Anything Luu Code can
- * work out for itself — which CLIs exist, which models they offer, which place
- * is connected — is shown as fact, not asked as a question.
+ * Deliberately short: every row here is something a user has a reason to
+ * change. Anything Luu Code can work out for itself — which CLIs exist, which
+ * models they offer, which place is connected — is shown as fact, not asked as
+ * a question.
  */
 import * as React from "react";
 import {
@@ -39,12 +39,12 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ElementType }> =
 ];
 
 const PERMISSION_COPY: Record<PermissionGroup, { label: string; detail: string }> = {
-  inspect: { label: "Inspect Studio", detail: "Read the DataModel, scripts, and runtime state" },
-  edit: { label: "Edit the place", detail: "Create, change, and delete instances and scripts" },
+  inspect: { label: "Look around", detail: "Read your instances, scripts, and what the game is doing" },
+  edit: { label: "Change the place", detail: "Create, edit, and delete instances and scripts" },
   playtest: { label: "Playtest", detail: "Start and stop the game" },
-  exec: { label: "Run Luau", detail: "Execute code inside your Studio session" },
-  input: { label: "Send input", detail: "Click and type in the running game" },
-  screenshot: { label: "Screenshots", detail: "Capture the Studio window" },
+  exec: { label: "Run Luau", detail: "Run code inside your Studio session" },
+  input: { label: "Play the game", detail: "Click and type in the running game" },
+  screenshot: { label: "Screenshots", detail: "See your Studio window" },
 };
 
 export function SettingsView({ harness, onClose }: { harness: Harness; onClose: () => void }): React.JSX.Element {
@@ -122,8 +122,8 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
       }
     >
       <Row
-        label="Name conversations automatically"
-        detail="After the first message, a small model reads it once and names the thread. Costs one cheap call per conversation."
+        label="Name chats automatically"
+        detail="Titles each chat from your first message, instead of using the message itself."
       >
         <Switch
           checked={title.enabled}
@@ -134,10 +134,7 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
       </Row>
 
       {title.enabled && (
-        <Row
-          label="Naming model"
-          detail="Small and fast is the right trade; the answer is three words. The CLI follows from the model, as everywhere else."
-        >
+        <Row label="Naming model" detail="Which model writes the title. A small, fast one is plenty.">
           <Select
             value={title.model ?? ""}
             onChange={chooseTitleModel}
@@ -152,7 +149,7 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
         </Row>
       )}
 
-      <Row label="Show the agent's reasoning" detail="Thinking appears in the transcript instead of being folded away.">
+      <Row label="Show the agent's thinking" detail="Include its reasoning in the chat as it works.">
         <Switch
           checked={settings.showThinking}
           onCheckedChange={(showThinking) => harness.updateSettings({ showThinking })}
@@ -160,8 +157,8 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
       </Row>
 
       <Row
-        label="Jump to output on the first error"
-        detail="A runtime error opens the Output tab, since it is usually what the agent is about to react to."
+        label="Jump to output on an error"
+        detail="Open the Output tab as soon as the running game throws."
       >
         <Switch
           checked={settings.followRuntimeErrors}
@@ -189,7 +186,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Providers"
-      description="Luu Code drives the coding agents you already have. It never asks for an API key and never proxies a model."
+      description="Luu Code uses the coding agents already installed on this machine. It never asks for an API key."
       action={
         <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={refreshing}>
           {refreshing ? <Loader2 className="animate-spin" /> : <RotateCcw />}
@@ -220,9 +217,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
 
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
               {agent.installed
-                ? `${models.length} model${models.length === 1 ? "" : "s"} available${
-                    agent.id === "codex" ? ", read from the CLI itself" : ", filtered by your CLI version"
-                  }.`
+                ? `${models.length} model${models.length === 1 ? "" : "s"} available.`
                 : `${agent.problem ?? ""} ${agent.installHint}`}
             </p>
 
@@ -260,7 +255,7 @@ function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Permissions"
-      description="What the agent may do to the connected place. These apply to every conversation and can also be changed from the composer."
+      description="What the agent is allowed to do to your place. You can change this mid-chat from the composer too."
     >
       {PERMISSION_GROUPS.map((group) => (
         <Row key={group} label={PERMISSION_COPY[group].label} detail={PERMISSION_COPY[group].detail}>
@@ -281,11 +276,11 @@ function Connection({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Connection"
-      description="Studio connects to a server running inside this app. Nothing leaves your machine."
+      description="Studio talks to a server running inside this app. Nothing leaves your machine."
     >
       <Fact label="Server" value={`127.0.0.1:${snapshot?.serverPort ?? "—"}`} />
       <Fact label="MCP command" value={snapshot?.mcpCommand ?? "—"} />
-      <Fact label="Plugin sessions" value={sessions.length === 0 ? "None connected" : `${sessions.length} connected`} />
+      <Fact label="Studio windows" value={sessions.length === 0 ? "None connected" : `${sessions.length} connected`} />
 
       {sessions.map((session) => (
         <div key={session.id} className="border-b py-3 last:border-b-0">

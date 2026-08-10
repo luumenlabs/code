@@ -180,9 +180,9 @@ function StudioDetails({
           onClick={() => void harness.run("view.screenshot", { source: "studio" })}
         >
           <Camera />
-          Capture
+          Screenshot
         </Button>
-        <Hint label="Disconnect and forget this pairing">
+        <Hint label="Disconnect this place">
           <Button variant="ghost" size="icon-sm" onClick={() => void window.luuCode.disconnectSession(session.id)}>
             <Unplug />
           </Button>
@@ -200,12 +200,11 @@ function StudioEmpty(): React.JSX.Element {
         Not connected
       </Badge>
       <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-        Open your place in Roblox Studio. The Luu Code panel there shows a six-digit code, and Luu Code will ask you to
-        approve it.
+        Open your place in Roblox Studio. The Luu Code panel there shows a six-digit code — approve it here.
       </p>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        No plugin yet? Build it with <code className="font-mono text-foreground/80">luu build</code> in{" "}
-        <code className="font-mono text-foreground/80">plugin/</code>.
+        No panel in Studio? Run <code className="font-mono text-foreground/80">luu build</code> in{" "}
+        <code className="font-mono text-foreground/80">plugin/</code>, then restart Studio.
       </p>
     </div>
   );
@@ -214,7 +213,7 @@ function StudioEmpty(): React.JSX.Element {
 /**
  * Only the unavailable capabilities are listed, with the reason. A list of
  * things that work is noise; a list of things that do not, and why, is the
- * answer to "why did the agent just fail". Spec section 49.
+ * answer to "why did the agent just fail".
  */
 function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Element | null {
   const blocked = report.capabilities.filter((entry) => !entry.available && entry.reason);
@@ -249,10 +248,10 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
   return (
     <div className="flex flex-col gap-2">
       <div className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-        Use from another agent
+        Use from your terminal
       </div>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        Point any MCP-capable agent at the local server and it gets the same Roblox tools.
+        Any MCP-capable agent can use these same Roblox tools.
       </p>
       <div className="flex items-center gap-1 rounded-md border bg-background p-1.5">
         <code className="selectable min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted-foreground">{snippet}</code>
@@ -262,7 +261,7 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
       </div>
       <p className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
         <KeyRound className="size-3" />
-        127.0.0.1:{port}, token-authenticated, never leaves this machine.
+        Runs on 127.0.0.1:{port}. Nothing leaves this machine.
       </p>
     </div>
   );
@@ -303,7 +302,7 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
         <div className="flex flex-col gap-1 px-2.5 pb-3 font-mono text-[10.5px] leading-[1.6]">
           {shown.length === 0 && (
             <p className="py-2 font-sans text-[11.5px] text-muted-foreground">
-              Nothing yet. Studio output appears here while the game runs.
+              Nothing yet. Whatever Studio prints shows up here.
             </p>
           )}
           {shown.map((entry) => (

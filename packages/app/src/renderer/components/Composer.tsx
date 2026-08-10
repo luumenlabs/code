@@ -37,10 +37,10 @@ export function Composer({
   const ready = studioConnected && hasModel && session?.state !== "error";
 
   const placeholder = !studioConnected
-    ? "Connect Roblox Studio to start a conversation."
+    ? "Connect Roblox Studio to start."
     : !hasModel
       ? "Pick a model below to start."
-      : "Describe a change to your Roblox experience…";
+      : "Describe a change to your game…";
 
   React.useLayoutEffect(() => {
     const element = textarea.current;

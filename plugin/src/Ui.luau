@@ -3,8 +3,8 @@
 	The Studio-side connection panel.
 
 	Deliberately small. The plugin's job in the UI is to answer three questions:
-	is Studio connected, which code is being paired, and how do I recover. Spec
-	sections 8 and 25 put everything else in the harness.
+	is Studio connected, which code is being paired, and how do I recover.
+	Everything else belongs in the app.
 ]]
 
 local Client = require(script.Parent.Client)
@@ -161,13 +161,13 @@ function Ui.create(hostPlugin: Plugin)
 		codeFrame.Visible = state.pairingCode ~= nil
 		codeLabel.Text = state.pairingCode or ""
 
-		placeLabel.Text = state.place and string.format("Place: %s", state.place.name) or ""
+		placeLabel.Text = state.place and state.place.name or ""
 
 		if state.run ~= nil then
-			runLabel.Text = state.run.running and string.format("Playtest running (%s)", state.run.realm) or "Edit mode"
+			runLabel.Text = state.run.running and string.format("Playtesting (%s)", state.run.realm) or "Edit mode"
 		end
 
-		portLabel.Text = string.format("Local server port %d · plugin %s", state.port, Constants.PLUGIN_VERSION)
+		portLabel.Text = string.format("Port %d · plugin %s", state.port, Constants.PLUGIN_VERSION)
 	end
 
 	render(Client.state())

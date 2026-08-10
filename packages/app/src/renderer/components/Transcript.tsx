@@ -40,8 +40,8 @@ const CATEGORY: Record<ActivityEvent["category"], { label: string; icon: React.E
 };
 
 const EXAMPLES = [
-  "Fix the inventory UI so it opens, and make the buy button actually purchase the selected item.",
   "The shop errors when I click Buy. Play it, find out why, and fix it.",
+  "Make the inventory UI open, and make the buy button actually buy the selected item.",
   "Make the lobby spawn brighter, then show me a screenshot.",
 ];
 
@@ -95,11 +95,11 @@ function EmptyState({ onExample }: { onExample: (text: string) => void }): React
         <BrandMark className="mb-5 size-8" />
 
         <h1 className="font-display text-[26px] leading-tight font-bold tracking-tight">
-          Use Claude Code or Codex with Roblox Studio
+          What should we change?
         </h1>
         <p className="mt-3 max-w-[52ch] text-[13.5px] leading-relaxed text-muted-foreground">
-          Describe a change to your game. The agent can inspect the DataModel, edit scripts, start a playtest, read
-          Studio output, interact with the running game, and check its own work.
+          Say it in your own words. The agent can edit your scripts, press Play, read the errors, click around the
+          running game, and check that it worked.
         </p>
 
         <div className="mt-7 flex flex-col gap-1">

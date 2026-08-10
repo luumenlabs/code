@@ -1,66 +1,81 @@
-# Luu Code
+<div align="center">
+  <img src="assets/banner.png" alt="Luu Code" width="680">
+</div>
+
+<div align="center">
 
 **Use Claude Code or Codex with Roblox Studio.**
 
-Luu Code is an open-source Roblox Studio harness for coding agents. It gives the agent you already use the ability to inspect and edit your place, run it, watch what happens, interact with it, and check its own work.
-
-It is not another AI Roblox builder. There are no credits to buy, no model API key to provide, and no proprietary agent inside it. You bring Claude Code or Codex; Luu Code brings Roblox Studio.
+</div>
 
 ---
 
-## Why
+Luu Code hands your coding agent the keys to your open place. It can read the DataModel, edit scripts, press Play, watch the output, click around the running game, take screenshots, and fix what it broke — while you watch.
 
-Coding agents are good at editing files and blind to everything else about a Roblox project.
-
-Most of a Roblox game does not exist on disk at all. The DataModel, script sources, GUI layout, and runtime state live inside Studio, where an agent that only reads files cannot reach them.
-
-So a coding agent can describe a change but not make it, and certainly not check it: it cannot press Play, read the error that appeared, click the button it just wired up, or tell whether any of it worked.
-
-Luu Code gives it the Studio connection that closes that gap. It works through Studio only — it does not read or write your files.
+You bring Claude Code or Codex. Luu Code brings Studio. There are no credits, no API key, and no AI of its own.
 
 ## What the agent can do
 
 | | |
 |---|---|
-| **Inspect** | Services, instance trees, properties, attributes, tags, selection, script source |
-| **Edit** | Create, delete, rename, reparent, clone, set properties, targeted script edits |
-| **Playtest** | Start and stop Play or Run mode, wait for the session to be ready, restart |
-| **Observe** | Studio output with cursors, so "what did *my* change break" is answerable |
-| **Runtime** | Live players, characters, PlayerGui, camera, and arbitrary Luau evaluation |
-| **See** | Screenshots of the Studio window, passed straight into multimodal agents |
-| **Interact** | Keyboard, mouse, and GUI clicks resolved to real on-screen elements |
+| **Look around** | Services, instance trees, properties, attributes, tags, your selection, script source |
+| **Change things** | Create, delete, rename, reparent, clone, set properties, edit scripts |
+| **Playtest** | Start and stop Play and Run mode, restart, wait for the game to be ready |
+| **Read output** | Everything Studio prints, including the error your last change caused |
+| **Poke the game** | Players, characters, PlayerGui, the camera, and Luau it runs live |
+| **See the screen** | Screenshots of Studio, handed straight to the agent |
+| **Play the game** | Keyboard, mouse, and clicks on real on-screen buttons |
 
-Every operation reports what it actually changed, or fails with a code the agent can act on.
+## Before you start
+
+- **Roblox Studio**
+- **Claude Code or Codex**, installed and signed in — Luu Code drives whichever you have
+- **Node 20.11+ and pnpm**, to build the app
+- **[Luumen](https://luumen.dev) (`luu`)**, to build the Studio plugin
 
 ## Install
-
-The harness is a pnpm + Turborepo workspace. The Studio plugin is a [Luumen](https://luumen.dev) project, so it is built with `luu`.
 
 ```bash
 pnpm install
 pnpm build
 
 cd plugin
-luu install     # Rojo, StyLua, Selene, luau-lsp, Lune, via Rokit (build tooling only)
+luu install     # build tools, via Rokit
 luu build       # builds straight into your Studio plugins folder
 ```
 
-Then restart Roblox Studio. The Luu Code panel appears in the Plugins tab.
+Restart Roblox Studio. **Luu Code** appears in the Plugins tab.
 
-While working on the plugin, `luu dev` rebuilds into the plugins folder on every save.
+## Start
 
-### First run
+```bash
+pnpm dev
+```
 
 1. Open your place in Roblox Studio.
-2. Start Luu Code (`pnpm dev`) or the server alone (`pnpm serve`).
-3. Studio shows a six-digit code. Approve it in Luu Code.
-4. Pick Claude Code or Codex, and describe what you want changed.
+2. Studio shows a six-digit code.
+3. Approve it in Luu Code — check the digits match.
+4. Pick a model, and say what you want changed.
 
-The pairing step exists so that discovering the local port is not enough to control your Studio session. See [docs/security.md](docs/security.md).
+Try:
 
-## Using it from another agent interface
+> The shop errors when I click Buy. Play it, find out why, and fix it.
 
-Luu Code exposes the same Roblox capabilities over a local MCP server, so you can keep whatever agent interface you already prefer:
+> Make the lobby spawn brighter, then show me a screenshot.
+
+Chats are saved per place. Open a place and its history is there.
+
+## What it is allowed to do
+
+The chip beside the send button controls the agent's access — looking, editing, playtesting, running Luau, sending input, and screenshots, each on its own switch. Turn any of them off mid-conversation and the agent is told it no longer has them.
+
+Studio only connects after you approve a pairing code, so knowing the port is not enough to reach your place. Everything runs on `127.0.0.1` and nothing is sent anywhere.
+
+Luu Code works through Studio. It does not read or write your files.
+
+## Prefer your own terminal?
+
+The same Roblox tools are available over MCP, so you can skip the app:
 
 ```bash
 claude mcp add luu-code -- luu-code-mcp
@@ -72,47 +87,21 @@ claude mcp add luu-code -- luu-code-mcp
 command = "luu-code-mcp"
 ```
 
-It attaches to a running Luu Code server if there is one, and starts its own if not. The Electron app does not need to be open. See [docs/mcp.md](docs/mcp.md).
-
-## Conversations belong to a place
-
-A chat is filed against the Roblox place it is about, not a folder on disk. Open a place, and its past conversations are there; connect a different place, and you get that one's.
-
-Studio has to be connected before a conversation can start, because otherwise there is nowhere to file it.
-
-## Layout
-
-```
-packages/protocol/   Shared operation, value, and error definitions
-packages/server/     Local server: Studio bridge, permissions, CLI, MCP
-packages/app/        Electron harness and agent adapters
-plugin/              Roblox Studio plugin (Luau)
-docs/                Architecture, protocol, MCP, plugin, security
-```
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — how the pieces fit and why
-- [Protocol](docs/protocol.md) — operations, values, targets, errors
-- [MCP setup](docs/mcp.md) — connecting an external agent
-- [Studio plugin](docs/plugin.md) — building, installing, capabilities
-- [Security and privacy](docs/security.md) — trust model and what stays local
+It joins a running Luu Code server, or starts one. The app does not have to be open — only Studio.
 
 ## Development
 
 ```bash
-pnpm build            # protocol, server, app, through Turborepo
-pnpm test             # protocol and server test suites
-pnpm typecheck
-pnpm check            # all of the above, plus the plugin checks
+pnpm dev              # the app, with reload
+pnpm serve            # the server on its own
+pnpm check            # build, typecheck, test, plugin lint
+pnpm assets:icons     # re-render the icons from assets/icon.svg
 
 cd plugin
-luu run check         # stylua, selene, luau-lsp
+luu dev               # rebuild into the plugins folder on every save
 ```
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). The Studio connection layer is deliberately isolated so that Roblox changes can be absorbed without touching the harness.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
