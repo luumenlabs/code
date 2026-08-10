@@ -7,13 +7,24 @@
 
 	Tasks:
 
-	  luu build          build straight into the local Studio plugins folder
-	  luu dev            the same, rebuilt on every save
+	  luu build          build into the local Studio plugins folder as
+	                     LuuCodeDev.rbxm, rebuilt on every save with `luu dev`
+	  luu dev            the same, watching
 	  luu run bundle     a plain LuuCode.rbxm artifact, for CI and releases
 	  luu format         stylua
 	  luu lint           selene
 	  luu run analyze    fetch analysis inputs, then luau-lsp
 	  luu run check      what CI runs
+
+	Why `build` and `dev` write LuuCodeDev.rbxm and `bundle` writes
+	LuuCode.rbxm: the two have different jobs. `bundle` produces the artifact a
+	release ships, which is named for the release channel and is what the app
+	packages and installs. `build` and `dev` write into a Studio install that
+	probably already has a release plugin in it, put there by the installed app
+	— overwriting that with a work-in-progress build is how you end up debugging
+	your editor instead of your game. LuuCodeDev.rbxm is the same name the app's
+	own dev channel installs under, so the two routes to a dev plugin agree, and
+	the release plugin is left alone either way.
 
 	Note: the `luu` config parser does not accept comments inside the table
 	below, so anything worth saying about a task is said here.
@@ -34,8 +45,8 @@ return {
 	},
 
 	tasks = {
-		build = "rojo build default.project.json --plugin LuuCode.rbxm",
-		dev = "rojo build default.project.json --plugin LuuCode.rbxm --watch",
+		build = "rojo build default.project.json --plugin LuuCodeDev.rbxm",
+		dev = "rojo build default.project.json --plugin LuuCodeDev.rbxm --watch",
 		bundle = "rojo build default.project.json --output LuuCode.rbxm",
 
 		format = "stylua src",

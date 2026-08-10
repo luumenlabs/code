@@ -90,7 +90,16 @@ luu dev            # rebuild into the Studio plugins folder on every save
 luu run check      # stylua, selene, luau-lsp
 ```
 
-Restart Studio to pick up a new build.
+`luu build` and `luu dev` install as **`LuuCodeDev.rbxm`** — the same name the
+app's dev channel uses, and deliberately not the release plugin's name. Your
+Studio probably already has `LuuCode.rbxm` in it from the installed app;
+overwriting that with a work-in-progress build is how you end up debugging your
+editor instead of your game. `luu run bundle` still writes a plain
+`LuuCode.rbxm` artifact, because that is what a release ships.
+
+With `luu dev` running you never need the app's Install button: the watch owns
+the plugin, so a dev build will not install over it, and the switch in
+Settings → Updates is off for that reason. Restart Studio to pick up a build.
 
 ## Releasing
 

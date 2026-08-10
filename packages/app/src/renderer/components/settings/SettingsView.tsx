@@ -455,6 +455,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
 
   const matched = status.installed && status.installedVersion === status.bundledVersion;
   const canInstall = status.supported && status.bundledVersion !== null;
+  const isDev = harness.snapshot?.channel === "dev";
 
   // The main process already says why it cannot install, when it cannot. The
   // renderer used to carry its own copy of one of those sentences, which meant
@@ -518,13 +519,17 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
         <div className="min-w-0">
           <div className="text-[12.5px] font-medium">Keep the plugin matching the app</div>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-            Reinstalls it whenever Luu Code updates. Studio loads the new one next time it starts.
+            {/* On a dev build the plugin belongs to `luu dev`, which rebuilds it
+                on every save. Reinstalling over that would undo the watch. */}
+            {isDev
+              ? "Off on a dev build: `luu dev` owns the plugin here and rebuilds it on every save."
+              : "Reinstalls it whenever Luu Code updates. Studio loads the new one next time it starts."}
           </p>
         </div>
         <div className="shrink-0 pt-0.5">
           <Switch
-            checked={harness.settings.plugin.autoInstall}
-            disabled={!canInstall}
+            checked={harness.settings.plugin.autoInstall && !isDev}
+            disabled={!canInstall || isDev}
             onCheckedChange={(autoInstall) => harness.updateSettings({ plugin: { autoInstall } })}
           />
         </div>

@@ -150,8 +150,19 @@ export class PluginInstaller {
     return null;
   }
 
-  /** True when installing would change what Studio loads. */
+  /**
+   * True when the app should install on its own.
+   *
+   * Never on the dev channel. There the plugin in Studio is whatever `luu dev`
+   * last built, rebuilt on every save — and quietly replacing it at startup
+   * with the copy staged at package time would undo a watch the contributor is
+   * in the middle of using, in a way that looks like their edits stopped
+   * working. The Install button still works: an explicit press is not a
+   * surprise.
+   */
   needsInstall(): boolean {
+    if (this.channel === "dev") return false;
+
     const status = this.status();
     if (!status.supported || status.bundledVersion === null) return false;
     return !status.installed || status.installedVersion !== status.bundledVersion;
