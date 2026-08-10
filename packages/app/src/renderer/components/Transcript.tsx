@@ -26,6 +26,7 @@ import {
 import type { ActivityEvent } from "@luumen/code-protocol";
 import type { AgentState } from "../../shared/agent.js";
 import { BrandMark } from "@/components/Brand";
+import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -92,24 +93,55 @@ export function Transcript({
   const turns = splitTurns(visible);
 
   return (
-    <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
-      {/* The column width matches the composer's card, so the conversation and
-          the box you answer in line up down both edges. */}
-      <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-7 py-7">
-        {turns.map((turn, index) => (
-          <Turn
-            key={turn[0]!.id}
-            items={turn}
-            busy={busy}
-            // The turn in progress has the live "Working for" line under it
-            // already; a second, frozen clock beside it would be nonsense.
-            live={busy && index === turns.length - 1}
-          />
-        ))}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
+        {/* The column width matches the composer's card, so the conversation and
+            the box you answer in line up down both edges. */}
+        <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-7 py-7">
+          {turns.map((turn, index) => (
+            <Turn
+              key={turn[0]!.id}
+              items={turn}
+              busy={busy}
+              // The turn in progress has the live "Working for" line under it
+              // already; a second, frozen clock beside it would be nonsense.
+              live={busy && index === turns.length - 1}
+            />
+          ))}
 
-        {busy && <Working state={state} since={turns[turns.length - 1]?.[0]?.at ?? null} />}
-      </div>
-    </ScrollArea>
+          {busy && <Working state={state} since={turns[turns.length - 1]?.[0]?.at ?? null} />}
+        </div>
+      </ScrollArea>
+
+      {/*
+        Where the conversation goes under the title bar.
+
+        The bar is the chat's own colour now, so a message scrolling past it
+        would otherwise cut off against nothing — a hard edge in the middle of
+        the surface. This softens the last few pixels instead, so text reads as
+        passing beneath the chrome rather than being clipped by it.
+
+        Opaque at the very top, then gone within 20px. Both halves matter: a
+        fade that starts translucent leaves the clip visible through it — you
+        see the line where the header ends, drawn across whatever text is
+        passing — and a fade that stays strong for 40px wipes out a line you
+        were reading. So it is solid exactly where the cut is and clear again
+        almost immediately.
+
+        It fades to `--background` rather than to black on purpose: the point
+        is to be indistinguishable from the bar above it, and the bar is that
+        token. Any other colour, black included, would hide one seam by adding
+        a second.
+      */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 z-10 h-5",
+          "bg-gradient-to-b from-background to-transparent backdrop-blur-[1px]",
+          "[mask-image:linear-gradient(to_bottom,black_50%,transparent)]",
+        )}
+      />
+    </div>
   );
 }
 
@@ -510,7 +542,7 @@ function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.E
       );
 
     case "assistant":
-      return <Prose text={item.text} />;
+      return <Markdown text={item.text} />;
 
     case "thinking":
       return (
@@ -820,39 +852,6 @@ function activityText(activity: ActivityEvent): string {
   }
 
   return parts.join("\n\n");
-}
-
-/**
- * Just enough formatting for agent output: fenced code and paragraphs. A full
- * Markdown renderer would be a dependency and an attack surface for very little
- * gain here.
- */
-function Prose({ text }: { text: string }): React.JSX.Element {
-  const parts = text.split(/```(?:[\w-]*\n)?/);
-
-  return (
-    <div className="selectable flex flex-col gap-2 text-[14px] leading-relaxed">
-      {parts.map((part, index) =>
-        index % 2 === 1 ? (
-          <pre
-            key={index}
-            className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5 font-mono text-[12.5px] leading-relaxed"
-          >
-            {part.replace(/\n$/, "")}
-          </pre>
-        ) : (
-          part
-            .split(/\n{2,}/)
-            .filter((paragraph) => paragraph.trim().length > 0)
-            .map((paragraph, inner) => (
-              <p key={`${index}-${inner}`} className="whitespace-pre-wrap">
-                {paragraph}
-              </p>
-            ))
-        ),
-      )}
-    </div>
-  );
 }
 
 /** Readable in full when opened, so this indents rather than truncating. */

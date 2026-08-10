@@ -57,7 +57,14 @@ export function App(): React.JSX.Element {
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
       <div className="flex h-full flex-col">
-        <TitleBar harness={harness} dockOpen={dockOpen} onToggleDock={() => setDockOpen((open) => !open)} />
+        <TitleBar
+          harness={harness}
+          dockOpen={dockOpen}
+          dockVisible={dockOpen && !settingsOpen}
+          onToggleDock={() => setDockOpen((open) => !open)}
+          dockTab={dockTab}
+          onDockTabChange={setDockTab}
+        />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar
@@ -93,7 +100,7 @@ export function App(): React.JSX.Element {
                 <Composer harness={harness} value={draft} onValueChange={setDraft} />
               </main>
 
-              {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
+              {dockOpen && <RightDock harness={harness} tab={dockTab} />}
             </>
           )}
         </div>

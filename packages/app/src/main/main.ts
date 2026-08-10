@@ -203,11 +203,29 @@ async function createWindow(): Promise<void> {
   // something, so the document's is refused.
   window.on("page-title-updated", (event) => event.preventDefault());
 
+  const contents = window.webContents;
+
   // External links belong in the user's browser, not in a window that can talk
   // to Roblox Studio.
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  /**
+   * Nothing navigates this window away from the app.
+   *
+   * The handler above only sees `window.open` and `target="_blank"`; a plain
+   * link click is a same-window navigation and would replace the renderer —
+   * with no way back, since the app has no address bar. That became reachable
+   * the moment the transcript started rendering Markdown, where the link text
+   * and the href are both written by a model. Links are marked `_blank` so they
+   * route to the browser; this is the backstop for everything else.
+   */
+  contents.on("will-navigate", (event, url) => {
+    if (url === contents.getURL()) return;
+    event.preventDefault();
+    if (/^https?:$/.test(new URL(url).protocol)) void shell.openExternal(url);
   });
 
   const devServer = process.env.LUU_CODE_DEV_SERVER;

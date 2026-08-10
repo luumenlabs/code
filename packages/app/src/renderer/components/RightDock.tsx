@@ -28,7 +28,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Separator, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
+import { Separator, Tabs, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -43,55 +43,60 @@ const TONE: Record<OutputEntry["type"], string> = {
   error: "text-destructive",
 };
 
-export function RightDock({
-  harness,
-  tab,
-  onTabChange,
-}: {
-  harness: Harness;
-  tab: DockTab;
-  onTabChange: (tab: DockTab) => void;
-}): React.JSX.Element | null {
+/**
+ * The dock, starting at its content.
+ *
+ * The Studio/Output switcher used to sit in a full-height row of its own, which
+ * put two 56px bars on top of each other once the title bar took the dock's
+ * surface — the tabs read as floating below a band of nothing. The switcher now
+ * lives in the title bar's dock segment, where that space already was, and the
+ * panel opens straight onto what it is showing.
+ */
+export function RightDock({ harness, tab }: { harness: Harness; tab: DockTab }): React.JSX.Element | null {
   const snapshot = harness.snapshot;
   if (!snapshot) return null;
 
-  const errors = harness.output.filter((entry) => entry.type === "error").length;
-
   return (
     <aside className="flex h-full min-h-0 w-dock shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar">
-      <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)} className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-topbar shrink-0 items-center gap-2 border-b border-sidebar-border px-2">
-          <TabsList>
-            <TabsTrigger value="studio">
-              <Blocks className="size-3" />
-              Studio
-            </TabsTrigger>
-            <TabsTrigger value="output">
-              Output
-              {errors > 0 && <span className="ml-0.5 text-destructive">{errors}</span>}
-            </TabsTrigger>
-          </TabsList>
-
-          <span className="flex-1" />
-
-          {tab === "output" && (
-            <Hint label="Clear output">
-              <Button variant="ghost" size="icon-sm" onClick={harness.clearOutput}>
-                <Trash2 />
-              </Button>
-            </Hint>
-          )}
-        </div>
-
-        <TabsContent value="studio" className="min-h-0 flex-1 outline-none data-[state=inactive]:hidden">
+      <div className="min-h-0 flex-1">
+        {tab === "studio" ? (
           <StudioTab harness={harness} />
-        </TabsContent>
-
-        <TabsContent value="output" className="min-h-0 flex-1 outline-none data-[state=inactive]:hidden">
-          <OutputTab entries={harness.output} />
-        </TabsContent>
-      </Tabs>
+        ) : (
+          <OutputTab entries={harness.output} onClear={harness.clearOutput} />
+        )}
+      </div>
     </aside>
+  );
+}
+
+/**
+ * The switcher, rendered by the title bar.
+ *
+ * Exported from here rather than written there because what the dock shows is
+ * the dock's business; the title bar only lends it the row.
+ */
+export function DockTabs({
+  tab,
+  onTabChange,
+  errors,
+}: {
+  tab: DockTab;
+  onTabChange: (tab: DockTab) => void;
+  errors: number;
+}): React.JSX.Element {
+  return (
+    <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)}>
+      <TabsList>
+        <TabsTrigger value="studio">
+          <Blocks className="size-3" />
+          Studio
+        </TabsTrigger>
+        <TabsTrigger value="output">
+          Output
+          {errors > 0 && <span className="ml-0.5 text-destructive">{errors}</span>}
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -264,7 +269,13 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
   );
 }
 
-function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
+function OutputTab({
+  entries,
+  onClear,
+}: {
+  entries: OutputEntry[];
+  onClear: () => void;
+}): React.JSX.Element {
   const viewport = React.useRef<HTMLDivElement>(null);
   const [filter, setFilter] = React.useState<"all" | "error" | "warning">("all");
 
@@ -280,7 +291,9 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 gap-1 px-2.5 py-2">
+      {/* Clearing lives beside the filters now that the dock has no header of
+          its own — same row, same concern: what you are looking at. */}
+      <div className="flex shrink-0 items-center gap-1 px-2.5 py-2">
         {(["all", "error", "warning"] as const).map((value) => (
           <button
             key={value}
@@ -293,6 +306,14 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
             {value === "all" ? "All" : `${value}s`}
           </button>
         ))}
+
+        <span className="flex-1" />
+
+        <Hint label="Clear output">
+          <Button variant="ghost" size="icon-sm" onClick={onClear} className="text-muted-foreground">
+            <Trash2 />
+          </Button>
+        </Hint>
       </div>
 
       <ScrollArea className="min-h-0 flex-1" viewportRef={viewport}>
