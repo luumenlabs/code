@@ -45,33 +45,33 @@ function apiModelId(selection: ModelSelection | undefined): string | undefined {
   return effectiveOption(selection, context) === "1m" ? `${selection.model}[1m]` : selection.model;
 }
 
-/** Luu Code's own Roblox tools, once the MCP client has namespaced them. */
-const ROBLOX_TOOL = /^mcp__luu-code__/;
-
-/** Useful here and harmless: planning, and looking something up. */
-const KEPT = new Set(["TodoWrite", "WebSearch", "WebFetch"]);
-
 /**
- * Which tools the agent may use.
+ * The built-in tools that have nothing to work on here.
  *
- * The Roblox tools are allowed outright — the server behind them already
- * enforces the user's permissions, and asks nobody.
+ * Removed from the model's context rather than refused when called: the
+ * working directory is an empty scratch folder, so these can only waste a turn
+ * and then mislead — a failed `Read` reads as "the workspace is broken" rather
+ * than "the game is not on disk".
  *
- * The filesystem and shell tools are refused, and the refusal explains itself.
- * The working directory is an empty scratch folder, so a file-first approach
- * does not merely fail, it fails in a way that reads as "this workspace is
- * broken" — which is what sent an agent off to report a Windows error instead
- * of looking at the user's game. Saying why, in the tool result, corrects it
- * mid-turn rather than after the user has lost a conversation to it.
+ * Named subtractively on purpose. An earlier version allow-listed the Roblox
+ * tools by name and denied everything else, so the moment a tool name arrived
+ * in a shape the pattern did not expect, every Roblox tool was refused at once.
+ * Listing what to remove inverts the worst case: an unrecognised name survives.
  */
-function permission(toolName: string): { behavior: "allow" } | { behavior: "deny"; message: string } {
-  if (ROBLOX_TOOL.test(toolName) || KEPT.has(toolName)) return { behavior: "allow" };
+const NO_FILESYSTEM_HERE = [
+  "Bash",
+  "BashOutput",
+  "KillShell",
+  "Read",
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Glob",
+  "Grep",
+  "LS",
+];
 
-  return {
-    behavior: "deny",
-    message: `${toolName} is not available in Luu Code, and there is no source tree here — the working directory is an empty scratch folder. The game is a live Roblox Studio session: use the luu-code tools to inspect and change it.`,
-  };
-}
 
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = "claude" as const;
@@ -133,22 +133,31 @@ export class ClaudeAdapter implements AgentAdapter {
       // is. Without the second half it reasons about the game as files.
       systemPrompt: { type: "preset", preset: "claude_code", append: HARNESS_BRIEFING },
       ...(sdkEffort(effort) ? { effort: sdkEffort(effort) } : {}),
-      permissionMode: options.permissionMode as ClaudeQueryOptions["permissionMode"],
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
       ...(this.sessionId ? { resume: this.sessionId } : {}),
       // Luu Code's Roblox tools, handed to the agent as an MCP server.
       mcpServers: {
         "luu-code": { command: options.mcp.command, args: options.mcp.args, env: options.mcp.env },
       },
-      // Luu Code enforces permissions itself, at the server, where the user can
-      // see and change them mid-conversation. A second approval prompt, in a
-      // CLI nobody is watching, would only stall the turn.
-      //
-      // Decided in code rather than through an allow-list of tool names: a
-      // name-matching rule that silently stops matching leaves the agent with
-      // no tools at all, which is the worst failure this product has. A
-      // callback either runs or does not.
-      canUseTool: (toolName) => Promise.resolve(permission(toolName)),
+      /**
+       * Luu Code is the permission system, so the CLI's is turned off.
+       *
+       * This is not a shortcut. Every Roblox operation is already checked
+       * against the user's own permission groups by the server behind the MCP
+       * tools, where the user can see them and revoke them mid-conversation.
+       * The CLI's layer exists to protect a filesystem this session does not
+       * have, and it has no way to ask anyone anything: `acceptEdits` covers
+       * file edits and nothing else, so every MCP call went to a prompt that no
+       * one could answer and came back to the model as "user cancelled MCP tool
+       * call". There was no user, and nobody cancelled anything.
+       *
+       * What the filesystem tools would have reached is removed outright
+       * instead, which is a stronger guarantee than refusing them one call at a
+       * time — the model never sees them.
+       */
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      disallowedTools: NO_FILESYSTEM_HERE,
       abortController: abort,
     };
 

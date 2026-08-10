@@ -141,6 +141,24 @@ export class CodexAdapter implements AgentAdapter {
     const tier = selection?.options.find((entry) => entry.id === "serviceTier")?.value;
 
     const overrides = [
+      /**
+       * Nobody is here to approve anything.
+       *
+       * Codex decides what needs approval partly from whether it trusts the
+       * project directory, and Luu Code runs the agent in a scratch folder
+       * under the app's own storage — a path no user has ever marked trusted,
+       * and never will. Untrusted plus non-interactive means every MCP call
+       * came back to the model as "user cancelled MCP tool call", which is a
+       * confusing thing to read when no user was asked and nothing was
+       * cancelled.
+       *
+       * Approvals off, sandbox untouched: the shell stays constrained by
+       * whatever policy the user's own config sets, and the Roblox tools are
+       * checked by Luu Code's permissions, which is where the user can
+       * actually see and change them.
+       */
+      "-c",
+      `approval_policy=${toml("never")}`,
       "-c",
       `mcp_servers.luu-code.command=${toml(options.mcp.command)}`,
       "-c",

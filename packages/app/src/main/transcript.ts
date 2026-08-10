@@ -68,9 +68,18 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
 
     case "tool-result": {
       const previous = existing(event.id);
-      // A result for a Roblox tool has no row to attach to, by design.
-      if (!previous || previous.kind !== "tool") return null;
-      return { ...previous, result: event.text, isError: event.isError };
+      if (previous && previous.kind === "tool") return { ...previous, result: event.text, isError: event.isError };
+
+      // A Roblox tool has no row of its own, by design — its work appears as
+      // the operation it performed. But a call that fails performs nothing, so
+      // it produces no operation either, and without this the whole thing
+      // vanishes: the user sees the agent say it could not reach Studio, with
+      // nothing in the transcript to say why.
+      if (event.isError && event.text.trim().length > 0) {
+        return { kind: "notice", id: nextId("n"), at: Date.now(), text: event.text, tone: "error" };
+      }
+
+      return null;
     }
 
     case "error":
