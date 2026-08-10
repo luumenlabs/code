@@ -5,12 +5,11 @@
  * GPT model is choosing Codex, choosing a Claude model is choosing Claude Code.
  * Asking for both was asking the same question twice — and so was splitting the
  * model off from its reasoning level, which is the same decision made twice.
- * Picking the model and dialling it in happen in one place.
  *
- * The list is filtered by a provider rail rather than shown all at once —
- * fifteen models across two vendors is a wall of text, and the user almost
- * always knows which vendor they want before they know which model. Searching
- * drops the rail, because a search is a question about everything.
+ * So it is one surface with two columns: the models on the left, the settings
+ * for whichever one is selected on the right. Picking a model does not close
+ * anything, because picking a model is usually the first half of the thought —
+ * the second half is dialling it in, and that now happens without reopening.
  *
  * A star saves the model *and* the settings it is on, so "Opus 5 on Max" and
  * "Opus 5 on Low" are two favourites rather than one, and picking either is a
@@ -20,8 +19,9 @@
  * this build still shows up.
  */
 import * as React from "react";
-import { ChevronDown, ChevronRight, CircleAlert, Search, Star } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleAlert, Search, Star } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { Hint } from "@/components/ui/tooltip";
 import { PROVIDER_LABEL, ProviderIcon } from "@/components/ProviderIcon";
 import { cn } from "@/lib/utils";
@@ -72,17 +72,14 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   // Read through a ref so starring a setup does not re-run this: the star is a
   // bookmark, not a navigation, and yanking the list out from under the click
   // loses the user's place.
-  const railDefaults = React.useRef({ hasFavourites: false, provider: undefined as Rail | undefined });
-  railDefaults.current = {
-    hasFavourites: favourites.length > 0,
-    provider: active?.provider ?? providers[0],
-  };
+  const openingRail = React.useRef<Rail | undefined>(undefined);
+  openingRail.current = active?.provider ?? providers[0];
 
-  // Open where the user left off rather than on whichever provider sorts first.
+  // Opens on the provider you are actually using. Favourites are one click
+  // away on the rail, but they are a shortcut, not where you are.
   React.useEffect(() => {
     if (!open) return;
-    const { hasFavourites, provider } = railDefaults.current;
-    setRail(hasFavourites ? "favorites" : (provider ?? "claude"));
+    setRail(openingRail.current ?? "claude");
   }, [open]);
 
   const searching = query.trim().length > 0;
@@ -118,22 +115,13 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
     [harness],
   );
 
-  /** Picking anything from the list is a decision; tuning options is not. */
-  const commit = React.useCallback(
-    (next: ModelSelection) => {
-      apply(next);
-      setOpen(false);
-      setQuery("");
-    },
-    [apply],
-  );
-
   const choose = React.useCallback(
     (model: ModelInfo) => {
-      // Selecting the model selects the CLI behind it, on that model's defaults.
-      commit(createSelection(model.provider, model.slug));
+      // Selecting the model selects the CLI behind it, on that model's
+      // defaults. The picker stays open: its settings are right there.
+      apply(createSelection(model.provider, model.slug));
     },
-    [commit],
+    [apply],
   );
 
   React.useEffect(() => {
@@ -144,8 +132,11 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
       const model = current[index];
       if (!Number.isInteger(index) || !model) return;
 
+      // A shortcut is someone who already knows what they want, so this one
+      // does close.
       event.preventDefault();
       choose(model);
+      setOpen(false);
     };
 
     window.addEventListener("keydown", onKey);
@@ -217,8 +208,8 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
         <ChevronDown className="size-3 shrink-0 opacity-60" />
       </PopoverTrigger>
 
-      <PopoverContent align="start" side="top" className="w-[360px] overflow-hidden p-0">
-        <div className="flex">
+      <PopoverContent align="start" side="top" collisionPadding={12} className="w-[480px] overflow-hidden p-0">
+        <div className="flex items-stretch">
           {!searching && (
             <div className="flex w-11 shrink-0 flex-col gap-1 border-r bg-muted/30 p-1">
               <RailButton label="Favourites" active={rail === "favorites"} onClick={() => setRail("favorites")}>
@@ -247,8 +238,8 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
             </div>
           )}
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="relative border-b">
+          <div className="flex min-w-0 flex-1 flex-col border-r">
+            <div className="relative h-9 shrink-0 border-b">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={search}
@@ -256,12 +247,12 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search models…"
                 spellCheck={false}
-                className="h-9 w-full bg-transparent pr-2 pl-8 text-[12.5px] outline-none placeholder:text-muted-foreground"
+                className="h-full w-full bg-transparent pr-2 pl-8 text-[12.5px] outline-none placeholder:text-muted-foreground"
                 style={{ userSelect: "text", cursor: "auto" }}
               />
             </div>
 
-            <div className="max-h-[260px] overflow-y-auto p-1">
+            <div className="max-h-[300px] min-h-[180px] overflow-y-auto p-1">
               {showingFavourites &&
                 favourites.map((favourite) => (
                   <FavouriteRow
@@ -269,7 +260,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                     favourite={favourite}
                     model={models.find((model) => model.slug === favourite.model)}
                     active={selectionKey(favourite) === currentKey}
-                    onChoose={() => commit({ model: favourite.model, options: favourite.options })}
+                    onChoose={() => apply({ model: favourite.model, options: favourite.options })}
                     onRemove={(event) => removeStar(favourite.id, event)}
                   />
                 ))}
@@ -288,8 +279,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
               {showingFavourites && favourites.length === 0 && (
                 <p className="px-2 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
-                  No favourites yet. Set a model up the way you like it and star it below — the settings are saved with
-                  it.
+                  No favourites yet. Set a model up the way you like it, then star it — the settings are saved with it.
                 </p>
               )}
 
@@ -326,22 +316,20 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                 ))}
             </div>
 
-            {info && selection && (
-              <Setup
-                model={info}
-                selection={selection}
-                starred={starred !== null}
-                onChange={apply}
-                onToggleStar={toggleStar}
-              />
-            )}
-
             {harness.modelProblem && (
               <p className="border-t px-2.5 py-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
                 Codex models could not be read: {harness.modelProblem}
               </p>
             )}
           </div>
+
+          <Setup
+            model={info}
+            selection={selection}
+            starred={starred !== null}
+            onChange={apply}
+            onToggleStar={toggleStar}
+          />
         </div>
       </PopoverContent>
     </Popover>
@@ -349,9 +337,11 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 }
 
 /**
- * The settings for whatever is selected, under the list rather than behind a
- * second chip. Changing one applies immediately and leaves the popover open:
- * dialling in reasoning is a series of small adjustments, not a decision.
+ * The right-hand column: what the selected model is set to.
+ *
+ * A menu, not a row of pills — these are settings with names, and reasoning
+ * alone has seven levels. Each one reads as a list you scan down, the way the
+ * rest of the app's settings do.
  */
 function Setup({
   model,
@@ -360,88 +350,104 @@ function Setup({
   onChange,
   onToggleStar,
 }: {
-  model: ModelInfo;
-  selection: ModelSelection;
+  model: ModelInfo | undefined;
+  selection: ModelSelection | null;
   starred: boolean;
   onChange: (selection: ModelSelection) => void;
   onToggleStar: () => void;
 }): React.JSX.Element {
   return (
-    <div className="border-t bg-muted/20">
-      <div className="flex items-center gap-1.5 px-2.5 pt-2">
-        <span className="eyebrow min-w-0 flex-1 truncate">{model.name}</span>
+    <div className="flex w-[212px] shrink-0 flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium">
+          {model?.name ?? "No model selected"}
+        </span>
 
-        <Hint label={starred ? "Remove this setup from favourites" : "Star this model with these settings"}>
-          <button
-            onClick={onToggleStar}
-            className="row flex shrink-0 items-center gap-1 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-          >
-            <Star className={cn("size-3.5", starred && "fill-[var(--warning)] text-[var(--warning)]")} />
-            {starred ? "Starred" : "Star setup"}
-          </button>
-        </Hint>
+        {model && selection && (
+          <Hint label={starred ? "Remove this setup from favourites" : "Star this model with these settings"}>
+            <button
+              aria-label={starred ? "Remove from favourites" : "Star this setup"}
+              onClick={onToggleStar}
+              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Star className={cn("size-3.5", starred && "fill-[var(--warning)] text-[var(--warning)]")} />
+            </button>
+          </Hint>
+        )}
       </div>
 
-      {model.options.length === 0 ? (
-        <p className="px-2.5 pt-1 pb-2.5 text-[11px] text-muted-foreground">Nothing to adjust on this one.</p>
-      ) : (
-        <div className="max-h-[180px] overflow-y-auto px-2.5 pt-1 pb-2.5">
-          {model.options.map((descriptor) => (
-            <Option key={descriptor.id} descriptor={descriptor} selection={selection} onChange={onChange} />
-          ))}
-        </div>
-      )}
+      <div className="max-h-[300px] flex-1 overflow-y-auto p-1">
+        {!model || !selection ? (
+          <p className="px-2 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            Pick a model to see what can be set on it.
+          </p>
+        ) : model.options.length === 0 ? (
+          <p className="px-2 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            Nothing to adjust on this one.
+          </p>
+        ) : (
+          model.options.map((descriptor, index) => (
+            <Option
+              key={descriptor.id}
+              descriptor={descriptor}
+              selection={selection}
+              first={index === 0}
+              onChange={onChange}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-/**
- * Every choice is visible rather than hidden behind a second menu — a nested
- * dropdown inside a dropdown is two clicks to see what one glance can show.
- */
 function Option({
   descriptor,
   selection,
+  first,
   onChange,
 }: {
   descriptor: OptionDescriptor;
   selection: ModelSelection;
+  first: boolean;
   onChange: (selection: ModelSelection) => void;
 }): React.JSX.Element {
   const value = effectiveOption(selection, descriptor);
 
-  const choices =
-    descriptor.kind === "select"
-      ? descriptor.choices.map((choice) => ({ key: choice.value, label: choice.label, value: choice.value as string | boolean }))
-      : [
-          { key: "off", label: "Off", value: false },
-          { key: "on", label: "On", value: true },
-        ];
+  // A yes-or-no setting is a switch. Listing "Off" and "On" as two rows to
+  // pick between was a menu pretending to be a toggle.
+  if (descriptor.kind === "boolean") {
+    return (
+      <div className={cn("flex items-center gap-2 px-2 py-1.5", !first && "mt-1 border-t pt-2.5")}>
+        <span className="min-w-0 flex-1 truncate text-[12px]">{descriptor.label}</span>
+        <Switch
+          checked={value === true}
+          onCheckedChange={(next) => onChange(withOption(selection, descriptor.id, next))}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-1.5 first:mt-0">
-      <div className="text-[10.5px] text-muted-foreground">{descriptor.label}</div>
+    <div className={cn(!first && "mt-1 border-t pt-1")}>
+      <div className="px-2 py-1 text-[10.5px] font-medium text-muted-foreground">{descriptor.label}</div>
 
-      <div className="mt-1 flex flex-wrap gap-1">
-        {choices.map((choice) => {
-          const active = value === choice.value;
+      {descriptor.choices.map((choice) => {
+        const active = value === choice.value;
 
-          return (
-            <button
-              key={choice.key}
-              onClick={() => onChange(withOption(selection, descriptor.id, choice.value))}
-              className={cn(
-                "rounded-md border px-1.5 py-0.5 text-[11px] transition-colors",
-                active
-                  ? "border-primary/60 bg-primary/15 text-foreground"
-                  : "border-transparent bg-muted/60 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {choice.label}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={choice.value}
+            onClick={() => onChange(withOption(selection, descriptor.id, choice.value))}
+            data-active={active}
+            className="row flex w-full items-center gap-2 px-2 py-1 text-left text-[12px]"
+          >
+            <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+            {choice.isDefault && !active && <span className="shrink-0 text-[10px] text-muted-foreground">Default</span>}
+            {active && <Check className="size-3 shrink-0 text-primary" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -549,7 +555,9 @@ function ModelRow({
         </span>
       </span>
 
-      {index >= 0 && index < 9 && (
+      {active && <Check className="size-3 shrink-0 text-primary" />}
+
+      {!active && index >= 0 && index < 9 && (
         <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[9.5px] text-muted-foreground">
           Ctrl+{index + 1}
         </kbd>
