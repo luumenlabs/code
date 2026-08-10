@@ -24,6 +24,8 @@ export interface HarnessSnapshot {
   mcpCommand: string;
   /** Drives platform-specific chrome, such as room for window controls. */
   platform: string;
+  /** Release or nightly, so the chrome can say which build this is. */
+  channel: "release" | "nightly";
   threads: ThreadIndex;
   /** The conversation currently open, or null while a draft is being composed. */
   thread: Thread | null;

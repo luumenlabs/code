@@ -58,10 +58,13 @@ mkdirSync(join(root, "dist", "main"), { recursive: true });
 copyFileSync(join(root, "src", "main", "preload.cjs"), join(root, "dist", "main", "preload.cjs"));
 
 // The window and taskbar icons come from the shared asset bank at the repo
-// root, copied in so the packaged app carries them.
+// root, copied in so the packaged app carries them. Both channels ship: which
+// one the app shows is decided at runtime from LUU_CODE_CHANNEL.
 mkdirSync(join(root, "dist", "icons"), { recursive: true });
 
-for (const icon of ["icon.png", "icon.ico", "icon.icns"]) {
+const icons = ["icon", "icon-nightly"].flatMap((stem) => [`${stem}.png`, `${stem}.ico`, `${stem}.icns`]);
+
+for (const icon of icons) {
   const source = join(repoRoot, "assets", icon);
   if (existsSync(source)) copyFileSync(source, join(root, "dist", "icons", icon));
   else console.warn(`Missing ${icon} — run \`pnpm assets:icons\`.`);

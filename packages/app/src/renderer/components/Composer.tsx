@@ -185,9 +185,16 @@ export function Composer({
             </Hint>
 
             {harness.busy ? (
-              <Button size="icon-sm" variant="secondary" onClick={() => void harness.interrupt()} title="Stop">
-                <Square className="size-3" />
-              </Button>
+              <Hint label="Stop the agent">
+                <Button
+                  size="icon-sm"
+                  variant="destructive"
+                  className="rounded-full"
+                  onClick={() => void harness.interrupt()}
+                >
+                  <Square className="size-3 fill-current" />
+                </Button>
+              </Hint>
             ) : (
               <Button
                 size="icon-sm"

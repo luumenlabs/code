@@ -29,11 +29,14 @@ export function CommandPalette({
   open,
   onOpenChange,
   onOpenSettings,
+  onExitSettings,
 }: {
   harness: Harness;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenSettings: () => void;
+  /** Anything that lands the user in a chat closes settings on the way. */
+  onExitSettings: () => void;
 }): React.JSX.Element {
   const [query, setQuery] = React.useState("");
   const [index, setIndex] = React.useState(0);
@@ -58,7 +61,10 @@ export function CommandPalette({
         icon: Plus,
         group: "Actions",
         disabled: !place,
-        run: close(() => void harness.newThread()),
+        run: close(() => {
+          onExitSettings();
+          void harness.newThread();
+        }),
       },
       {
         id: "playtest",
@@ -100,13 +106,16 @@ export function CommandPalette({
             hint: `${group.project.name} · ${relativeTime(thread.updatedAt)}`,
             icon: MessageSquare,
             group: "Recent chats",
-            run: close(() => void harness.openThread(thread.id)),
+            run: close(() => {
+              onExitSettings();
+              void harness.openThread(thread.id);
+            }),
           })),
         )
       : [];
 
     return [...actions, ...threads];
-  }, [harness, onOpenChange, onOpenSettings, place, running]);
+  }, [harness, onExitSettings, onOpenChange, onOpenSettings, place, running]);
 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase();

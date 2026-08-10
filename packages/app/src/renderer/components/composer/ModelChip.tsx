@@ -14,7 +14,7 @@
  * this build still shows up.
  */
 import * as React from "react";
-import { ChevronDown, ChevronRight, CircleAlert, Loader2, Search, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, Search, Star } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Hint } from "@/components/ui/tooltip";
 import { PROVIDER_LABEL, ProviderIcon } from "@/components/ProviderIcon";
@@ -29,15 +29,18 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [showLegacy, setShowLegacy] = React.useState(false);
-  const [favourites, setFavourites] = React.useState<Set<string>>(new Set());
   const search = React.useRef<HTMLInputElement>(null);
 
   const snapshot = harness.snapshot;
   const selection = harness.modelSelection;
   const models = harness.models;
   const active = models.find((model) => model.slug === selection?.model);
-  const state = snapshot?.session.state;
-  const busy = state === "thinking" || state === "working" || state === "starting";
+
+  // Stars live in settings, so they survive a restart like any other preference.
+  const favourites = React.useMemo(
+    () => new Set(harness.settings.favouriteModels),
+    [harness.settings.favouriteModels],
+  );
 
   // One rail entry per provider that actually has models, in catalogue order.
   const providers = React.useMemo(() => {
@@ -116,11 +119,10 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   const toggleFavourite = (slug: string, event: React.MouseEvent): void => {
     event.stopPropagation();
-    setFavourites((existing) => {
-      const next = new Set(existing);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
+
+    const starred = harness.settings.favouriteModels;
+    harness.updateSettings({
+      favouriteModels: starred.includes(slug) ? starred.filter((entry) => entry !== slug) : [...starred, slug],
     });
   };
 
@@ -148,9 +150,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
           unavailable ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin text-primary" />
-        ) : unavailable ? (
+        {unavailable ? (
           <CircleAlert className="size-3.5" />
         ) : active ? (
           <ProviderIcon provider={active.provider} className="size-3" />

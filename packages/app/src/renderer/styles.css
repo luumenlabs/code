@@ -158,6 +158,38 @@
     cursor: default;
   }
 
+  /*
+    Anything clickable says so.
+
+    Tailwind's reset leaves buttons on the default arrow, which reads as dead UI
+    in a desktop app where there is no underline or link colour to fall back on.
+    Radix builds its menus, tabs, and switches out of divs with roles, so those
+    are listed too.
+  */
+  button,
+  select,
+  summary,
+  a[href],
+  label:has(input:not([disabled])),
+  [role="button"],
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [role="option"],
+  [role="tab"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  [aria-disabled="true"],
+  [data-disabled] {
+    cursor: default;
+  }
+
   /* Text worth copying out of the transcript. */
   .selectable {
     user-select: text;

@@ -38,6 +38,12 @@ export function TitleBar({
     >
       <Wordmark className="shrink-0" />
 
+      {snapshot?.channel === "nightly" && (
+        <span className="shrink-0 rounded border border-[#a855f7]/40 bg-[#a855f7]/12 px-1.5 py-px text-[9.5px] font-semibold tracking-[0.08em] text-[#c084fc] uppercase">
+          Nightly
+        </span>
+      )}
+
       <span className="h-4 w-px shrink-0 bg-border" />
 
       {session ? (

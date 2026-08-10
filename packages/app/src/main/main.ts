@@ -55,14 +55,25 @@ const appRoot = (): string => app.getAppPath();
 const isDev = !app.isPackaged;
 
 /**
+ * Which build this is.
+ *
+ * Set explicitly by the nightly workflow; otherwise inferred from the version,
+ * so a `0.2.0-nightly.3` build carries the nightly identity without anyone
+ * having to remember the environment variable.
+ */
+const channel: "release" | "nightly" =
+  process.env.LUU_CODE_CHANNEL === "nightly" || app.getVersion().includes("nightly") ? "nightly" : "release";
+
+/**
  * The app icon, copied out of the repo's asset bank at build time.
  *
  * Windows wants the .ico for the taskbar, everything else takes the PNG.
  * Missing icons are not worth failing to start over, so this can return null.
  */
 function iconPath(): string | null {
-  const file = process.platform === "win32" ? "icon.ico" : "icon.png";
-  const path = join(appRoot(), "dist", "icons", file);
+  const stem = channel === "nightly" ? "icon-nightly" : "icon";
+  const extension = process.platform === "win32" ? "ico" : "png";
+  const path = join(appRoot(), "dist", "icons", `${stem}.${extension}`);
   return existsSync(path) ? path : null;
 }
 
@@ -101,7 +112,7 @@ async function createWindow(): Promise<void> {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: "#171717",
-    title: "Luu Code",
+    title: channel === "nightly" ? "Luu Code Nightly" : "Luu Code",
     ...(icon ? { icon } : {}),
     autoHideMenuBar: true,
     // The window chrome is part of the app: the title bar carries the Studio
@@ -253,8 +264,11 @@ function record(entry: TranscriptEntry): void {
 
 async function bootstrap(): Promise<void> {
   // Windows groups taskbar buttons and picks the icon by this id; without it,
-  // a development run shows up as Electron.
-  if (process.platform === "win32") app.setAppUserModelId("dev.luumen.code");
+  // a development run shows up as Electron. Nightly gets its own id so the two
+  // never share a taskbar button or a pinned shortcut.
+  if (process.platform === "win32") {
+    app.setAppUserModelId(channel === "nightly" ? "dev.luumen.code.nightly" : "dev.luumen.code");
+  }
 
   // macOS takes the dock icon from the bundle once packaged, but not before.
   if (process.platform === "darwin" && app.dock) {
@@ -352,6 +366,7 @@ function registerIpc(): void {
       serverPort: local.port,
       mcpCommand: process.platform === "win32" ? "luu-code-mcp.cmd" : "luu-code-mcp",
       platform: process.platform,
+      channel,
       threads: store.index(),
       thread: store.active(),
       modelSelection: activeSelection(),

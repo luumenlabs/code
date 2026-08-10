@@ -194,6 +194,7 @@ const SNAPSHOT: HarnessSnapshot = {
   serverPort: 33770,
   mcpCommand: "luu-code-mcp.cmd",
   platform: "win32",
+  channel: "release",
   threads: THREADS,
   thread: {
     ...THREADS.threads[0]!,

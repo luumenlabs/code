@@ -29,6 +29,7 @@ export function App(): React.JSX.Element {
         setPaletteOpen((open) => !open);
       } else if (event.key === "n") {
         event.preventDefault();
+        setSettingsOpen(false);
         void harness.newThread();
       }
     };
@@ -59,6 +60,7 @@ export function App(): React.JSX.Element {
             onSearch={() => setPaletteOpen(true)}
             settingsOpen={settingsOpen}
             onToggleSettings={() => setSettingsOpen((open) => !open)}
+            onExitSettings={() => setSettingsOpen(false)}
           />
 
           {settingsOpen ? (
@@ -85,6 +87,7 @@ export function App(): React.JSX.Element {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         onOpenSettings={() => setSettingsOpen(true)}
+        onExitSettings={() => setSettingsOpen(false)}
       />
       <PairingDialog request={harness.pendingPairing} />
     </TooltipProvider>

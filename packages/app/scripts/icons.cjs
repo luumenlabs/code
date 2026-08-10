@@ -1,8 +1,11 @@
 /**
- * Renders assets/icon.svg into every raster format the app and the README need.
+ * Renders the icon masters into every raster format the app and the README need.
+ *
+ * Two channels: the blue release icon and the purple nightly one, so a nightly
+ * build is recognisable in a dock full of app icons.
  *
  * Run with `pnpm assets:icons` from the repo root. Output is committed, so this
- * only needs running when assets/icon.svg changes.
+ * only needs running when a master SVG changes.
  *
  * Electron does the rasterising because it is already a dependency and it is
  * the same renderer that will draw the icon in the app, so what ships and what
@@ -32,6 +35,17 @@ const ICNS_TYPES = [
   ["ic08", 256],
   ["ic09", 512],
   ["ic10", 1024],
+];
+
+/**
+ * The channels, and what each one is called on disk.
+ *
+ * `renderer` is the copy the app loads as its favicon; only the release icon
+ * needs one, since the window itself takes the platform icon.
+ */
+const VARIANTS = [
+  { name: "release", master: "icon.svg", stem: "icon", renderer: true },
+  { name: "nightly", master: "icon-nightly.svg", stem: "icon-nightly", renderer: false },
 ];
 
 app.disableHardwareAcceleration();
@@ -219,39 +233,48 @@ app.whenReady().then(async () => {
   mkdirSync(pngDir, { recursive: true });
   mkdirSync(scratchDir, { recursive: true });
 
-  const svg = readFileSync(join(assetsDir, "icon.svg"), "utf8");
-  const rendered = new Map();
+  let releaseSvg = "";
 
-  // The renderer's favicon, kept next to the code that loads it so Vite can
-  // fingerprint it like any other asset.
-  writeFileSync(join(__dirname, "..", "src", "renderer", "assets", "icon.svg"), svg);
+  for (const variant of VARIANTS) {
+    const svg = readFileSync(join(assetsDir, variant.master), "utf8");
+    const rendered = new Map();
 
-  for (const size of SIZES) {
-    const image = await renderIcon(svg, size);
-    const png = image.toPNG();
+    if (variant.renderer) {
+      releaseSvg = svg;
+      // The renderer's favicon, kept next to the code that loads it so Vite can
+      // fingerprint it like any other asset.
+      writeFileSync(join(__dirname, "..", "src", "renderer", "assets", "icon.svg"), svg);
+    }
 
-    rendered.set(size, image);
-    writeFileSync(join(pngDir, `icon-${size}.png`), png);
-    console.log(`icon-${size}.png  ${png.length.toLocaleString()} bytes`);
+    console.log(`\n${variant.name}`);
+
+    for (const size of SIZES) {
+      const image = await renderIcon(svg, size);
+      const png = image.toPNG();
+
+      rendered.set(size, image);
+      writeFileSync(join(pngDir, `${variant.stem}-${size}.png`), png);
+      console.log(`  ${variant.stem}-${size}.png  ${png.length.toLocaleString()} bytes`);
+    }
+
+    writeFileSync(join(assetsDir, `${variant.stem}.png`), rendered.get(1024).toPNG());
+
+    writeFileSync(
+      join(assetsDir, `${variant.stem}.ico`),
+      buildIco(ICO_SIZES.map((size) => ({ size, image: rendered.get(size) }))),
+    );
+    console.log(`  ${variant.stem}.ico`);
+
+    writeFileSync(
+      join(assetsDir, `${variant.stem}.icns`),
+      buildIcns(ICNS_TYPES.map(([type, size]) => [type, rendered.get(size).toPNG()])),
+    );
+    console.log(`  ${variant.stem}.icns`);
   }
 
-  writeFileSync(join(assetsDir, "icon.png"), rendered.get(1024).toPNG());
-
-  writeFileSync(
-    join(assetsDir, "icon.ico"),
-    buildIco(ICO_SIZES.map((size) => ({ size, image: rendered.get(size) }))),
-  );
-  console.log("icon.ico");
-
-  writeFileSync(
-    join(assetsDir, "icon.icns"),
-    buildIcns(ICNS_TYPES.map(([type, size]) => [type, rendered.get(size).toPNG()])),
-  );
-  console.log("icon.icns");
-
-  const banner = (await shoot(bannerHtml(svg), 1200, 480)).toPNG();
+  const banner = (await shoot(bannerHtml(releaseSvg), 1200, 480)).toPNG();
   writeFileSync(join(assetsDir, "banner.png"), banner);
-  console.log(`banner.png  ${banner.length.toLocaleString()} bytes`);
+  console.log(`\nbanner.png  ${banner.length.toLocaleString()} bytes`);
 
   rmSync(scratchDir, { recursive: true, force: true });
   app.quit();

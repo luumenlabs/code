@@ -7,7 +7,7 @@
  * session where it can.
  */
 import * as React from "react";
-import { ChevronRight, Folder, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,11 +27,14 @@ export function Sidebar({
   onSearch,
   settingsOpen,
   onToggleSettings,
+  onExitSettings,
 }: {
   harness: Harness;
   onSearch: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
+  /** Opening a chat is a request to look at the chat, not at settings. */
+  onExitSettings: () => void;
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [renaming, setRenaming] = React.useState<string | null>(null);
@@ -62,7 +65,10 @@ export function Sidebar({
           size="sm"
           className="justify-start"
           disabled={!connected}
-          onClick={() => void harness.newThread()}
+          onClick={() => {
+            onExitSettings();
+            void harness.newThread();
+          }}
         >
           <Plus />
           New chat
@@ -116,8 +122,14 @@ export function Sidebar({
                       key={thread.id}
                       thread={thread}
                       active={harness.activeThreadId === thread.id}
+                      // Only one agent runs at a time, so the open chat is the
+                      // one the busy flag belongs to.
+                      running={harness.busy && harness.activeThreadId === thread.id}
                       renaming={renaming === thread.id}
-                      onOpen={() => void harness.openThread(thread.id)}
+                      onOpen={() => {
+                        onExitSettings();
+                        void harness.openThread(thread.id);
+                      }}
                       onStartRename={() => setRenaming(thread.id)}
                       onRename={(title) => {
                         setRenaming(null);
@@ -151,6 +163,7 @@ export function Sidebar({
 function ThreadRow({
   thread,
   active,
+  running,
   renaming,
   onOpen,
   onStartRename,
@@ -159,6 +172,7 @@ function ThreadRow({
 }: {
   thread: ThreadSummary;
   active: boolean;
+  running: boolean;
   renaming: boolean;
   onOpen: () => void;
   onStartRename: () => void;
@@ -196,11 +210,19 @@ function ThreadRow({
   return (
     <div className="row group flex items-center gap-1.5 pr-0.5 pl-2" data-active={active}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 py-[7px] text-left">
-        <MessageSquare className={cn("size-3 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
+        {running ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
+        ) : (
+          <MessageSquare className={cn("size-3 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
+        )}
         <span className={cn("min-w-0 flex-1 truncate text-[12px]", active && "font-medium")}>{thread.title}</span>
-        <span className="shrink-0 text-[10px] text-muted-foreground/60 group-hover:hidden">
-          {relativeTime(thread.updatedAt)}
-        </span>
+        {running ? (
+          <span className="shrink-0 text-[10px] text-primary group-hover:hidden">Working…</span>
+        ) : (
+          <span className="shrink-0 text-[10px] text-muted-foreground/60 group-hover:hidden">
+            {relativeTime(thread.updatedAt)}
+          </span>
+        )}
       </button>
 
       <DropdownMenu>

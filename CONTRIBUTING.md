@@ -39,6 +39,29 @@ pnpm build
 pnpm test
 ```
 
+## Running it
+
+```bash
+pnpm dev              # the app, with reload
+pnpm serve            # the local server on its own, no window
+```
+
+The plugin is a separate build; see below. A source checkout will not see a
+Studio panel until you have run `luu build` at least once.
+
+## Icons
+
+Both app icons — the blue release one and the purple nightly one — are rendered
+from `assets/icon.svg` and `assets/icon-nightly.svg`:
+
+```bash
+pnpm assets:icons
+```
+
+Output is committed. The build copies the icons into the app, it does not
+generate them. Run the app with `LUU_CODE_CHANNEL=nightly` to see the nightly
+identity — purple icon, its own taskbar id, and a badge in the title bar.
+
 ## Working on the plugin
 
 The plugin is a Luumen project with its own pinned toolchain and tasks in `plugin/.config.luau`.

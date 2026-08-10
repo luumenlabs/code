@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { PERMISSION_GROUPS } from "@luumen/code-protocol";
 import type { PermissionGroup } from "@luumen/code-protocol";
+import { DEFAULT_TITLE_MODEL } from "../../../shared/settings.js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -102,6 +103,16 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
   const installed = harness.snapshot?.agents.filter((agent) => agent.installed).map((agent) => agent.id) ?? [];
   const candidates = models.filter((model) => installed.includes(model.provider));
 
+  /**
+   * What "leave it to Luu Code" actually resolves to.
+   *
+   * The default is a specific model, so it says which one. Hiding it behind
+   * "Automatic" only raises the question it was trying to avoid.
+   */
+  const autoProvider = installed[0] ?? "codex";
+  const autoSlug = DEFAULT_TITLE_MODEL[autoProvider];
+  const autoLabel = `${models.find((model) => model.slug === autoSlug)?.name ?? autoSlug} · default`;
+
   // The model implies the CLI, here as everywhere else: picking GPT means Codex
   // runs the call, picking Claude means Claude Code does.
   const chooseTitleModel = (slug: string): void => {
@@ -139,7 +150,7 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
             value={title.model ?? ""}
             onChange={chooseTitleModel}
             options={[
-              { value: "", label: "Automatic (small model)" },
+              { value: "", label: autoLabel },
               ...candidates.map((model) => ({
                 value: model.slug,
                 label: `${model.name} · ${PROVIDER_LABEL[model.provider]}`,

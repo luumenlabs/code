@@ -6,6 +6,8 @@
 
 **Use Claude Code or Codex with Roblox Studio.**
 
+[Download](https://github.com/luumenlabs/code/releases/latest) · [Nightly builds](https://github.com/luumenlabs/code/releases) · [Contributing](CONTRIBUTING.md)
+
 </div>
 
 ---
@@ -26,35 +28,21 @@ You bring Claude Code or Codex. Luu Code brings Studio. There are no credits, no
 | **See the screen** | Screenshots of Studio, handed straight to the agent |
 | **Play the game** | Keyboard, mouse, and clicks on real on-screen buttons |
 
-## Before you start
-
-- **Roblox Studio**
-- **Claude Code or Codex**, installed and signed in — Luu Code drives whichever you have
-- **Node 20.11+ and pnpm**, to build the app
-- **[Luumen](https://luumen.dev) (`luu`)**, to build the Studio plugin
-
 ## Install
 
-```bash
-pnpm install
-pnpm build
+1. **[Download Luu Code](https://github.com/luumenlabs/code/releases/latest)** and run the installer — Windows, macOS, and Linux.
+2. From the same release, download **`LuuCode.rbxm`**. In Roblox Studio, open the **Plugins** tab → **Plugins Folder**, drop the file in, and restart Studio.
+3. Make sure **Claude Code** or **Codex** is installed and signed in. Luu Code drives whichever you have — it does not ship a model.
 
-cd plugin
-luu install     # build tools, via Rokit
-luu build       # builds straight into your Studio plugins folder
-```
+### Nightly builds
 
-Restart Roblox Studio. **Luu Code** appears in the Plugins tab.
+Nightly builds are published on the [releases page](https://github.com/luumenlabs/code/releases) alongside the stable ones. They carry a purple icon and install beside the release build, so you can keep both.
 
 ## Start
 
-```bash
-pnpm dev
-```
-
 1. Open your place in Roblox Studio.
-2. Studio shows a six-digit code.
-3. Approve it in Luu Code — check the digits match.
+2. Open Luu Code.
+3. Studio shows a six-digit code — approve it in the app once the digits match.
 4. Pick a model, and say what you want changed.
 
 Try:
@@ -89,19 +77,9 @@ command = "luu-code-mcp"
 
 It joins a running Luu Code server, or starts one. The app does not have to be open — only Studio.
 
-## Development
+## Contributing
 
-```bash
-pnpm dev              # the app, with reload
-pnpm serve            # the server on its own
-pnpm check            # build, typecheck, test, plugin lint
-pnpm assets:icons     # re-render the icons from assets/icon.svg
-
-cd plugin
-luu dev               # rebuild into the plugins folder on every save
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Building Luu Code from source, adding Roblox operations, and supporting another coding agent are all covered in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -28,6 +28,8 @@ export interface AppSettings {
    * but does not advertise. Keyed by agent id.
    */
   customModels: Record<string, string[]>;
+  /** Model slugs the user has starred, in the order they starred them. */
+  favouriteModels: string[];
   /** Show the agent's reasoning in the transcript rather than folding it away. */
   showThinking: boolean;
   /** Jump to the Output tab the first time a runtime error appears. */
@@ -43,6 +45,7 @@ export const DEFAULT_TITLE_MODEL: Record<AgentId, string> = {
 export const DEFAULT_SETTINGS: AppSettings = {
   titleGeneration: { enabled: true, provider: "auto", model: null },
   customModels: {},
+  favouriteModels: [],
   showThinking: true,
   followRuntimeErrors: true,
 };
@@ -65,6 +68,7 @@ export function withDefaults(stored: unknown): AppSettings {
       model: title.model ?? DEFAULT_SETTINGS.titleGeneration.model,
     },
     customModels: value.customModels ?? {},
+    favouriteModels: Array.isArray(value.favouriteModels) ? value.favouriteModels.filter((slug) => typeof slug === "string") : [],
     showThinking: value.showThinking ?? DEFAULT_SETTINGS.showThinking,
     followRuntimeErrors: value.followRuntimeErrors ?? DEFAULT_SETTINGS.followRuntimeErrors,
   };
