@@ -224,7 +224,7 @@ function TurnFooter({ items }: { items: TimelineItem[] }): React.JSX.Element | n
         <span title={new Date(finishedAt).toLocaleString()}>{clockTime(finishedAt)}</span>
       )}
       <span className="flex-1" />
-      <CopyButton value={() => turnText(items)} label="Copy the answer and everything it took" />
+      <CopyButton value={() => turnText(items)} label="Copy this turn" />
     </div>
   );
 }
@@ -596,7 +596,7 @@ function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; b
             <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
           </CollapsibleTrigger>
 
-          <CopyButton value={() => toolText(item)} label="Copy this call and its result" />
+          <CopyButton value={() => toolText(item)} label="Copy" />
         </div>
 
         <CollapsibleContent>
@@ -663,7 +663,7 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
         {activity.status === "running" && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
         {activity.status === "ok" && <CircleCheck className="size-3.5 shrink-0 text-[var(--success)] opacity-60" />}
 
-        <CopyButton value={() => activityText(activity)} label="Copy this operation" className="-mr-1" />
+        <CopyButton value={() => activityText(activity)} label="Copy" className="-mr-1" />
       </div>
 
       {activity.detail && !failed && (
@@ -685,7 +685,7 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
         <img
           className="mt-2.5 w-full rounded-md border"
           src={`data:${activity.image.mimeType};base64,${activity.image.data}`}
-          alt="Roblox Studio screenshot captured by the agent"
+          alt="Studio screenshot"
         />
       )}
 

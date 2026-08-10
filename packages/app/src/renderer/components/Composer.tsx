@@ -36,10 +36,10 @@ export function Composer({
   const ready = studioConnected && hasModel && session?.state !== "error";
 
   const placeholder = !studioConnected
-    ? "Connect Roblox Studio to start."
+    ? "Connect Roblox Studio…"
     : !hasModel
-      ? "Pick a model below to start."
-      : "Describe a change to your game…";
+      ? "Pick a model…"
+      : "Describe a change…";
 
   React.useLayoutEffect(() => {
     const element = textarea.current;
@@ -172,7 +172,7 @@ export function Composer({
               }}
             />
 
-            <Hint label="Attach an image — or just paste one">
+            <Hint label="Attach an image">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -185,7 +185,7 @@ export function Composer({
             </Hint>
 
             {harness.busy ? (
-              <Hint label="Stop the agent">
+              <Hint label="Stop">
                 <Button
                   size="icon-sm"
                   variant="destructive"

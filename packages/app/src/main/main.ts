@@ -704,7 +704,7 @@ function registerIpc(): void {
         id: `n_switch_${Date.now().toString(36)}`,
         at: Date.now(),
         tone: "info",
-        text: `Switched to ${AGENT_LABEL[model.provider]}. It starts with a fresh session — the transcript is kept, but ${AGENT_LABEL[active.agent!]}'s own context cannot be handed over.`,
+        text: `Switched to ${AGENT_LABEL[model.provider]}. The transcript stays, but it starts fresh — ${AGENT_LABEL[active.agent!]} cannot hand over its context.`,
       });
     }
 

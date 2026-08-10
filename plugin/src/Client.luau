@@ -237,18 +237,20 @@ local function handshake(): boolean
 		state.endpointId = body.endpointId
 		state.pairingCode = nil
 		saveToken(body.token)
-		setStatus("connected", "Luu Code can work in this place now")
+		-- The green "Connected", the place name, and the mode below it already
+		-- say everything. A sentence repeating them is noise in a 280px panel.
+		setStatus("connected", "")
 		return true
 	end
 
 	if body.status == "pairing" then
 		state.sessionId = body.sessionId
 		state.pairingCode = body.pairingCode
-		setStatus("pairing", "Approve this code in Luu Code to connect")
+		setStatus("pairing", "Approve it in Luu Code.")
 
 		if waitForApproval() then
 			state.pairingCode = nil
-			setStatus("connected", "Luu Code can work in this place now")
+			setStatus("connected", "")
 			return true
 		end
 

@@ -28,7 +28,7 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
   const full = allowed.length === PERMISSION_GROUPS.length;
   const none = allowed.length === 0;
 
-  const label = full ? "Full access" : none ? "No access" : `${allowed.length} of ${PERMISSION_GROUPS.length} allowed`;
+  const label = full ? "Full access" : none ? "No access" : `${allowed.length} of ${PERMISSION_GROUPS.length}`;
 
   // Full access is the permissive state, so it is the one worth flagging.
   // Restricting the agent is the safe direction and reads as neutral.
@@ -51,9 +51,6 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
       <PopoverContent align="start" side="top" className="w-[300px] p-0">
         <div className="border-b px-3 py-2.5">
           <div className="text-[13.5px] font-medium">Agent access</div>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-            What the agent is allowed to do to your place.
-          </p>
         </div>
 
         <div className="p-1">

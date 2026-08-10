@@ -78,29 +78,26 @@ export function TitleBar({
       <div className="flex-1" />
 
       <div className="no-drag flex items-center gap-1 pr-1">
+        {/* The label is on the button; a tooltip repeating it is noise. */}
         {session &&
           (running ? (
-            <Hint label="Stop the playtest">
-              <Button variant="ghost" size="sm" onClick={() => void harness.run("run.stop")} disabled={harness.runBusy}>
-                {harness.runBusy ? <Loader2 className="animate-spin" /> : <Square />}
-                Stop
-              </Button>
-            </Hint>
+            <Button variant="ghost" size="sm" onClick={() => void harness.run("run.stop")} disabled={harness.runBusy}>
+              {harness.runBusy ? <Loader2 className="animate-spin" /> : <Square />}
+              Stop
+            </Button>
           ) : (
-            <Hint label="Start a playtest">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void harness.run("run.start", { mode: "play" })}
-                disabled={harness.runBusy}
-              >
-                {harness.runBusy ? <Loader2 className="animate-spin" /> : <Play />}
-                Play
-              </Button>
-            </Hint>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void harness.run("run.start", { mode: "play" })}
+              disabled={harness.runBusy}
+            >
+              {harness.runBusy ? <Loader2 className="animate-spin" /> : <Play />}
+              Play
+            </Button>
           ))}
 
-        <Hint label={dockOpen ? "Hide the Studio panel" : "Show the Studio panel"}>
+        <Hint label="Studio panel">
           <Button
             variant="ghost"
             size="icon-sm"

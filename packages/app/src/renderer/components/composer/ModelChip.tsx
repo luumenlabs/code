@@ -279,13 +279,13 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
               {showingFavourites && favourites.length === 0 && (
                 <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted-foreground">
-                  No favourites yet. Set a model up the way you like it, then star it — the settings are saved with it.
+                  No favourites yet. Star a model to save it with its settings.
                 </p>
               )}
 
               {!showingFavourites && current.length === 0 && legacy.length === 0 && (
                 <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted-foreground">
-                  {models.length === 0 ? "Looking for installed CLIs…" : "No models match."}
+                  {models.length === 0 ? "Looking for models…" : "No models match."}
                 </p>
               )}
 
@@ -318,7 +318,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
             {harness.modelProblem && (
               <p className="border-t px-2.5 py-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                Codex models could not be read: {harness.modelProblem}
+                Could not read Codex models: {harness.modelProblem}
               </p>
             )}
           </div>
@@ -364,9 +364,9 @@ function Setup({
         </span>
 
         {model && selection && (
-          <Hint label={starred ? "Remove this setup from favourites" : "Star this model with these settings"}>
+          <Hint label={starred ? "Remove from favourites" : "Save with these settings"}>
             <button
-              aria-label={starred ? "Remove from favourites" : "Star this setup"}
+              aria-label={starred ? "Remove from favourites" : "Save with these settings"}
               onClick={onToggleStar}
               className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
@@ -378,9 +378,7 @@ function Setup({
 
       <div className="max-h-[300px] flex-1 overflow-y-auto p-1">
         {!model || !selection ? (
-          <p className="px-2 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
-            Pick a model to see what can be set on it.
-          </p>
+          <p className="px-2 py-2 text-[12.5px] leading-relaxed text-muted-foreground">Pick a model.</p>
         ) : model.options.length === 0 ? (
           <p className="px-2 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
             Nothing to adjust on this one.

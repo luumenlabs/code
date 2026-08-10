@@ -61,10 +61,6 @@ export function Sidebar({
   const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
   const connected = (harness.snapshot?.status.sessions.length ?? 0) > 0;
 
-  // Nothing is highlighted while a draft is open: it is not in the list yet,
-  // and it will not be until the first message is sent.
-  const drafting = harness.activeThreadId === null;
-
   const toggle = (projectId: string): void => {
     setCollapsed((current) => {
       const next = new Set(current);
@@ -107,16 +103,8 @@ export function Sidebar({
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 px-2 pb-3">
-          {drafting && groups.length > 0 && (
-            <p className="px-1.5 pt-1 text-[12px] leading-relaxed text-muted-foreground">
-              New chat — it lands here when you send.
-            </p>
-          )}
-
           {groups.length === 0 && (
-            <p className="px-1.5 pt-2 text-[12.5px] leading-relaxed text-muted-foreground">
-              No chats yet. Ask for a change to start one.
-            </p>
+            <p className="px-1.5 pt-2 text-[12.5px] leading-relaxed text-muted-foreground">No chats yet.</p>
           )}
 
           {groups.map(({ project, threads }) => {
@@ -132,7 +120,7 @@ export function Sidebar({
                       ? `Place ${project.placeId}`
                       : projectIdentity(project)
                         ? `Universe ${projectIdentity(project)?.replace("game:", "")}`
-                        : "Places Studio could not identify — save or publish one to give it a home of its own"
+                        : "Unsaved places"
                   }
                 >
                   <ChevronRight className={cn("size-3 shrink-0 transition-transform", !isCollapsed && "rotate-90")} />
@@ -279,7 +267,7 @@ function ArchivedSection({
               <span className="shrink-0 text-[11px] text-muted-foreground/50">{relativeTime(thread.updatedAt)}</span>
             </button>
 
-            <Hint label="Bring this chat back">
+            <Hint label="Unarchive">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -382,7 +370,7 @@ function ThreadRow({
 
       {/* One click, on the row you are already pointing at — the menu still has
           it, but tidying up a finished chat should not cost two clicks. */}
-      <Hint label="Archive this chat">
+      <Hint label="Archive">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -394,7 +382,7 @@ function ThreadRow({
       </Hint>
 
       <DropdownMenu>
-        <Hint label="Chat options">
+        <Hint label="More">
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"

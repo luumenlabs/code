@@ -24,7 +24,7 @@ export function PairingDialog({ request }: { request: PairingRequest | null }): 
               </div>
               <DialogTitle>Connect to Roblox Studio?</DialogTitle>
               <DialogDescription>
-                Studio wants to connect <b className="font-medium text-foreground">{request.place.name}</b> to Luu Code.
+                <b className="font-medium text-foreground">{request.place.name}</b> wants to connect.
               </DialogDescription>
             </DialogHeader>
 
@@ -32,12 +32,11 @@ export function PairingDialog({ request }: { request: PairingRequest | null }): 
               <div className="font-mono text-[30px] leading-none font-semibold tracking-[0.22em] text-primary">
                 {request.code}
               </div>
-              <div className="mt-2 text-[12px] text-muted-foreground">Studio should be showing this code</div>
             </div>
 
             <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-muted-foreground">
               <ShieldCheck className="mt-px size-3.5 shrink-0" />
-              Approve only if the codes match. After that, the agent can change your scripts, run the game, and play it.
+              Approve only if Studio is showing the same code.
             </p>
 
             <div className="mt-4 flex gap-2">

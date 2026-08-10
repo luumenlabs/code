@@ -180,7 +180,7 @@ function StudioDetails({
           <Camera />
           Screenshot
         </Button>
-        <Hint label="Disconnect this place">
+        <Hint label="Disconnect">
           <Button variant="ghost" size="icon-sm" onClick={() => void window.luuCode.disconnectSession(session.id)}>
             <Unplug />
           </Button>
@@ -198,11 +198,11 @@ function StudioEmpty(): React.JSX.Element {
         Not connected
       </Badge>
       <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-        Open your place in Roblox Studio. The Luu Code panel there shows a six-digit code — approve it here.
+        Open your place in Roblox Studio and approve the code its Luu Code panel shows.
       </p>
       <p className="text-[12px] leading-relaxed text-muted-foreground">
-        No panel in Studio? Install the plugin from <span className="text-foreground/80">Settings → Updates</span>, then
-        restart Studio.
+        No panel? Install the plugin from <span className="text-foreground/80">Settings → Updates</span>, then restart
+        Studio.
       </p>
     </div>
   );
@@ -250,9 +250,6 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
       <div className="text-[11.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         Use from your terminal
       </div>
-      <p className="text-[12px] leading-relaxed text-muted-foreground">
-        Any MCP-capable agent can use these same Roblox tools.
-      </p>
       <div className="flex items-center gap-1 rounded-md border bg-background p-1.5">
         <code className="selectable min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{snippet}</code>
         <Button variant="ghost" size="icon-sm" onClick={() => void copy()}>
@@ -302,7 +299,7 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
         <div className="flex flex-col gap-1 px-2.5 pb-3 font-mono text-[11.5px] leading-[1.6]">
           {shown.length === 0 && (
             <p className="py-2 font-sans text-[12.5px] text-muted-foreground">
-              Nothing yet. Whatever Studio prints shows up here.
+              Nothing yet.
             </p>
           )}
           {shown.map((entry) => (

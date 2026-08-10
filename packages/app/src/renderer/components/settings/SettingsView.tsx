@@ -154,10 +154,7 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
         </Button>
       }
     >
-      <Row
-        label="Name chats automatically"
-        detail="Titles each chat from your first message, instead of using the message itself."
-      >
+      <Row label="Name chats automatically" detail="Writes a title from your first message.">
         <Switch
           checked={title.enabled}
           onCheckedChange={(enabled) =>
@@ -167,7 +164,7 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
       </Row>
 
       {title.enabled && (
-        <Row label="Naming model" detail="Which model writes the title. A small, fast one is plenty.">
+        <Row label="Naming model" detail="A small, fast one is plenty.">
           <Select
             value={title.model ?? ""}
             onChange={chooseTitleModel}
@@ -182,17 +179,14 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
         </Row>
       )}
 
-      <Row label="Show the agent's thinking" detail="Include its reasoning in the chat as it works.">
+      <Row label="Show the agent's thinking" detail="Its reasoning appears in the chat as it works.">
         <Switch
           checked={settings.showThinking}
           onCheckedChange={(showThinking) => harness.updateSettings({ showThinking })}
         />
       </Row>
 
-      <Row
-        label="Jump to output on an error"
-        detail="Open the Output tab as soon as the running game throws."
-      >
+      <Row label="Jump to output on an error" detail="Opens the Output tab when the running game throws.">
         <Switch
           checked={settings.followRuntimeErrors}
           onCheckedChange={(followRuntimeErrors) => harness.updateSettings({ followRuntimeErrors })}
@@ -219,7 +213,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Providers"
-      description="Luu Code uses the coding agents already installed on this machine. It never asks for an API key."
+      description="Luu Code drives the coding agents already on this machine. No API key, ever."
       action={
         <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={refreshing}>
           {refreshing ? <Loader2 className="animate-spin" /> : <RotateCcw />}
@@ -288,7 +282,7 @@ function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Permissions"
-      description="What the agent is allowed to do to your place. You can change this mid-chat from the composer too."
+      description="What the agent is allowed to do to your place. Also on the chip beside the send button."
     >
       {PERMISSION_GROUPS.map((group) => (
         <Row key={group} label={PERMISSION_COPY[group].label} detail={PERMISSION_COPY[group].detail}>
@@ -324,7 +318,7 @@ function Updates({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Updates"
-      description="The app, the Studio plugin, and the MCP command all ship together, so they can never be on different versions."
+      description="The app, the Studio plugin, and the MCP command ship together, so they can never disagree on a version."
     >
       <AppUpdate harness={harness} status={versions.update} />
       <StudioPlugin harness={harness} status={versions.plugin} />
@@ -338,10 +332,17 @@ const CHANNEL_LABEL: Record<Channel, string> = {
   dev: "Dev",
 };
 
-const CHANNEL_NOTE: Record<Channel, string> = {
-  release: "Release builds update from the release channel only.",
-  nightly: "Nightly builds update from the nightly channel only, and install beside a release build.",
-  dev: "This is a build running from source. It keeps its own chats, settings, and Studio plugin, separate from any installed copy.",
+/**
+ * Only the surprising channels say anything.
+ *
+ * A release build explaining that it updates from the release channel is a
+ * sentence every user reads once and learns nothing from. A nightly that never
+ * offers a release, and a dev build with its own chats, are the two cases where
+ * someone would otherwise think something is broken.
+ */
+const CHANNEL_NOTE: Partial<Record<Channel, string>> = {
+  nightly: "Nightly builds only update to other nightlies, and install beside a release build.",
+  dev: "Running from source, with its own chats, settings, and Studio plugin.",
 };
 
 function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus }): React.JSX.Element {
@@ -410,10 +411,9 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
         </div>
       </div>
 
-      {/* A channel only ever updates from itself, which is worth saying once
-          rather than leaving someone to wonder why a nightly never offers a
-          release. */}
-      <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{CHANNEL_NOTE[status.channel]}</p>
+      {CHANNEL_NOTE[status.channel] && (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{CHANNEL_NOTE[status.channel]}</p>
+      )}
 
       {status.state === "downloading" && (
         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -487,7 +487,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
 
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
           {status.directory && (
-            <Hint label="Open the Studio plugins folder">
+            <Hint label="Plugins folder">
               <Button variant="ghost" size="icon-sm" onClick={() => void window.luuCode.revealPluginFolder()}>
                 <FolderOpen />
               </Button>
@@ -565,8 +565,8 @@ function Connection({ harness }: { harness: Harness }): React.JSX.Element {
       <div className="border-b py-4">
         <div className="text-[13.5px] font-medium">Use these tools from your own terminal</div>
         <p className="mt-0.5 mb-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
-          Any MCP-capable agent can drive the same Roblox operations. There is nothing to install — this runs the copy
-          that shipped with the app.
+          Any MCP-capable agent can drive the same Roblox operations. Nothing to install — this runs the copy that
+          shipped with the app.
         </p>
 
         <Snippet
