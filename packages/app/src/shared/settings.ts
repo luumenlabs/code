@@ -37,7 +37,7 @@ export interface AppSettings {
 /** Small, fast models — a title is not worth a frontier model's time. */
 export const DEFAULT_TITLE_MODEL: Record<AgentId, string> = {
   claude: "claude-haiku-4-5",
-  codex: "gpt-5.4-mini",
+  codex: "gpt-5.6-luna",
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

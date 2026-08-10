@@ -48,12 +48,21 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   const [rail, setRail] = React.useState<Rail>("claude");
 
-  // Follow the selected model when the picker opens, so it starts where the
-  // user left off rather than on whichever provider happens to be first.
+  // Read through a ref so starring a model does not re-run this: the star is a
+  // bookmark, not a navigation, and yanking the list out from under the click
+  // loses the user's place.
+  const railDefaults = React.useRef({ hasFavourites: false, provider: undefined as Rail | undefined });
+  railDefaults.current = {
+    hasFavourites: favourites.size > 0,
+    provider: active?.provider ?? providers[0],
+  };
+
+  // Open where the user left off rather than on whichever provider sorts first.
   React.useEffect(() => {
     if (!open) return;
-    setRail(favourites.size > 0 ? "favorites" : (active?.provider ?? providers[0] ?? "claude"));
-  }, [open, active?.provider, providers, favourites.size]);
+    const { hasFavourites, provider } = railDefaults.current;
+    setRail(hasFavourites ? "favorites" : (provider ?? "claude"));
+  }, [open]);
 
   const searching = query.trim().length > 0;
 

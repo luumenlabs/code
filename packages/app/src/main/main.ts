@@ -21,7 +21,7 @@ import { ThreadStore } from "./threads.js";
 import { fromAgentEvent, fromServerEvent, userEntry } from "./transcript.js";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
-import { createSelection, defaultModelFor, findModel } from "../shared/models.js";
+import { createSelection, defaultModel, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 import type { AppSettings } from "../shared/settings.js";
 
@@ -296,12 +296,12 @@ async function bootstrap(): Promise<void> {
       const manager = requireAgents();
       broadcast("catalogue", { models: manager.models(), problem: manager.catalogueProblem() });
 
-      // A draft with no model yet takes the default of whichever CLI is here.
+      // A draft with no model yet takes the app default.
       if (draftSelection) return;
 
-      const installed = manager.models()[0];
-      if (installed) {
-        draftSelection = createSelection(installed.provider, defaultModelFor(installed.provider)?.slug);
+      const model = defaultModel();
+      if (model) {
+        draftSelection = createSelection(model.provider, model.slug);
         manager.setModelSelection(draftSelection);
         broadcast("model-selection", draftSelection);
       }

@@ -262,6 +262,15 @@ export function defaultModelFor(agent: AgentId): ModelInfo | undefined {
   return models.find((model) => model.isDefault && !model.legacy) ?? models.find((model) => !model.legacy) ?? models[0];
 }
 
+/** The model to start on when the user has never chosen one. */
+export function defaultModel(): ModelInfo | undefined {
+  return (
+    catalogue.find((model) => model.isDefault && !model.legacy) ??
+    catalogue.find((model) => !model.legacy) ??
+    catalogue[0]
+  );
+}
+
 export function defaultValue(descriptor: OptionDescriptor): OptionValue | undefined {
   if (descriptor.kind === "boolean") return descriptor.default ?? false;
   return descriptor.choices.find((choice) => choice.isDefault)?.value;

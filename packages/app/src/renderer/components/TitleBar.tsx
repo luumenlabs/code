@@ -5,7 +5,7 @@
  * important thing on screen: almost every failure the agent can hit traces back
  * to one of them. Spec section 8.
  */
-import { CirclePlay, Loader2, PanelRight, Play, Settings, Square, Unplug } from "lucide-react";
+import { CirclePlay, Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
 import { Wordmark } from "@/components/Brand";
 import { WindowControls } from "@/components/WindowControls";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +18,10 @@ export function TitleBar({
   harness,
   dockOpen,
   onToggleDock,
-  settingsOpen,
-  onToggleSettings,
 }: {
   harness: Harness;
   dockOpen: boolean;
   onToggleDock: () => void;
-  settingsOpen: boolean;
-  onToggleSettings: () => void;
 }): React.JSX.Element {
   const snapshot = harness.snapshot;
   const session = snapshot?.status.sessions.find((entry) => entry.active) ?? snapshot?.status.sessions[0] ?? null;
@@ -102,16 +98,6 @@ export function TitleBar({
           </Button>
         </Hint>
 
-        <Hint label="Settings">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onToggleSettings}
-            className={cn(settingsOpen && "bg-accent text-foreground")}
-          >
-            <Settings />
-          </Button>
-        </Hint>
       </div>
 
       <WindowControls platform={platform} />

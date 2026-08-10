@@ -7,7 +7,7 @@
  * session where it can.
  */
 import * as React from "react";
-import { ChevronRight, Folder, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,7 +22,17 @@ import type { Harness } from "@/state";
 import { groupThreads, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
 
-export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () => void }): React.JSX.Element {
+export function Sidebar({
+  harness,
+  onSearch,
+  settingsOpen,
+  onToggleSettings,
+}: {
+  harness: Harness;
+  onSearch: () => void;
+  settingsOpen: boolean;
+  onToggleSettings: () => void;
+}): React.JSX.Element {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [renaming, setRenaming] = React.useState<string | null>(null);
 
@@ -121,6 +131,19 @@ export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () 
           })}
         </div>
       </ScrollArea>
+
+      {/* Settings belongs at the bottom of the sidebar, out of the way of the
+          conversation but always reachable. */}
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <button
+          onClick={onToggleSettings}
+          data-active={settingsOpen}
+          className="row flex w-full items-center gap-2 px-2 py-1.5 text-left text-[12px]"
+        >
+          <Settings className="size-3.5 shrink-0 text-muted-foreground" />
+          Settings
+        </button>
+      </div>
     </aside>
   );
 }

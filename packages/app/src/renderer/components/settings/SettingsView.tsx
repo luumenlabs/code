@@ -27,8 +27,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { PROVIDER_LABEL, ProviderIcon } from "@/components/ProviderIcon";
 import { cn } from "@/lib/utils";
-import type { AgentId } from "../../../shared/agent.js";
-import { DEFAULT_TITLE_MODEL } from "../../../shared/settings.js";
 import type { Harness } from "@/state";
 
 type Section = "general" | "providers" | "permissions" | "connection";
@@ -61,29 +59,28 @@ export function SettingsView({ harness, onClose }: { harness: Harness; onClose: 
   }, [onClose]);
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <aside className="flex w-sidebar shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2">
-        <div className="flex flex-col gap-0.5">
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setSection(id)}
-              data-active={section === id}
-              className="row flex items-center gap-2 px-2 py-1.5 text-left text-[12.5px]"
-            >
-              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1" />
-
-        <Button variant="ghost" size="sm" className="justify-start" onClick={onClose}>
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* The thread list stays where it is, so the sections run across the top
+          rather than adding a second sidebar beside the first. */}
+      <div className="flex h-topbar shrink-0 items-center gap-1 border-b px-3">
+        <Button variant="ghost" size="icon-sm" onClick={onClose} title="Back to chat">
           <ArrowLeft />
-          Back to chat
         </Button>
-      </aside>
+
+        <span className="mx-1 h-4 w-px bg-border" />
+
+        {SECTIONS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setSection(id)}
+            data-active={section === id}
+            className="row flex items-center gap-1.5 px-2 py-1 text-[12.5px]"
+          >
+            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+            {label}
+          </button>
+        ))}
+      </div>
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-[640px] px-8 py-8">
@@ -93,7 +90,7 @@ export function SettingsView({ harness, onClose }: { harness: Harness; onClose: 
           {section === "connection" && <Connection harness={harness} />}
         </div>
       </ScrollArea>
-    </div>
+    </main>
   );
 }
 
@@ -101,13 +98,18 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
   const { settings, models } = harness;
   const title = settings.titleGeneration;
 
-  // Only offer models from a CLI that is actually here, and prefer the small
-  // ones: a title is not worth a frontier model's time or the user's.
+  // Only offer models from a CLI that is actually here.
   const installed = harness.snapshot?.agents.filter((agent) => agent.installed).map((agent) => agent.id) ?? [];
   const candidates = models.filter((model) => installed.includes(model.provider));
 
-  const provider: AgentId | null =
-    title.provider !== "auto" ? title.provider : (candidates[0]?.provider ?? null);
+  // The model implies the CLI, here as everywhere else: picking GPT means Codex
+  // runs the call, picking Claude means Claude Code does.
+  const chooseTitleModel = (slug: string): void => {
+    const provider = models.find((model) => model.slug === slug)?.provider;
+    harness.updateSettings({
+      titleGeneration: { ...title, provider: provider ?? "auto", model: slug === "" ? null : slug },
+    });
+  };
 
   return (
     <Panel
@@ -132,40 +134,22 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
       </Row>
 
       {title.enabled && (
-        <>
-          <Row label="Naming runs on" detail="Which CLI makes the call. Automatic uses the one the thread is already using.">
-            <Select
-              value={title.provider}
-              onChange={(value) =>
-                harness.updateSettings({
-                  titleGeneration: { ...title, provider: value as AgentId | "auto", model: null },
-                })
-              }
-              options={[
-                { value: "auto", label: "Automatic" },
-                ...installed.map((id) => ({ value: id, label: PROVIDER_LABEL[id] })),
-              ]}
-            />
-          </Row>
-
-          <Row label="Naming model" detail="Small and fast is the right trade here; the title is three words.">
-            <Select
-              value={title.model ?? ""}
-              onChange={(value) =>
-                harness.updateSettings({ titleGeneration: { ...title, model: value === "" ? null : value } })
-              }
-              options={[
-                {
-                  value: "",
-                  label: provider ? `Default (${DEFAULT_TITLE_MODEL[provider]})` : "Default",
-                },
-                ...candidates
-                  .filter((model) => title.provider === "auto" || model.provider === title.provider)
-                  .map((model) => ({ value: model.slug, label: model.name })),
-              ]}
-            />
-          </Row>
-        </>
+        <Row
+          label="Naming model"
+          detail="Small and fast is the right trade; the answer is three words. The CLI follows from the model, as everywhere else."
+        >
+          <Select
+            value={title.model ?? ""}
+            onChange={chooseTitleModel}
+            options={[
+              { value: "", label: "Automatic (small model)" },
+              ...candidates.map((model) => ({
+                value: model.slug,
+                label: `${model.name} · ${PROVIDER_LABEL[model.provider]}`,
+              })),
+            ]}
+          />
+        </Row>
       )}
 
       <Row label="Show the agent's reasoning" detail="Thinking appears in the transcript instead of being folded away.">

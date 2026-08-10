@@ -51,28 +51,33 @@ export function App(): React.JSX.Element {
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
       <div className="flex h-full flex-col">
-        <TitleBar
-          harness={harness}
-          dockOpen={dockOpen}
-          onToggleDock={() => setDockOpen((open) => !open)}
-          settingsOpen={settingsOpen}
-          onToggleSettings={() => setSettingsOpen((open) => !open)}
-        />
+        <TitleBar harness={harness} dockOpen={dockOpen} onToggleDock={() => setDockOpen((open) => !open)} />
 
-        {settingsOpen ? (
-          <SettingsView harness={harness} onClose={() => setSettingsOpen(false)} />
-        ) : (
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar harness={harness} onSearch={() => setPaletteOpen(true)} />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar
+            harness={harness}
+            onSearch={() => setPaletteOpen(true)}
+            settingsOpen={settingsOpen}
+            onToggleSettings={() => setSettingsOpen((open) => !open)}
+          />
 
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <Transcript items={harness.timeline} onExample={setDraft} showThinking={harness.settings.showThinking} />
-              <Composer harness={harness} value={draft} onValueChange={setDraft} />
-            </main>
+          {settingsOpen ? (
+            <SettingsView harness={harness} onClose={() => setSettingsOpen(false)} />
+          ) : (
+            <>
+              <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <Transcript
+                  items={harness.timeline}
+                  onExample={setDraft}
+                  showThinking={harness.settings.showThinking}
+                />
+                <Composer harness={harness} value={draft} onValueChange={setDraft} />
+              </main>
 
-            {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
-          </div>
-        )}
+              {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
+            </>
+          )}
+        </div>
       </div>
 
       <CommandPalette

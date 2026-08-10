@@ -8,6 +8,8 @@
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import type { AgentEvent, AgentId, Attachment } from "../../shared/agent.js";
 
 /** How to launch the Luu Code MCP server, in the form each CLI wants it. */
@@ -91,6 +93,79 @@ export class JsonLineReader {
   }
 }
 
+/**
+ * Where a bare command name actually lives on Windows.
+ *
+ * npm installs a CLI as `name.cmd` plus `name.ps1`; there is no `name.exe` to
+ * spawn. PATHEXT order decides which shim wins, and `.cmd` is the one Node can
+ * drive without a PowerShell round trip.
+ */
+function resolveWindowsExecutable(command: string): string | null {
+  if (command.includes("/") || command.includes("\\")) {
+    return existsSync(command) ? command : null;
+  }
+
+  const extensions = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
+  const directories = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+
+  for (const directory of directories) {
+    for (const extension of extensions) {
+      const candidate = join(directory, `${command}${extension}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Quotes one argument for a Windows command line.
+ *
+ * `cmd /s /c` strips the outermost pair of quotes and hands the rest to the
+ * target, whose own parser follows the MSVC rules: a run of backslashes before
+ * a quote is halved, and `\"` is a literal quote.
+ */
+function quoteWindowsArg(value: string): string {
+  if (value.length > 0 && !/[\s"^&|<>()%!]/.test(value)) return value;
+
+  const escaped = value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1");
+  return `"${escaped}"`;
+}
+
+/**
+ * How to launch a CLI without handing the arguments to a shell.
+ *
+ * `shell: true` on Windows is a trap: Node concatenates the arguments and lets
+ * `cmd.exe` re-parse them, so quotes inside a value are eaten before the target
+ * ever sees them — which silently corrupted the TOML overrides Codex is given —
+ * and any argument built from user text becomes a command-injection vector.
+ */
+function resolveLaunch(command: string, args: string[]): {
+  command: string;
+  args: string[];
+  shell: boolean;
+  verbatim: boolean;
+} {
+  if (process.platform !== "win32") return { command, args, shell: false, verbatim: false };
+
+  const resolved = resolveWindowsExecutable(command);
+
+  // Nothing found: fall back to letting the shell search, which is still better
+  // than failing outright.
+  if (!resolved) return { command, args, shell: true, verbatim: false };
+
+  const isScript = /\.(cmd|bat)$/i.test(resolved);
+  if (!isScript) return { command: resolved, args, shell: false, verbatim: false };
+
+  const line = [resolved, ...args].map(quoteWindowsArg).join(" ");
+  return {
+    command: process.env.COMSPEC ?? "cmd.exe",
+    args: ["/d", "/s", "/c", `"${line}"`],
+    shell: false,
+    verbatim: true,
+  };
+}
+
 export function spawnAgent(command: string, args: string[], cwd: string): ChildProcessWithoutNullStreams {
   // Inherit the environment so the CLI finds its own credentials, exactly as it
   // would in a terminal.
@@ -101,11 +176,14 @@ export function spawnAgent(command: string, args: string[], cwd: string): ChildP
   // often Electron apps, so it is stripped rather than passed on.
   delete env.ELECTRON_RUN_AS_NODE;
 
-  return spawn(command, args, {
+  const launch = resolveLaunch(command, args);
+
+  return spawn(launch.command, launch.args, {
     cwd,
     env,
     windowsHide: true,
-    shell: process.platform === "win32",
+    shell: launch.shell,
+    ...(launch.verbatim ? { windowsVerbatimArguments: true } : {}),
     stdio: ["pipe", "pipe", "pipe"],
   }) as ChildProcessWithoutNullStreams;
 }

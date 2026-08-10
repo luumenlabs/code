@@ -20,6 +20,18 @@ import { JsonLineReader, describeExit, extensionFor, nextId, spawnAgent } from "
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
 /**
+ * A TOML string, preferring the literal form.
+ *
+ * `'C:\Users\me'` needs no backslash doubling and, more importantly, carries no
+ * double quotes — which is what a Windows command line eats. The escaped form
+ * is only used for the rare value that contains a single quote.
+ */
+function toml(value: string): string {
+  if (!value.includes("'")) return `'${value}'`;
+  return JSON.stringify(value);
+}
+
+/**
  * Attachments live in the transcript as base64, but Codex only takes paths, so
  * they are spilled to a temp directory the OS will clean up.
  */
@@ -73,15 +85,17 @@ export class CodexAdapter implements AgentAdapter {
 
     const overrides = [
       "-c",
-      `mcp_servers.luu-code.command=${JSON.stringify(options.mcp.command)}`,
+      `mcp_servers.luu-code.command=${toml(options.mcp.command)}`,
       "-c",
-      `mcp_servers.luu-code.args=${JSON.stringify(options.mcp.args)}`,
+      `mcp_servers.luu-code.args=[${options.mcp.args.map(toml).join(",")}]`,
       "-c",
-      `mcp_servers.luu-code.env=${JSON.stringify(options.mcp.env)}`,
-      ...(selection ? ["-c", `model=${JSON.stringify(selection.model)}`] : []),
-      ...(typeof effort === "string" ? ["-c", `model_reasoning_effort=${JSON.stringify(effort)}`] : []),
+      `mcp_servers.luu-code.env={${Object.entries(options.mcp.env)
+        .map(([key, value]) => `${key}=${toml(value)}`)
+        .join(",")}}`,
+      ...(selection ? ["-c", `model=${toml(selection.model)}`] : []),
+      ...(typeof effort === "string" ? ["-c", `model_reasoning_effort=${toml(effort)}`] : []),
       // "default" is Luu Code's name for "say nothing and take Codex's own".
-      ...(typeof tier === "string" && tier !== "default" ? ["-c", `service_tier=${JSON.stringify(tier)}`] : []),
+      ...(typeof tier === "string" && tier !== "default" ? ["-c", `service_tier=${toml(tier)}`] : []),
     ];
 
     // Resuming by id targets the exact conversation the thread belongs to;
@@ -92,15 +106,19 @@ export class CodexAdapter implements AgentAdapter {
     // Codex takes images as file paths, so attachments are written out first.
     const images = writeAttachments(attachments).flatMap((path) => ["-i", path]);
 
+    // The prompt goes in on stdin ("-"), never as an argument: a message is
+    // arbitrary user text, and arbitrary user text has no business on a command
+    // line.
     const args = this.hasConversation
-      ? ["exec", "resume", ...resumeTarget, "--json", "--skip-git-repo-check", ...images, ...overrides, text]
-      : ["exec", "--json", "--skip-git-repo-check", ...images, ...overrides, text];
+      ? ["exec", "resume", ...resumeTarget, "--json", "--skip-git-repo-check", ...images, ...overrides, "-"]
+      : ["exec", "--json", "--skip-git-repo-check", ...images, ...overrides, "-"];
 
     this.stderr = "";
     options.onEvent({ type: "state", state: "thinking" });
 
     const child = spawnAgent(options.command, args, options.cwd);
     this.child = child;
+    child.stdin.end(text);
 
     const reader = new JsonLineReader((value, raw) => this.handle(value, raw));
 

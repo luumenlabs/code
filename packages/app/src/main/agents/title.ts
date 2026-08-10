@@ -138,7 +138,7 @@ async function runCodex(command: string, model: string, prompt: string, cwd: str
         "--model",
         model,
         "--config",
-        'model_reasoning_effort="low"',
+        "model_reasoning_effort='low'",
         "--output-schema",
         schemaPath,
         "--output-last-message",
