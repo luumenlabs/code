@@ -24,7 +24,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "studio_status",
     op: "session.status",
     description:
-      "Report whether Roblox Studio is connected, which place is open, and whether it is in edit mode or a playtest. Call this first if anything fails unexpectedly.",
+      "Report whether Roblox Studio is connected, which place is open, and whether it is in edit mode or a playtest. More than one Studio window can be connected at once, so this lists them all; the one you are working in is the one this conversation is bound to. Call this first if anything fails unexpectedly.",
   },
   {
     name: "studio_capabilities",
@@ -35,7 +35,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "studio_select_session",
     op: "session.select",
-    description: "Choose which connected Studio window receives commands when more than one is open.",
+    description:
+      "Move this conversation to a different connected Studio window. Every command you send afterwards goes to that window, and the one you were in is left as it is. Use studio_status to get the session id. You do not need this to start work: a conversation is bound to a window on its first command and stays there, including across a Studio restart.",
   },
 
   {

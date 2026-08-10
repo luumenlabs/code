@@ -36,7 +36,22 @@ export const ROUTES = {
 
 export interface StudioHelloRequest {
   protocolVersion: number;
+  /**
+   * Identifies the *game*, not the window: the plugin derives it from the place
+   * identity, so every Studio window on the same place presents the same one.
+   * It is what a pairing approval is remembered against.
+   */
   installId: string;
+  /**
+   * Identifies the Studio window, generated fresh each time the plugin starts.
+   *
+   * Plugin settings are stored once per plugin for the whole machine, so the
+   * install id cannot tell two open windows apart — before this existed they
+   * both resolved to one session and each handshake evicted the other's
+   * connection. Absent from plugins older than this field, which then behave as
+   * they always did: one window at a time.
+   */
+  windowId?: string;
   pluginVersion: string;
   studioVersion: string;
   place: PlaceInfo;
@@ -72,6 +87,7 @@ export type StudioHelloResponse =
 export interface StudioPairRequest {
   sessionId: string;
   installId: string;
+  windowId?: string;
 }
 
 export type StudioPairResponse =

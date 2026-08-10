@@ -61,6 +61,7 @@ interface EndpointRecord {
 interface SessionRecord {
   id: string;
   installId: string;
+  windowId: string;
   token: string;
   place: StudioSession["place"];
   studioVersion: string;
@@ -68,6 +69,33 @@ interface SessionRecord {
   endpoints: Map<string, EndpointRecord>;
   lastSeen: number;
   connectedAt: number;
+}
+
+/**
+ * Which Studio window a caller means.
+ *
+ * An explicit session id wins. Otherwise the chat decides, because chats run
+ * concurrently and each one is working in a particular place. Only a caller
+ * with neither — an external MCP client, say — falls back to the default.
+ */
+export interface SessionTarget {
+  sessionId?: string;
+  chat?: string;
+}
+
+/**
+ * What a chat is working in.
+ *
+ * The session id alone would not survive Studio restarting: the window that
+ * comes back is a new session, and the chat would be stranded against an id
+ * that no longer exists. The install id and place identity are recorded so the
+ * same game can be recognised when it returns.
+ */
+interface ChatBinding {
+  sessionId: string;
+  installId: string;
+  identity: string | null;
+  placeName: string;
 }
 
 interface PendingPairing {
@@ -90,6 +118,9 @@ export interface SessionEvents {
 
 export class SessionRegistry {
   private readonly sessions = new Map<string, SessionRecord>();
+  /** Window id to session id, so a re-handshake finds its own session. */
+  private readonly byWindow = new Map<string, string>();
+  private readonly chats = new Map<string, ChatBinding>();
   private readonly pairings = new Map<string, PendingPairing>();
   private activeSessionId: string | null = null;
   private sweepTimer: NodeJS.Timeout | null = null;
@@ -124,13 +155,18 @@ export class SessionRegistry {
   // -------------------------------------------------------------------------
 
   hello(request: StudioHelloRequest): StudioHelloResponse {
+    const windowId = windowIdOf(request);
     const paired = request.token ? this.settings.findPairedByToken(request.token) : undefined;
 
     // A stored token is the only silent path back in. Recognising an install id
     // alone would make that id equivalent to a credential, and it is readable
     // by any process that can read Studio's settings.
-    if (paired && request.token && safeEquals(paired.token, request.token)) {
-      const session = this.upsertSession(paired.sessionId, request, paired.token);
+    if (paired && request.token && safeEquals(paired.token, request.token) && paired.installId === request.installId) {
+      // The credential belongs to the game; the session belongs to the window.
+      // A second window on an already-approved place connects silently and
+      // still gets a session of its own.
+      const sessionId = this.byWindow.get(windowId) ?? `s_${randomUUID().slice(0, 8)}`;
+      const session = this.upsertSession(sessionId, request, windowId, paired.token);
       const endpoint = this.addEndpoint(session, request.run, request.capabilities);
 
       this.settings.addPaired({
@@ -152,7 +188,9 @@ export class SessionRegistry {
       };
     }
 
-    const existing = [...this.pairings.values()].find((entry) => entry.request.installId === request.installId);
+    // Matched on the window, not the game: two windows asking to connect are two
+    // approvals, and collapsing them would show one code for both.
+    const existing = [...this.pairings.values()].find((entry) => entry.request.windowId === windowId);
     if (existing && existing.approved === null) {
       // The plugin restarted while a request was already on screen; keep the
       // same code so the user is not asked to compare a new one.
@@ -168,6 +206,7 @@ export class SessionRegistry {
     const pairingRequest: PairingRequest = {
       sessionId,
       installId: request.installId,
+      windowId,
       code: generatePairingCode(),
       place: request.place,
       studioVersion: request.studioVersion,
@@ -204,10 +243,11 @@ export class SessionRegistry {
     };
   }
 
-  pair(sessionId: string, installId: string): StudioPairResponse {
+  pair(sessionId: string, installId: string, windowId?: string): StudioPairResponse {
     const pending = this.pairings.get(sessionId);
+    const window = windowId ?? installId;
 
-    if (!pending || pending.request.installId !== installId) {
+    if (!pending || pending.request.installId !== installId || pending.request.windowId !== window) {
       return {
         status: "rejected",
         error: new LuuCodeError("SESSION_UNKNOWN", "This pairing request expired. Reconnect from Studio to get a new code.").toWire(),
@@ -233,17 +273,18 @@ export class SessionRegistry {
         studioVersion: pending.request.studioVersion,
         pluginVersion: pending.request.pluginVersion,
       },
+      window,
       token,
     );
 
     const endpoint = this.addEndpoint(session, pending.run, pending.capabilities);
 
     // The user just approved this window, which is the clearest statement of
-    // which Studio session they mean. They can switch back with session.select.
+    // which Studio session they mean. It becomes the default for chats that
+    // have not picked one; chats already bound elsewhere are left alone.
     this.activeSessionId = session.id;
 
     this.settings.addPaired({
-      sessionId,
       installId,
       token,
       placeName: pending.request.place.name,
@@ -416,9 +457,17 @@ export class SessionRegistry {
    * Rejects with a typed error when Studio is not connected, when the requested
    * realm has no connection, or when the command outlives its budget.
    */
-  async send(op: Op, params: Record<string, unknown>, options: { sessionId?: string; realm?: StudioRealm; timeoutMs: number }): Promise<unknown> {
-    const session = this.resolveSession(options.sessionId);
+  async send(
+    op: Op,
+    params: Record<string, unknown>,
+    options: SessionTarget & { realm?: StudioRealm; timeoutMs: number },
+  ): Promise<unknown> {
+    const session = this.resolveSession(options);
     const endpoint = this.resolveEndpoint(session, options.realm);
+
+    // Bound here rather than at resolution, so a chat is pinned by the first
+    // command it actually sends and not by a status or capability probe.
+    if (options.chat) this.bindChat(options.chat, session);
 
     const command: StudioCommand = {
       id: `c_${randomUUID().slice(0, 8)}`,
@@ -447,21 +496,80 @@ export class SessionRegistry {
     return deferred.promise;
   }
 
-  private resolveSession(sessionId?: string): SessionRecord {
-    if (sessionId) {
-      const found = this.sessions.get(sessionId);
+  private resolveSession(target: SessionTarget = {}): SessionRecord {
+    if (target.sessionId) {
+      const found = this.sessions.get(target.sessionId);
       if (!found) {
-        throw new LuuCodeError("SESSION_UNKNOWN", `No Studio session with id ${sessionId} is connected.`);
+        throw new LuuCodeError("SESSION_UNKNOWN", `No Studio session with id ${target.sessionId} is connected.`);
       }
       return found;
     }
 
+    const bound = target.chat ? this.chats.get(target.chat) : undefined;
+    if (bound) return this.resolveBinding(target.chat!, bound);
+
+    return this.defaultSession();
+  }
+
+  /**
+   * Follows a chat to the window it has been working in.
+   *
+   * The one thing this must never do is quietly answer with a different game.
+   * A chat mid-task holds instance handles, a script it is editing, and an idea
+   * of what is running; pointing it at whatever else happens to be open would
+   * apply all of that to the wrong place, and nothing in the transcript would
+   * say so. Studio restarting is the exception worth handling, because the
+   * window that comes back is the same game under a new id.
+   */
+  private resolveBinding(chat: string, bound: ChatBinding): SessionRecord {
+    const live = this.sessions.get(bound.sessionId);
+    if (live && live.endpoints.size > 0) return live;
+
+    const successor = this.findSuccessor(bound);
+    if (successor) {
+      log.info(`${chat}: ${bound.placeName} reconnected as ${successor.id}`);
+      this.bindChat(chat, successor);
+      return successor;
+    }
+
+    // Still registered but with nothing live behind it — mid-playtest
+    // transition, most likely. The endpoint check reports that far better than
+    // a guess about which window the user meant.
+    if (live) return live;
+
+    throw new LuuCodeError("STUDIO_NOT_CONNECTED", `The Studio window this chat was working in (${bound.placeName}) is no longer connected.`, {
+      details: { chat, place: bound.placeName, sessionId: bound.sessionId },
+      hint: this.sessions.size > 0
+        ? "Reopen that place in Studio, or point this chat at a connected one with session.select."
+        : "Open the place in Studio and approve the Luu Code connection panel.",
+    });
+  }
+
+  /**
+   * The same game, back under a new session id.
+   *
+   * Two windows on one place share an install id, so this can land on the other
+   * one. They are the same game, which makes it a far smaller thing to be wrong
+   * about than picking an unrelated place — and it only happens once the bound
+   * window is gone.
+   */
+  private findSuccessor(bound: ChatBinding): SessionRecord | undefined {
+    const live = [...this.sessions.values()].filter((session) => session.endpoints.size > 0);
+
+    return (
+      live.find((session) => session.installId === bound.installId) ??
+      (bound.identity ? live.find((session) => session.place.identity === bound.identity) : undefined)
+    );
+  }
+
+  private defaultSession(): SessionRecord {
     const active = this.activeSessionId ? this.sessions.get(this.activeSessionId) : undefined;
     if (active && active.endpoints.size > 0) return active;
 
     // The selected session has no live connection: Studio was closed, the place
     // was swapped, or the process restarted. Falling through to a session that
-    // can actually answer beats timing out against a dead one.
+    // can actually answer beats timing out against a dead one. This is only safe
+    // because the caller named no chat, and so has no place it belongs to.
     const alive = [...this.sessions.values()]
       .filter((session) => session.endpoints.size > 0)
       .sort((left, right) => right.lastSeen - left.lastSeen)[0];
@@ -476,6 +584,31 @@ export class SessionRegistry {
     throw new LuuCodeError("STUDIO_NOT_CONNECTED", "Roblox Studio is not connected to Luu Code.", {
       hint: "Open the place in Studio and approve the Luu Code connection panel.",
     });
+  }
+
+  private bindChat(chat: string, session: SessionRecord): void {
+    this.chats.set(chat, {
+      sessionId: session.id,
+      installId: session.installId,
+      identity: session.place.identity ?? null,
+      placeName: session.place.name,
+    });
+  }
+
+  /**
+   * The error routing would fail with, or null if it would succeed.
+   *
+   * Capability checks run before anything is sent, and "this capability is
+   * unavailable" is the wrong story when the real problem is that the window
+   * the chat belongs to has closed.
+   */
+  targetError(target: SessionTarget = {}): LuuCodeError | null {
+    try {
+      this.resolveSession(target);
+      return null;
+    } catch (error) {
+      return LuuCodeError.from(error);
+    }
   }
 
   private resolveEndpoint(session: SessionRecord, realm?: StudioRealm): EndpointRecord {
@@ -510,22 +643,29 @@ export class SessionRegistry {
   private upsertSession(
     sessionId: string,
     request: Pick<StudioHelloRequest, "installId" | "place" | "studioVersion" | "pluginVersion">,
+    windowId: string,
     token: string,
   ): SessionRecord {
     const existing = this.sessions.get(sessionId);
 
     if (existing) {
+      // The install id is refreshed along with the place: a window that has had
+      // a different place opened in it is a different game, and leaving the old
+      // id behind would have chats follow the session into it.
+      existing.installId = request.installId;
       existing.place = request.place;
       existing.studioVersion = request.studioVersion;
       existing.pluginVersion = request.pluginVersion;
       existing.token = token;
       existing.lastSeen = Date.now();
+      this.byWindow.set(windowId, sessionId);
       return existing;
     }
 
     const record: SessionRecord = {
       id: sessionId,
       installId: request.installId,
+      windowId,
       token,
       place: request.place,
       studioVersion: request.studioVersion,
@@ -536,13 +676,16 @@ export class SessionRegistry {
     };
 
     this.sessions.set(sessionId, record);
+    this.byWindow.set(windowId, sessionId);
     this.activeSessionId ??= sessionId;
     return record;
   }
 
   private addEndpoint(session: SessionRecord, run: RunState, capabilities: CapabilityId[]): EndpointRecord {
     // Studio replaces the plugin's DataModel on every edit/run transition, so a
-    // stale connection for the same realm is dead by definition.
+    // stale connection for the same realm is dead by definition. This is scoped
+    // to one session for a reason: two Studio windows are both in the edit realm
+    // and neither replaced the other.
     for (const [id, existing] of session.endpoints) {
       if (existing.realm === run.realm) {
         this.failEndpoint(existing, new LuuCodeError("STUDIO_NOT_CONNECTED", "Studio replaced this connection."));
@@ -605,10 +748,7 @@ export class SessionRegistry {
       }
 
       if (session.endpoints.size === 0 && now - session.lastSeen > SESSION_STALE_MS) {
-        this.sessions.delete(sessionId);
-        if (this.activeSessionId === sessionId) {
-          this.activeSessionId = [...this.sessions.keys()][0] ?? null;
-        }
+        this.forget(session);
         this.bus.emit({ type: "session.disconnected", sessionId, reason: "Studio stopped responding" });
         this.emitStatus();
       }
@@ -623,10 +763,23 @@ export class SessionRegistry {
     };
   }
 
-  capabilitiesFor(sessionId?: string): Set<CapabilityId> {
+  /**
+   * Drops a session and everything keyed on it, leaving chats bound to it in
+   * place: the window may be coming back, and findSuccessor reunites them.
+   */
+  private forget(session: SessionRecord): void {
+    this.sessions.delete(session.id);
+    this.byWindow.delete(session.windowId);
+
+    if (this.activeSessionId === session.id) {
+      this.activeSessionId = [...this.sessions.keys()][0] ?? null;
+    }
+  }
+
+  capabilitiesFor(target: SessionTarget = {}): Set<CapabilityId> {
     let session: SessionRecord | undefined;
     try {
-      session = this.resolveSession(sessionId);
+      session = this.resolveSession(target);
     } catch {
       return new Set();
     }
@@ -638,10 +791,10 @@ export class SessionRegistry {
     return merged;
   }
 
-  runStateFor(sessionId?: string): RunState | null {
+  runStateFor(target: SessionTarget = {}): RunState | null {
     let session: SessionRecord | undefined;
     try {
-      session = this.resolveSession(sessionId);
+      session = this.resolveSession(target);
     } catch {
       return null;
     }
@@ -650,14 +803,34 @@ export class SessionRegistry {
     return endpoint?.run ?? null;
   }
 
+  /** Which session's output and history a caller reads, named or not. */
+  sessionKeyFor(target: SessionTarget = {}): string {
+    try {
+      return this.resolveSession(target).id;
+    } catch {
+      return this.activeSessionId ?? "default";
+    }
+  }
+
   hasSessions(): boolean {
     return this.sessions.size > 0;
   }
 
-  selectSession(sessionId: string): void {
-    if (!this.sessions.has(sessionId)) {
+  /**
+   * Points a chat at a Studio window, and moves the default along with it.
+   *
+   * Moving the default too is what makes the picker behave the way it looks:
+   * the user chose a window while looking at a chat, so that chat goes there,
+   * and the next chat they open starts there rather than somewhere older. Chats
+   * already bound elsewhere keep working where they are.
+   */
+  selectSession(sessionId: string, chat?: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
       throw new LuuCodeError("SESSION_UNKNOWN", `No Studio session with id ${sessionId} is connected.`);
     }
+
+    if (chat) this.bindChat(chat, session);
     this.activeSessionId = sessionId;
     this.emitStatus();
   }
@@ -670,12 +843,18 @@ export class SessionRegistry {
       this.failEndpoint(endpoint, new LuuCodeError("STUDIO_NOT_CONNECTED", "Disconnected by the user."));
     }
 
-    this.sessions.delete(sessionId);
-    this.settings.removePaired(sessionId);
+    this.forget(session);
 
-    if (this.activeSessionId === sessionId) {
-      this.activeSessionId = [...this.sessions.keys()][0] ?? null;
-    }
+    // The approval covers the game, not this one window. Revoking it while
+    // another window still has the place open would knock that one out too, and
+    // it was never the one disconnected.
+    const stillOpen = [...this.sessions.values()].some((other) => other.installId === session.installId);
+    if (!stillOpen) this.settings.removePaired(session.installId);
+
+    // Chats bound here keep their binding, and say so if asked to do anything.
+    // Silently moving them onto whatever else is connected is the failure this
+    // whole path exists to prevent — disconnecting a window is not an
+    // instruction to redirect the work that was happening in it.
 
     this.bus.emit({ type: "session.disconnected", sessionId, reason: "Disconnected by the user" });
     this.emitStatus();
@@ -697,6 +876,7 @@ export class SessionRegistry {
     return {
       id: session.id,
       installId: session.installId,
+      windowId: session.windowId,
       place: session.place,
       studioVersion: session.studioVersion,
       pluginVersion: session.pluginVersion,
@@ -709,10 +889,14 @@ export class SessionRegistry {
   }
 
   status(): SessionStatus {
+    const chats: Record<string, string> = {};
+    for (const [chat, bound] of this.chats) chats[chat] = bound.sessionId;
+
     return {
       serverVersion: this.serverVersion,
       sessions: [...this.sessions.values()].map((session) => this.toPublicSession(session)),
       activeSessionId: this.activeSessionId,
+      chats,
       pending: this.pendingPairings(),
     };
   }
@@ -722,10 +906,20 @@ export class SessionRegistry {
   }
 }
 
+/**
+ * Falls back to the install id for plugins built before windowId existed. Those
+ * behave exactly as they used to — one session per machine — instead of failing
+ * to connect against a newer server.
+ */
+function windowIdOf(request: StudioHelloRequest): string {
+  return request.windowId ?? request.installId;
+}
+
 function emptyPublicSession(session: SessionRecord): StudioSession {
   return {
     id: session.id,
     installId: session.installId,
+    windowId: session.windowId,
     place: session.place,
     studioVersion: session.studioVersion,
     pluginVersion: session.pluginVersion,

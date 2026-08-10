@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("luuCode", {
 
   approvePairing: (sessionId) => ipcRenderer.invoke("approve-pairing", sessionId),
   rejectPairing: (sessionId) => ipcRenderer.invoke("reject-pairing", sessionId),
-  selectSession: (sessionId) => ipcRenderer.invoke("select-session", sessionId),
+  selectSession: (sessionId, chat) => ipcRenderer.invoke("select-session", sessionId, chat),
   disconnectSession: (sessionId) => ipcRenderer.invoke("disconnect-session", sessionId),
   setPermission: (group, allowed) => ipcRenderer.invoke("set-permission", group, allowed),
 
@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld("luuCode", {
   openReleases: () => ipcRenderer.invoke("open-releases"),
   revealPluginFolder: () => ipcRenderer.invoke("reveal-plugin-folder"),
 
-  execute: (op, params) => ipcRenderer.invoke("execute", op, params),
+  execute: (op, params, chat) => ipcRenderer.invoke("execute", op, params, chat),
 
   onServerEvent: (listener) => subscribe("server-event", listener),
   onAgentEvent: (listener) => subscribe("agent-event", listener),

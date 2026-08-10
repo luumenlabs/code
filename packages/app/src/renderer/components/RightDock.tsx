@@ -103,12 +103,25 @@ export function DockTabs({
 function StudioTab({ harness }: { harness: Harness }): React.JSX.Element {
   const snapshot = harness.snapshot!;
   const { status, capabilities } = snapshot;
-  const session = status.sessions.find((entry) => entry.active) ?? status.sessions[0] ?? null;
+
+  // The window the open chat is working in, which is not necessarily the
+  // default: another chat may be running in a different place right now, and
+  // this panel describes the one whose transcript is on screen.
+  const chatSessionId = harness.activeThreadId ? status.chats[harness.activeThreadId] : undefined;
+  const session =
+    status.sessions.find((entry) => entry.id === chatSessionId) ??
+    status.sessions.find((entry) => entry.active) ??
+    status.sessions[0] ??
+    null;
 
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-4 p-3">
-        {session ? <StudioDetails session={session} harness={harness} sessions={status.sessions} /> : <StudioEmpty />}
+        {session ? (
+          <StudioDetails session={session} harness={harness} sessions={status.sessions} />
+        ) : (
+          <StudioEmpty />
+        )}
 
         <Unavailable report={capabilities} />
 
@@ -149,9 +162,21 @@ function StudioDetails({
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Studio windows</DropdownMenuLabel>
               {sessions.map((entry) => (
-                <DropdownMenuItem key={entry.id} onSelect={() => void window.luuCode.selectSession(entry.id)}>
-                  <Check className={cn("size-3.5", entry.active ? "opacity-100" : "opacity-0")} />
+                <DropdownMenuItem
+                  key={entry.id}
+                  onSelect={() => void window.luuCode.selectSession(entry.id, harness.activeThreadId ?? undefined)}
+                >
+                  {/* Checked against this chat's window, not the default: the
+                      question the menu answers is where this conversation is
+                      working. */}
+                  <Check className={cn("size-3.5", entry.id === session.id ? "opacity-100" : "opacity-0")} />
                   <span className="truncate">{entry.place.name}</span>
+                  {/* Two windows on one place are two entries with one name.
+                      The mode is usually what tells them apart, and when it is
+                      not, at least the row is not a duplicate of the one above. */}
+                  <span className="ml-auto pl-2 text-[11.5px] text-muted-foreground">
+                    {entry.run.running ? "Playtest" : "Edit"}
+                  </span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

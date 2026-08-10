@@ -786,8 +786,8 @@ function registerIpc(): void {
   ipcMain.handle("approve-pairing", (_event, sessionId: string) => requireServer().approvePairing(sessionId));
   ipcMain.handle("reject-pairing", (_event, sessionId: string) => requireServer().rejectPairing(sessionId));
 
-  ipcMain.handle("select-session", async (_event, sessionId: string) => {
-    await requireServer().execute("session.select", { sessionId }, { origin: "harness" });
+  ipcMain.handle("select-session", async (_event, sessionId: string, chat?: string) => {
+    await requireServer().execute("session.select", { sessionId }, { origin: "harness", ...(chat ? { chat } : {}) });
   });
 
   ipcMain.handle("disconnect-session", (_event, sessionId: string) => {
@@ -799,8 +799,10 @@ function registerIpc(): void {
     broadcast("server-event", { type: "capabilities", report: requireServer().capabilities() } satisfies ServerEvent);
   });
 
-  ipcMain.handle("execute", (_event, op: string, params: unknown) =>
-    requireServer().execute(op, params, { origin: "harness" }),
+  // The chat comes along so a button in the dock hits the same Studio window
+  // the conversation beside it is working in, rather than the selected one.
+  ipcMain.handle("execute", (_event, op: string, params: unknown, chat?: string) =>
+    requireServer().execute(op, params, { origin: "harness", ...(chat ? { chat } : {}) }),
   );
 }
 

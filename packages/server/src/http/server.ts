@@ -101,7 +101,7 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
 
   if (path === ROUTES.pair && req.method === "POST") {
     const body = await readJson<StudioPairRequest>(req);
-    sendJson(res, 200, deps.sessions.pair(body.sessionId, body.installId));
+    sendJson(res, 200, deps.sessions.pair(body.sessionId, body.installId, body.windowId));
     return;
   }
 

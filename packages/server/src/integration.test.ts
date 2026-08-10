@@ -31,6 +31,7 @@ class FakePlugin {
   private readonly handlers = new Map<string, (params: any) => unknown>();
 
   private static nextInstall = 0;
+  private static nextWindow = 0;
   static readonly all: FakePlugin[] = [];
 
   readonly capabilities = [
@@ -49,9 +50,24 @@ class FakePlugin {
 
   constructor(
     private readonly port: number,
-    private readonly installId = `install-${(FakePlugin.nextInstall += 1)}`,
+    /** The game. Two windows on the same place share it, as the real plugin does. */
+    private readonly installId = `auto-install-${(FakePlugin.nextInstall += 1)}`,
+    /** The window. Generated fresh per plugin runtime, never persisted. */
+    private readonly windowId = `auto-window-${(FakePlugin.nextWindow += 1)}`,
+    private readonly placeId = 123,
+    private readonly placeName = "Test Place",
   ) {
     FakePlugin.all.push(this);
+  }
+
+  private place(): Record<string, unknown> {
+    return {
+      placeId: this.placeId,
+      gameId: 456,
+      name: this.placeName,
+      unsaved: false,
+      identity: `place:${this.placeId}`,
+    };
   }
 
   on(op: string, handler: (params: any) => unknown): this {
@@ -76,9 +92,10 @@ class FakePlugin {
     return this.post("/studio/hello", {
       protocolVersion: 1,
       installId: this.installId,
+      windowId: this.windowId,
       pluginVersion: "0.1.0",
       studioVersion: "0.600.0",
-      place: { placeId: 123, gameId: 456, name: "Test Place", unsaved: false },
+      place: this.place(),
       capabilities: this.capabilities,
       run: this.runState(),
       token,
@@ -86,7 +103,11 @@ class FakePlugin {
   }
 
   pair(): Promise<{ status: number; body: any }> {
-    return this.post("/studio/pair", { sessionId: this.sessionId, installId: this.installId });
+    return this.post("/studio/pair", {
+      sessionId: this.sessionId,
+      installId: this.installId,
+      windowId: this.windowId,
+    });
   }
 
   runState(): Record<string, unknown> {
@@ -247,6 +268,164 @@ describe("pairing", () => {
     const impostor = new FakePlugin(server.port, "install-shared");
     const response = await impostor.hello();
     expect(response.body.status).toBe("pairing");
+  });
+});
+
+/**
+ * Several Studio windows open at once.
+ *
+ * Studio stores plugin settings once per machine, so every open window reads
+ * back the same install id and the same token. The window id is the only thing
+ * telling them apart, and without it both windows resolved to one session where
+ * each handshake evicted the other's connection — one Studio at a time, and a
+ * pairing prompt every time you switched.
+ */
+describe("multiple Studio windows", () => {
+  /**
+   * Connects one window, pairing if it has to. Passing a token is what a second
+   * window on an already-approved place does: it reads the same per-place
+   * credential out of Studio's settings.
+   */
+  async function connectWindow(
+    installId: string,
+    windowId: string,
+    placeId: number,
+    token?: string,
+  ): Promise<FakePlugin> {
+    const fake = new FakePlugin(server.port, installId, windowId, placeId);
+    const hello = await fake.hello(token);
+
+    if (hello.body.status === "pairing") {
+      fake.sessionId = hello.body.sessionId;
+      expect(server.approvePairing(fake.sessionId)).toBe(true);
+
+      const paired = await fake.pair();
+      expect(paired.body.status).toBe("connected");
+      fake.token = paired.body.token;
+      fake.endpointId = paired.body.endpointId;
+    } else {
+      expect(hello.body.status).toBe("connected");
+      fake.sessionId = hello.body.sessionId;
+      fake.token = hello.body.token;
+      fake.endpointId = hello.body.endpointId;
+    }
+
+    // Answers with its own window id, so a routing mistake names the culprit
+    // instead of just failing an equality check.
+    fake.on("dm.services", () => ({
+      services: [{ handle: "@h1", path: "game.Workspace", name: windowId, className: "Workspace", childCount: 0 }],
+    }));
+    fake.start();
+
+    return fake;
+  }
+
+  const answered = (result: unknown): string => (result as any).services[0].name;
+
+  it("gives each window its own session and leaves the other connected", async () => {
+    const first = await connectWindow("install-pair", "window-pair-1", 4001);
+    const second = await connectWindow("install-pair", "window-pair-2", 4001, first.token);
+
+    expect(second.sessionId).not.toBe(first.sessionId);
+
+    const sessions = server.status().sessions;
+    expect(sessions.filter((entry) => entry.installId === "install-pair")).toHaveLength(2);
+
+    // Both are still reachable. This is the regression: the second handshake
+    // used to evict the first window's endpoint as a replaced connection,
+    // because two windows in edit mode look like one realm colliding.
+    expect(answered(await server.execute("dm.services", {}, { sessionId: first.sessionId }))).toBe("window-pair-1");
+    expect(answered(await server.execute("dm.services", {}, { sessionId: second.sessionId }))).toBe("window-pair-2");
+
+    first.stop();
+    second.stop();
+  });
+
+  it("keeps a chat in its own window when another chat switches", async () => {
+    const first = await connectWindow("install-stick-a", "window-stick-1", 4101);
+    const second = await connectWindow("install-stick-b", "window-stick-2", 4102);
+
+    await server.execute("session.select", { sessionId: first.sessionId }, { chat: "chat-a" });
+    // Moves the default as well, which is what makes this worth asserting.
+    await server.execute("session.select", { sessionId: second.sessionId }, { chat: "chat-b" });
+
+    expect(server.status().activeSessionId).toBe(second.sessionId);
+    expect(answered(await server.execute("dm.services", {}, { chat: "chat-a" }))).toBe("window-stick-1");
+    expect(answered(await server.execute("dm.services", {}, { chat: "chat-b" }))).toBe("window-stick-2");
+
+    first.stop();
+    second.stop();
+  });
+
+  it("binds a chat to the window it first ran in and holds it there", async () => {
+    const first = await connectWindow("install-bind-a", "window-bind-1", 4201);
+    await server.execute("session.select", { sessionId: first.sessionId });
+
+    expect(answered(await server.execute("dm.services", {}, { chat: "chat-bound" }))).toBe("window-bind-1");
+    expect(server.status().chats["chat-bound"]).toBe(first.sessionId);
+
+    // A window opening later takes the default, and the bound chat ignores it.
+    const second = await connectWindow("install-bind-b", "window-bind-2", 4202);
+    await server.execute("session.select", { sessionId: second.sessionId });
+
+    expect(answered(await server.execute("dm.services", {}, { chat: "chat-bound" }))).toBe("window-bind-1");
+
+    first.stop();
+    second.stop();
+  });
+
+  it("refuses to answer a chat from a different game once its window is gone", async () => {
+    const other = await connectWindow("install-alive", "window-alive", 4301);
+    const owned = await connectWindow("install-closing", "window-closing", 4302);
+
+    await server.execute("session.select", { sessionId: owned.sessionId }, { chat: "chat-orphan" });
+
+    owned.stop();
+    server.disconnectSession(owned.sessionId);
+
+    // Another Studio is connected and would answer happily. Doing so would
+    // apply this chat's work to a place it has never seen, and nothing in the
+    // transcript would say it happened.
+    await expect(server.execute("dm.services", {}, { chat: "chat-orphan" })).rejects.toMatchObject({
+      code: "STUDIO_NOT_CONNECTED",
+    });
+
+    expect(answered(await server.execute("dm.services", {}, { sessionId: other.sessionId }))).toBe("window-alive");
+
+    other.stop();
+  });
+
+  it("follows its place back after Studio restarts", async () => {
+    const before = await connectWindow("install-restart", "window-restart-1", 4401);
+    await server.execute("session.select", { sessionId: before.sessionId }, { chat: "chat-restart" });
+
+    before.stop();
+    server.disconnectSession(before.sessionId);
+
+    // Same place, same install id, new window: Studio was reopened. The chat
+    // was working here, so it belongs here, even though the session id changed.
+    const after = await connectWindow("install-restart", "window-restart-2", 4401);
+
+    expect(after.sessionId).not.toBe(before.sessionId);
+    expect(answered(await server.execute("dm.services", {}, { chat: "chat-restart" }))).toBe("window-restart-2");
+    expect(server.status().chats["chat-restart"]).toBe(after.sessionId);
+
+    after.stop();
+  });
+
+  it("keeps the approval when one of two windows on a place disconnects", async () => {
+    const first = await connectWindow("install-shared-credential", "window-shared-1", 4501);
+    const second = await connectWindow("install-shared-credential", "window-shared-2", 4501, first.token);
+
+    second.stop();
+    server.disconnectSession(second.sessionId);
+
+    // The approval covers the game, and the game is still open in the window
+    // that was not disconnected. Revoking it would have knocked that one out too.
+    const again = await first.hello(first.token);
+    expect(again.body.status).toBe("connected");
+
+    first.stop();
   });
 });
 

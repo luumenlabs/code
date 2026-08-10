@@ -133,22 +133,64 @@ local function readStudioVersion(): string
 end
 
 --[[
-	Persisted so reconnecting after a Studio restart does not ask the user to
-	approve the same window again. Spec section 29.
+	This Studio window, for as long as it is open.
+
+	Nothing Studio exposes tells one open window from another: plugin settings
+	are machine-wide, so every window reads back the same install id and the same
+	token. That made two open windows one session on the server, where each
+	handshake evicted the other's connection and sent it back through pairing.
+	A value generated per plugin runtime is the missing half of the identity —
+	the install id says which game, this says which window.
+]]
+local windowId = HttpService:GenerateGUID(false)
+
+--[[
+	Scopes a persisted setting to the open place, so an approval is remembered
+	for that game rather than for the machine.
+
+	Returns nil for a place with no durable identity. Those get no persisted
+	credential at all: the alternative is one shared key, which would let any
+	unsaved place inherit an approval granted to a different one.
+]]
+local function settingKey(name: string): string?
+	local identity = placeIdentity()
+	if identity == nil then
+		return nil
+	end
+	return string.format("%s:%s", name, identity)
+end
+
+--[[
+	Persisted per place, so reconnecting after a Studio restart does not ask the
+	user to approve the same game again. Spec section 29.
+
+	An unsaved place falls back to the window id, which is not persisted, so it
+	pairs again on every Studio launch. That is the honest answer for a place
+	Luu Code cannot recognise twice — see placeIdentity above.
 ]]
 local function installId(): string
-	local stored = pluginRef:GetSetting(Constants.SETTING_INSTALL_ID)
+	local key = settingKey(Constants.SETTING_INSTALL_ID)
+	if key == nil then
+		return windowId
+	end
+
+	local stored = pluginRef:GetSetting(key)
 	if type(stored) == "string" and #stored > 0 then
 		return stored
 	end
 
 	local generated = HttpService:GenerateGUID(false)
-	pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, generated)
+	pluginRef:SetSetting(key, generated)
 	return generated
 end
 
 local function storedToken(): string?
-	local stored = pluginRef:GetSetting(Constants.SETTING_TOKEN)
+	local key = settingKey(Constants.SETTING_TOKEN)
+	if key == nil then
+		return nil
+	end
+
+	local stored = pluginRef:GetSetting(key)
 	if type(stored) == "string" and #stored > 0 then
 		return stored
 	end
@@ -157,14 +199,22 @@ end
 
 local function saveToken(token: string)
 	state.token = token
-	pluginRef:SetSetting(Constants.SETTING_TOKEN, token)
+
+	local key = settingKey(Constants.SETTING_TOKEN)
+	if key ~= nil then
+		pluginRef:SetSetting(key, token)
+	end
 end
 
 function Client.forgetToken()
 	state.token = nil
 	state.sessionId = nil
 	state.endpointId = nil
-	pluginRef:SetSetting(Constants.SETTING_TOKEN, "")
+
+	local key = settingKey(Constants.SETTING_TOKEN)
+	if key ~= nil then
+		pluginRef:SetSetting(key, "")
+	end
 end
 
 function Client.port(): number
@@ -181,6 +231,7 @@ local function waitForApproval(): boolean
 		local response = Net.post(baseUrl() .. Constants.ROUTES.pair, {
 			sessionId = state.sessionId,
 			installId = installId(),
+			windowId = windowId,
 		})
 
 		if not response.ok then
@@ -212,6 +263,7 @@ local function handshake(): boolean
 	local response = Net.post(baseUrl() .. Constants.ROUTES.hello, {
 		protocolVersion = Constants.PROTOCOL_VERSION,
 		installId = installId(),
+		windowId = windowId,
 		pluginVersion = Constants.PLUGIN_VERSION,
 		studioVersion = readStudioVersion(),
 		place = state.place,
@@ -403,6 +455,13 @@ function Client.start(hostPlugin: Plugin)
 	if type(storedPort) == "number" then
 		state.port = storedPort
 	end
+
+	-- The unscoped keys are from before identity was per place. Every window read
+	-- the same two values back, which is the thing this replaced; leaving them
+	-- behind would keep one stale token on disk forever. Each place pairs once
+	-- more, then remembers on its own key.
+	pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, nil)
+	pluginRef:SetSetting(Constants.SETTING_TOKEN, nil)
 
 	OutputCapture.start(function()
 		return RunState.current().realm

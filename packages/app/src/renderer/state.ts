@@ -240,21 +240,26 @@ export function useHarness(): Harness {
     await window.luuCode.interruptAgent();
   }, []);
 
-  const run = useCallback(async (op: string, params?: unknown) => {
-    const isRunOp = op.startsWith("run.");
-    if (isRunOp) setRunBusy(true);
+  // Routed through the open chat, so pressing Play here starts the playtest in
+  // the Studio window that chat is working in — the same one its agent reaches.
+  const run = useCallback(
+    async (op: string, params?: unknown) => {
+      const isRunOp = op.startsWith("run.");
+      if (isRunOp) setRunBusy(true);
 
-    try {
-      return await window.luuCode.execute(op, params);
-    } finally {
-      if (isRunOp) setRunBusy(false);
-    }
-  }, []);
+      try {
+        return await window.luuCode.execute(op, params, activeThreadId ?? undefined);
+      } finally {
+        if (isRunOp) setRunBusy(false);
+      }
+    },
+    [activeThreadId],
+  );
 
   const clearOutput = useCallback(() => {
     setOutput([]);
-    void window.luuCode.execute("output.clear", {}).catch(() => undefined);
-  }, []);
+    void window.luuCode.execute("output.clear", {}, activeThreadId ?? undefined).catch(() => undefined);
+  }, [activeThreadId]);
 
   const newThread = useCallback(async () => {
     // Set first: entries still arriving from the chat being left must not be

@@ -67,7 +67,15 @@ Constants.ROUTES = {
 	sync = "/studio/sync",
 }
 
--- Settings persisted through plugin:SetSetting.
+--[[
+	Settings persisted through plugin:SetSetting.
+
+	plugin:SetSetting writes once per plugin for the whole machine, not per
+	Studio window and not per place, so the install id and the token are stored
+	under a key suffixed with the place identity. Two windows on different places
+	then hold different credentials, and the machine-wide store stops being a
+	single identity every open Studio claims at once.
+]]
 Constants.SETTING_INSTALL_ID = "luucode_install_id"
 Constants.SETTING_TOKEN = "luucode_token"
 Constants.SETTING_PORT = "luucode_port"

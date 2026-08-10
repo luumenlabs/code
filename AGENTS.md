@@ -55,6 +55,22 @@ session's MCP child is given `LUU_CODE_CHAT`, which comes back on
 `ActivityEvent.chat` and is how a Roblox operation is filed against the chat that
 asked for it rather than the one on screen.
 
+**A chat is bound to one Studio window.** Several windows can be connected at
+once, so `LUU_CODE_CHAT` also decides where an operation is *sent*, not only
+where it is filed. A chat is pinned to a window by the first command it issues
+and stays there — including across a Studio restart, which `findSuccessor`
+recognises by install id — until `session.select` moves it. A caller with no chat
+falls back to `activeSessionId`. The pinning matters because chats run
+concurrently: a single moving target would let one chat's edits land in whichever
+place the user last clicked, and nothing in the transcript would say so.
+
+Identity comes in two halves. The **install id** is the game, derived by the
+plugin from the place identity, and is what a pairing approval is remembered
+against — so two windows on one place share a credential, and the second connects
+without asking. The **window id** is the Studio window, generated per plugin
+runtime and never persisted. `SessionRegistry` keys sessions by window and
+credentials by install.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.
@@ -123,6 +139,14 @@ These are all real, and all cost time when hit blind.
   exactly this reason. It must be a real executable: the SDK spawns it with no
   shell and, on Windows, no PATHEXT lookup, so a bare `claude` never resolves and
   an npm `claude.cmd` fails with `spawn EINVAL`. See `agents/claudeExecutable.ts`.
+- **`plugin:SetSetting` is one store for the whole machine.** Not per window, not
+  per place. Every open Studio reads back the same value, so nothing persisted
+  there can identify a window — that is why the install id is scoped by place
+  identity and the window id is generated per plugin runtime instead of stored.
+  A place with no durable identity gets no persisted credential at all and pairs
+  again each launch, which is the honest answer for a place Luu Code cannot
+  recognise twice. Test doubles must mint their own window ids; giving them all
+  one is how this went unnoticed.
 - **The renderer only runs under Electron.** There is no browser mock bridge; a
   bare `vite` serve renders nothing.
 - **Do not stop an agent when the user switches chat.** It used to, and the stop

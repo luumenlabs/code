@@ -25,7 +25,7 @@ import type { EventBus } from "./events.js";
 import { nilTagsToNulls, nullsToNilTags } from "./normalize.js";
 import type { OutputStore } from "./output.js";
 import type { RunControl } from "./runControl.js";
-import type { SessionRegistry } from "./sessions.js";
+import type { SessionRegistry, SessionTarget } from "./sessions.js";
 import type { SettingsStore } from "../config/settings.js";
 import type { NativeInput } from "../native/input.js";
 import type { ScreenshotProvider, ScreenshotRequest } from "../native/screenshot.js";
@@ -69,11 +69,11 @@ export interface DispatcherDeps {
 export class Dispatcher {
   constructor(private readonly deps: DispatcherDeps) {}
 
-  capabilityReport(sessionId?: string): CapabilityReport {
+  capabilityReport(target: SessionTarget = {}): CapabilityReport {
     return buildCapabilityReport({
-      studio: this.deps.sessions.capabilitiesFor(sessionId),
+      studio: this.deps.sessions.capabilitiesFor(target),
       studioConnected: this.deps.sessions.hasSessions(),
-      run: this.deps.sessions.runStateFor(sessionId),
+      run: this.deps.sessions.runStateFor(target),
       nativeInputAvailable: this.deps.nativeInput.available,
       screenshotAvailable: this.deps.getScreenshotProvider() !== null,
       settings: this.deps.settings,
@@ -91,7 +91,7 @@ export class Dispatcher {
     const params = this.validate(op, rawParams);
 
     this.checkPermission(op);
-    this.checkCapability(op, spec.capability, context.sessionId);
+    this.checkCapability(op, spec.capability, context);
 
     const activity: ActivityEvent = {
       id: `a_${randomUUID().slice(0, 8)}`,
@@ -166,21 +166,21 @@ export class Dispatcher {
     }
   }
 
-  private checkCapability(op: Op, capability: CapabilityId | null, sessionId?: string): void {
+  private checkCapability(op: Op, capability: CapabilityId | null, context: ExecuteContext): void {
     if (capability === null) return;
 
-    const report = this.capabilityReport(sessionId);
+    const report = this.capabilityReport(context);
     const state = report.capabilities.find((entry) => entry.id === capability);
 
     if (state?.available) return;
 
-    // Studio being absent is the most common cause and deserves its own code,
-    // so an agent can distinguish "not connected" from "cannot ever do this".
-    if (!this.deps.sessions.hasSessions()) {
-      throw new LuuCodeError("STUDIO_NOT_CONNECTED", "Roblox Studio is not connected to Luu Code.", {
-        hint: "Open the place in Studio and approve the connection in the Luu Code panel.",
-      });
-    }
+    // Being unable to reach the Studio window at all is the real story, and it
+    // deserves its own code: an agent can act on "not connected" or "that window
+    // closed", but "capability unavailable" sends it looking for a Studio
+    // feature that was never the problem. Checked after the report so anything
+    // that works without Studio, like a screenshot, is untouched.
+    const unreachable = this.deps.sessions.targetError(context);
+    if (unreachable) throw unreachable;
 
     throw new LuuCodeError("UNSUPPORTED_CAPABILITY", state?.reason ?? `${capability} is not available right now.`, {
       details: { capability, op },
@@ -193,10 +193,12 @@ export class Dispatcher {
         return this.deps.sessions.status() satisfies SessionStatus;
 
       case "session.capabilities":
-        return this.capabilityReport(context.sessionId);
+        return this.capabilityReport(context);
 
       case "session.select":
-        this.deps.sessions.selectSession(params.sessionId as string);
+        // params.chat lets an agent move a conversation other than its own;
+        // context.chat is the ordinary case, where it moves itself.
+        this.deps.sessions.selectSession(params.sessionId as string, (params.chat as string | undefined) ?? context.chat);
         return this.deps.sessions.status();
 
       case "output.get": {
@@ -218,14 +220,14 @@ export class Dispatcher {
       case "run.start":
         return this.deps.runControl.start(
           { mode: params.mode, waitReady: params.waitReady, timeoutMs: params.timeoutMs },
-          context.sessionId,
+          context,
         );
 
       case "run.stop":
-        return this.deps.runControl.stop(context.sessionId) as Promise<RunState>;
+        return this.deps.runControl.stop(context) as Promise<RunState>;
 
       case "run.restart":
-        return this.deps.runControl.restart({ mode: params.mode, timeoutMs: params.timeoutMs }, context.sessionId);
+        return this.deps.runControl.restart({ mode: params.mode, timeoutMs: params.timeoutMs }, context);
 
       case "view.screenshot":
         return this.screenshot(params as ScreenshotRequest);
@@ -253,18 +255,18 @@ export class Dispatcher {
     return this.deps.sessions.send(op, outbound, {
       timeoutMs: timeoutFor(op, params),
       ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+      ...(context.chat ? { chat: context.chat } : {}),
       ...(context.realm ? { realm: context.realm } : {}),
     });
   }
 
   /**
-   * Output is stored per Studio session. When no session is named, fall back to
-   * the active one so a fresh agent does not have to discover ids first.
+   * Output is stored per Studio session, and read through the same routing as
+   * everything else — a chat reads the output of the window it is working in,
+   * not of whichever one is selected on screen.
    */
   private sessionKey(context: ExecuteContext): string {
-    if (context.sessionId) return context.sessionId;
-    const status = this.deps.sessions.status();
-    return status.activeSessionId ?? "default";
+    return this.deps.sessions.sessionKeyFor(context);
   }
 }
 

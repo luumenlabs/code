@@ -10,8 +10,15 @@ import { createLogger } from "../util/logger.js";
 
 const log = createLogger("settings");
 
+/**
+ * One approval, remembered against the game it was granted for.
+ *
+ * Keyed by install id rather than by session: a session lasts as long as a
+ * Studio window is open, and the point of remembering is to survive that window
+ * closing. Two windows on the same place share the credential, which is what
+ * lets the second one connect without asking again.
+ */
 export interface PairedSession {
-  sessionId: string;
   installId: string;
   token: string;
   placeName: string;
@@ -118,9 +125,9 @@ export class SettingsStore {
     this.persist();
   }
 
-  removePaired(sessionId: string): void {
+  removePaired(installId: string): void {
     const before = this.data.paired.length;
-    this.data.paired = this.data.paired.filter((entry) => entry.sessionId !== sessionId);
+    this.data.paired = this.data.paired.filter((entry) => entry.installId !== installId);
     if (this.data.paired.length !== before) this.persist();
   }
 

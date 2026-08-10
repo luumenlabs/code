@@ -89,7 +89,11 @@ export interface LuuCodeBridge {
 
   approvePairing(sessionId: string): Promise<boolean>;
   rejectPairing(sessionId: string): Promise<boolean>;
-  selectSession(sessionId: string): Promise<void>;
+  /**
+   * Points a chat at a Studio window. Without one it only moves the default
+   * that new chats start from, which is what the empty state means.
+   */
+  selectSession(sessionId: string, chat?: string): Promise<void>;
   disconnectSession(sessionId: string): Promise<void>;
   setPermission(group: PermissionGroup, allowed: boolean): Promise<void>;
 
@@ -109,7 +113,11 @@ export interface LuuCodeBridge {
   revealPluginFolder(): Promise<void>;
 
   /** Runs a Roblox operation from the UI, for the manual controls. */
-  execute(op: string, params?: unknown): Promise<unknown>;
+  /**
+   * `chat` decides which Studio window this runs against, the same way an
+   * agent's own operations are routed. Omitted, it goes to the default.
+   */
+  execute(op: string, params?: unknown, chat?: string): Promise<unknown>;
 
   onServerEvent(listener: (event: ServerEvent) => void): () => void;
   /** Carries the thread the event came from: several may be running. */

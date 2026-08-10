@@ -271,7 +271,15 @@ const screenshotParams = z.object({
 
 const statusParams = z.object({});
 const capabilitiesParams = z.object({});
-const sessionSelectParams = z.object({ sessionId: z.string().min(1) });
+const sessionSelectParams = z.object({
+  sessionId: z.string().min(1),
+  /**
+   * Binds one conversation to that session instead of moving the default for
+   * everyone. Omitted, it moves the default, which is what an external client
+   * with no chat of its own means.
+   */
+  chat: z.string().min(1).optional(),
+});
 
 export const COMMANDS = {
   "session.status": {
@@ -296,7 +304,7 @@ export const COMMANDS = {
     permission: "inspect",
     capability: null,
     mutates: false,
-    summary: "Choose which connected Studio session receives commands.",
+    summary: "Choose which connected Studio session this conversation works in.",
   },
 
   "dm.services": {
