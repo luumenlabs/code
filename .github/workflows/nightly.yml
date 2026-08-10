@@ -68,10 +68,11 @@ jobs:
           curl -fsSL https://luumen.dev/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Stamp the version
+      - name: Stamp the version and channel
         run: |
           sed -i "s/^Constants.PLUGIN_VERSION = .*/Constants.PLUGIN_VERSION = \"${{ needs.decide.outputs.version }}\"/" plugin/src/Constants.luau
-          grep PLUGIN_VERSION plugin/src/Constants.luau
+          sed -i "s/^Constants.CHANNEL = .*/Constants.CHANNEL = \"nightly\"/" plugin/src/Constants.luau
+          grep -E "PLUGIN_VERSION|^Constants.CHANNEL" plugin/src/Constants.luau
 
       - run: luu install
         working-directory: plugin

@@ -48,6 +48,62 @@ function writeAttachments(attachments: Attachment[]): string[] {
   });
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Codex's event shape is
+   whatever the installed CLI sends; these readers exist to survive that. */
+
+/** The id both halves of a call agree on, whichever field carries it. */
+function callId(item: Record<string, any>): string {
+  return String(item.id ?? item.call_id ?? item.callId ?? item.tool_call_id ?? nextId("tool"));
+}
+
+/**
+ * The tool name, in the form the rest of the app uses.
+ *
+ * Codex names an MCP tool by its server and its tool; Claude Code's client
+ * flattens the two into `mcp__server__tool`. Everything downstream — including
+ * the rule that decides whether a call is a Roblox operation and belongs in the
+ * transcript as one — was written against the second form. Normalising here is
+ * the adapter doing its job: absorbing the difference so nothing after it has
+ * to know which CLI is running.
+ */
+function mcpToolName(item: Record<string, any>): string {
+  const tool = String(item.tool ?? item.tool_name ?? item.name ?? "mcp");
+  const server = item.server ?? item.server_name ?? item.serverName;
+
+  if (typeof server === "string" && server.length > 0) return `mcp__${server}__${tool}`;
+  return tool;
+}
+
+/** Arguments arrive as an object or as a JSON string, depending on the release. */
+function toolInput(item: Record<string, any>): unknown {
+  const raw = item.arguments ?? item.input ?? item.args ?? item.parameters ?? {};
+  if (typeof raw !== "string") return raw;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function output(item: Record<string, any>): string {
+  const value =
+    item.output ?? item.result ?? item.stdout ?? item.aggregated_output ?? item.content ?? item.error ?? "";
+  if (typeof value === "string") return value;
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function failed(item: Record<string, any>): boolean {
+  if (item.success === false || item.is_error === true) return true;
+  if (typeof item.status === "string" && /fail|error|cancel/i.test(item.status)) return true;
+  return typeof item.exit_code === "number" && item.exit_code !== 0;
+}
+
 export class CodexAdapter implements AgentAdapter {
   readonly id = "codex" as const;
 
@@ -184,6 +240,18 @@ export class CodexAdapter implements AgentAdapter {
     const item = event.item ?? event.msg ?? event;
     const kind = String(item.type ?? event.type ?? "");
 
+    /**
+     * Whether this event is the end of the call as well as the call.
+     *
+     * Older Codex sent a begin event and a matching end event. Newer Codex
+     * sends one completed item carrying the command *and* its output, and no
+     * end event at all — so a row that only emitted `tool-use` sat spinning
+     * for the rest of the conversation, because the result it was waiting for
+     * had already arrived inside the event that created it.
+     */
+    const envelope = String(event.type ?? "");
+    const finished = envelope === "item.completed" || envelope === "item.failed";
+
     if (kind === "session.created" || kind === "session_configured") {
       const sessionId = String(item.session_id ?? item.sessionId ?? "");
       if (sessionId) this.resumeId = sessionId;
@@ -204,32 +272,21 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     if (kind === "command_execution" || kind === "exec_command_begin" || kind === "local_shell_call") {
-      emit({
-        type: "tool-use",
-        id: String(item.id ?? item.call_id ?? nextId("tool")),
-        name: "shell",
-        input: item.command ?? item.parsed_cmd ?? {},
-      });
+      const id = callId(item);
+      emit({ type: "tool-use", id, name: "shell", input: item.command ?? item.parsed_cmd ?? {} });
+      if (finished) emit({ type: "tool-result", id, isError: failed(item), text: output(item) });
       return;
     }
 
     if (kind === "mcp_tool_call" || kind === "mcp_tool_call_begin") {
-      emit({
-        type: "tool-use",
-        id: String(item.id ?? item.call_id ?? nextId("tool")),
-        name: String(item.tool ?? item.tool_name ?? "mcp"),
-        input: item.arguments ?? item.input ?? {},
-      });
+      const id = callId(item);
+      emit({ type: "tool-use", id, name: mcpToolName(item), input: toolInput(item) });
+      if (finished) emit({ type: "tool-result", id, isError: failed(item), text: output(item) });
       return;
     }
 
     if (kind === "mcp_tool_call_end" || kind === "exec_command_end" || kind === "command_execution_output") {
-      emit({
-        type: "tool-result",
-        id: String(item.id ?? item.call_id ?? ""),
-        isError: item.success === false || item.exit_code === 1,
-        text: String(item.output ?? item.result ?? item.stdout ?? ""),
-      });
+      emit({ type: "tool-result", id: callId(item), isError: failed(item), text: output(item) });
       return;
     }
 

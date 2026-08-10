@@ -96,9 +96,9 @@ export function Transcript({
       <div className="mx-auto flex max-w-[820px] flex-col gap-3 px-6 py-6">
         {runs.map((run) =>
           run.kind === "single" ? (
-            <Row key={run.item.id} item={run.item} />
+            <Row key={run.item.id} item={run.item} busy={busy} />
           ) : (
-            <Run key={run.items[0]!.id} items={run.items} />
+            <Run key={run.items[0]!.id} items={run.items} busy={busy} />
           ),
         )}
 
@@ -119,19 +119,19 @@ export function Transcript({
  * A transcript that puts the newest row on top and its history underneath
  * reads backwards.
  */
-function Run({ items }: { items: TimelineItem[] }): React.JSX.Element {
+function Run({ items, busy }: { items: TimelineItem[]; busy: boolean }): React.JSX.Element {
   const folded = items.slice(0, -1);
   const latest = items[items.length - 1]!;
 
   return (
     <div className="flex flex-col gap-1.5">
-      {folded.length > 0 && <Folded items={folded} />}
-      <Row item={latest} />
+      {folded.length > 0 && <Folded items={folded} busy={busy} />}
+      <Row item={latest} busy={busy} />
     </div>
   );
 }
 
-function Folded({ items }: { items: TimelineItem[] }): React.JSX.Element {
+function Folded({ items, busy }: { items: TimelineItem[]; busy: boolean }): React.JSX.Element {
   const failed = items.filter(hasFailed).length;
   const noun = items[0]?.kind === "tool" ? "tool call" : "Roblox operation";
 
@@ -150,7 +150,7 @@ function Folded({ items }: { items: TimelineItem[] }): React.JSX.Element {
       <CollapsibleContent>
         <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-border pl-3">
           {items.map((item) => (
-            <Row key={item.id} item={item} />
+            <Row key={item.id} item={item} busy={busy} />
           ))}
         </div>
       </CollapsibleContent>
@@ -294,7 +294,7 @@ function EmptyState({
   );
 }
 
-function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
+function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.Element | null {
   switch (item.kind) {
     case "user":
       return (
@@ -340,7 +340,7 @@ function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
       );
 
     case "tool":
-      return <Tool item={item} />;
+      return <Tool item={item} busy={busy} />;
 
     case "activity":
       return <Activity activity={item.activity} />;
@@ -373,9 +373,13 @@ function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
  * exact output are the only things worth having, and a truncated preview of
  * either is the same as nothing.
  */
-function Tool({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }): React.JSX.Element {
+function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; busy: boolean }): React.JSX.Element {
   const input = format(item.input);
-  const pending = item.result === null;
+  // Only spin while there is a turn that could still answer. A CLI that never
+  // sends a result for a call — and they differ on this — would otherwise leave
+  // a row spinning for the rest of the conversation, and for every conversation
+  // after it was reloaded from disk.
+  const pending = item.result === null && busy;
 
   return (
     <Collapsible>

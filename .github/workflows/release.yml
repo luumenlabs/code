@@ -30,12 +30,15 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # The plugin reports its version to the app over the wire, so it carries
-      # the release version rather than whatever was last committed.
-      - name: Stamp the version
+      # the release version rather than whatever was last committed. The channel
+      # decides its icon, toolbar, and widget, and is "dev" in source — without
+      # this a release would ship wearing the dev icon.
+      - name: Stamp the version and channel
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/^Constants.PLUGIN_VERSION = .*/Constants.PLUGIN_VERSION = \"${VERSION}\"/" plugin/src/Constants.luau
-          grep PLUGIN_VERSION plugin/src/Constants.luau
+          sed -i "s/^Constants.CHANNEL = .*/Constants.CHANNEL = \"release\"/" plugin/src/Constants.luau
+          grep -E "PLUGIN_VERSION|^Constants.CHANNEL" plugin/src/Constants.luau
 
       - run: luu install
         working-directory: plugin

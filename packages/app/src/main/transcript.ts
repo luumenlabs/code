@@ -8,8 +8,19 @@
 import type { ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 
-/** Luu Code's own tools appear as Roblox activity, not as raw tool rows. */
-const ROBLOX_TOOL_PREFIX = "mcp__luu-code__";
+/**
+ * Luu Code's own tools appear as Roblox activity, not as raw tool rows.
+ *
+ * Matched by two signals rather than one exact prefix. `mcp__luu-code__` is the
+ * name Claude Code's MCP client produces; a Codex build that reports the tool
+ * without its server does not carry it, and those calls were showing up twice —
+ * once as the Roblox operation the server reported, and once as a raw row with
+ * `{}` for arguments. Every tool this server exposes is `studio_*`, so the tool
+ * name alone is enough to recognise one.
+ */
+function isRobloxTool(name: string): boolean {
+  return name.includes("luu-code") || /(^|__)studio_[a-z_]+$/.test(name);
+}
 
 export interface TranscriptSink {
   /** Insert or replace by entry id. */
@@ -44,7 +55,7 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
       return { kind: "thinking", id: event.id, at: Date.now(), text: event.text };
 
     case "tool-use":
-      if (event.name.startsWith(ROBLOX_TOOL_PREFIX)) return null;
+      if (isRobloxTool(event.name)) return null;
       return {
         kind: "tool",
         id: event.id,

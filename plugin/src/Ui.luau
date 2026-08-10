@@ -65,12 +65,14 @@ local function button(parent: Instance, text: string): TextButton
 end
 
 function Ui.create(hostPlugin: Plugin)
+	-- Studio keys a widget's saved position and size on this id, so each channel
+	-- needs its own or two installed plugins fight over one docked panel.
 	local widget = hostPlugin:CreateDockWidgetPluginGui(
-		"LuuCodePanel",
+		"LuuCodePanel" .. Constants.suffix(),
 		DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 280, 300, 240, 240)
 	)
-	widget.Title = "Luu Code"
-	widget.Name = "LuuCode"
+	widget.Title = Constants.label()
+	widget.Name = "LuuCode" .. Constants.suffix()
 
 	local root = Instance.new("Frame")
 	root.Size = UDim2.fromScale(1, 1)

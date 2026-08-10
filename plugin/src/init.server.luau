@@ -19,8 +19,14 @@ local Constants = require(script.Constants)
 local RunState = require(script.RunState)
 local Ui = require(script.Ui)
 
-local toolbar = plugin:CreateToolbar("Luu Code")
-local toggleButton = toolbar:CreateButton("LuuCodeToggle", "Show the Luu Code connection panel", "rbxassetid://0", "Luu Code")
+-- Named for the channel, so a release, a nightly, and a dev plugin installed
+-- together are three toolbars you can tell apart rather than one with three
+-- identical buttons in it.
+local label = Constants.label()
+
+local toolbar = plugin:CreateToolbar(label)
+local toggleButton =
+	toolbar:CreateButton("LuuCodeToggle" .. Constants.suffix(), "Show the " .. label .. " connection panel", Constants.icon(), label)
 toggleButton.ClickableWhenViewportHidden = true
 
 RunState.start()
@@ -40,8 +46,12 @@ end)
 
 Client.onChanged(function(state)
 	-- The button doubles as an at-a-glance connection indicator, so the user
-	-- does not have to keep the panel open to know Studio is reachable.
-	toggleButton.Icon = "rbxassetid://0"
+	-- does not have to keep the panel open to know Studio is reachable. That is
+	-- carried by the pressed state alone: this handler used to also assign the
+	-- icon, but the value was a placeholder that was never filled in, so every
+	-- connection change overwrote the real icon with a blank one. Restoring the
+	-- intent properly needs a second image per channel; until those exist,
+	-- leaving the icon alone is what keeps it visible.
 	toggleButton:SetActive(widget.Enabled or state.status == "pairing")
 end)
 
