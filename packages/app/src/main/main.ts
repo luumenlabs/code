@@ -667,6 +667,14 @@ function registerIpc(): void {
     return thread;
   });
 
+  ipcMain.handle("archive-thread", (_event, id: string, archived: boolean) => {
+    const store = requireThreads();
+    store.setArchived(id, archived);
+    const index = store.index();
+    broadcast("threads", index);
+    return index;
+  });
+
   ipcMain.handle("rename-thread", (_event, id: string, title: string) => {
     const store = requireThreads();
     store.rename(id, title);

@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("luuCode", {
   newThread: () => ipcRenderer.invoke("new-thread"),
   openThread: (id) => ipcRenderer.invoke("open-thread", id),
   renameThread: (id, title) => ipcRenderer.invoke("rename-thread", id, title),
+  archiveThread: (id, archived) => ipcRenderer.invoke("archive-thread", id, archived),
   deleteThread: (id) => ipcRenderer.invoke("delete-thread", id),
 
   approvePairing: (sessionId) => ipcRenderer.invoke("approve-pairing", sessionId),

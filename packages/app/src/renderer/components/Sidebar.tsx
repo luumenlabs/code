@@ -7,7 +7,21 @@
  * session where it can.
  */
 import * as React from "react";
-import { ArrowUpCircle, ChevronRight, Folder, Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowUpCircle,
+  ChevronRight,
+  Folder,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,7 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
-import { groupThreads, relativeTime } from "../../shared/threads.js";
+import { archivedThreads, groupThreads, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
 import { updateWaiting } from "../../shared/update.js";
 
@@ -139,12 +153,15 @@ export function Sidebar({
                         setRenaming(null);
                         if (title !== thread.title) void harness.renameThread(thread.id, title);
                       }}
+                      onArchive={() => void harness.archiveThread(thread.id, true)}
                       onDelete={() => void harness.deleteThread(thread.id)}
                     />
                   ))}
               </section>
             );
           })}
+
+          <ArchivedSection harness={harness} onExitSettings={onExitSettings} />
         </div>
       </ScrollArea>
 
@@ -205,6 +222,71 @@ function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => voi
   );
 }
 
+/**
+ * Archived conversations, folded away and rendered small.
+ *
+ * The point of archiving is to get something out of your eyeline without
+ * losing it, so these are deliberately quieter than a live thread: one line,
+ * dimmed, no project heading. Opening one still works exactly as before.
+ */
+function ArchivedSection({
+  harness,
+  onExitSettings,
+}: {
+  harness: Harness;
+  onExitSettings: () => void;
+}): React.JSX.Element | null {
+  const [open, setOpen] = React.useState(false);
+  const archived = React.useMemo(
+    () => (harness.threads ? archivedThreads(harness.threads) : []),
+    [harness.threads],
+  );
+
+  if (archived.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-0.5">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[11px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
+        <Archive className="size-3 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Archived</span>
+        <span className="shrink-0 text-[10px] font-normal text-muted-foreground/60">{archived.length}</span>
+      </button>
+
+      {open &&
+        archived.map((thread) => (
+          <div key={thread.id} className="row group flex items-center gap-1.5 pr-0.5 pl-2" data-active={harness.activeThreadId === thread.id}>
+            <button
+              onClick={() => {
+                onExitSettings();
+                void harness.openThread(thread.id);
+              }}
+              className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
+            >
+              <MessageSquare className="size-3 shrink-0 text-muted-foreground/40" />
+              <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground">{thread.title}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground/50">{relativeTime(thread.updatedAt)}</span>
+            </button>
+
+            <Hint label="Bring this chat back">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => void harness.archiveThread(thread.id, false)}
+                className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+              >
+                <ArchiveRestore />
+              </Button>
+            </Hint>
+          </div>
+        ))}
+    </section>
+  );
+}
+
 function ThreadRow({
   thread,
   active,
@@ -213,6 +295,7 @@ function ThreadRow({
   onOpen,
   onStartRename,
   onRename,
+  onArchive,
   onDelete,
 }: {
   thread: ThreadSummary;
@@ -222,6 +305,7 @@ function ThreadRow({
   onOpen: () => void;
   onStartRename: () => void;
   onRename: (title: string) => void;
+  onArchive: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const [draft, setDraft] = React.useState(thread.title);
@@ -253,22 +337,53 @@ function ThreadRow({
   }
 
   return (
-    <div className="row group flex items-center gap-1.5 pr-0.5 pl-2" data-active={active}>
-      <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 py-[7px] text-left">
-        {running ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
-        ) : (
-          <MessageSquare className={cn("size-3 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
-        )}
-        <span className={cn("min-w-0 flex-1 truncate text-[12px]", active && "font-medium")}>{thread.title}</span>
-        {running ? (
-          <span className="shrink-0 text-[10px] text-primary group-hover:hidden">Working…</span>
-        ) : (
-          <span className="shrink-0 text-[10px] text-muted-foreground/60 group-hover:hidden">
-            {relativeTime(thread.updatedAt)}
+    // Two lines rather than one. A title at 12px squeezed between a timestamp
+    // and a menu was legible but not scannable, and the sidebar is how you find
+    // a conversation from last week.
+    <div className="row group flex items-start gap-1.5 py-1.5 pr-0.5 pl-2" data-active={active}>
+      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+        <span className="flex w-full items-center gap-2">
+          {running ? (
+            <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
+          ) : (
+            <MessageSquare className={cn("size-3 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
+          )}
+          <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-snug", active && "font-medium")}>
+            {thread.title}
           </span>
-        )}
+        </span>
+
+        <span className="flex w-full items-center gap-1.5 pl-5 text-[10.5px] text-muted-foreground/70">
+          {running ? (
+            <span className="text-primary">Working…</span>
+          ) : (
+            <>
+              <span>{relativeTime(thread.updatedAt)}</span>
+              {thread.messageCount > 0 && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span>
+                    {thread.messageCount} message{thread.messageCount === 1 ? "" : "s"}
+                  </span>
+                </>
+              )}
+            </>
+          )}
+        </span>
       </button>
+
+      {/* One click, on the row you are already pointing at — the menu still has
+          it, but tidying up a finished chat should not cost two clicks. */}
+      <Hint label="Archive this chat">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onArchive}
+          className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Archive />
+        </Button>
+      </Hint>
 
       <DropdownMenu>
         <Hint label="Chat options">
@@ -287,6 +402,10 @@ function ThreadRow({
           <DropdownMenuItem onSelect={() => setTimeout(onStartRename, 0)}>
             <Pencil />
             Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onArchive}>
+            <Archive />
+            Archive
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
             <Trash2 />

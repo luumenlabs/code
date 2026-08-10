@@ -69,6 +69,7 @@ export interface Harness {
   newThread(): Promise<void>;
   openThread(id: string): Promise<void>;
   renameThread(id: string, title: string): Promise<void>;
+  archiveThread(id: string, archived: boolean): Promise<void>;
   deleteThread(id: string): Promise<void>;
 }
 
@@ -245,6 +246,10 @@ export function useHarness(): Harness {
     setThreads(await window.luuCode.renameThread(id, title));
   }, []);
 
+  const archiveThread = useCallback(async (id: string, archived: boolean) => {
+    setThreads(await window.luuCode.archiveThread(id, archived));
+  }, []);
+
   const deleteThread = useCallback(
     async (id: string) => {
       const index = await window.luuCode.deleteThread(id);
@@ -291,6 +296,7 @@ export function useHarness(): Harness {
     newThread,
     openThread,
     renameThread,
+    archiveThread,
     deleteThread,
   };
 }

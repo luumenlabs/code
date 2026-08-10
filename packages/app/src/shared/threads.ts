@@ -35,6 +35,15 @@ export interface ThreadSummary {
   agent: AgentId | null;
   placeName: string | null;
   messageCount: number;
+  /**
+   * Done with, but not thrown away.
+   *
+   * The sidebar fills up with conversations that are finished rather than
+   * wrong, and deleting them is the only thing worse than scrolling past them —
+   * a transcript is the record of what was done to the place. Archiving moves
+   * one out of the way and keeps it readable.
+   */
+  archived?: boolean;
 }
 
 export interface Thread extends ThreadSummary {
@@ -54,11 +63,19 @@ export interface ThreadIndex {
   activeThreadId: string | null;
 }
 
-/** Groups threads under their project, most recently used first. */
+/**
+ * Groups threads under their project, most recently used first.
+ *
+ * Archived threads are left out entirely: they have their own place at the
+ * bottom of the sidebar, and a project whose every thread is archived should
+ * not keep a heading in the live list.
+ */
 export function groupThreads(index: ThreadIndex): Array<{ project: Project; threads: ThreadSummary[] }> {
   const byProject = new Map<string, ThreadSummary[]>();
 
   for (const thread of index.threads) {
+    if (thread.archived) continue;
+
     const existing = byProject.get(thread.projectId);
     if (existing) existing.push(thread);
     else byProject.set(thread.projectId, [thread]);
@@ -75,6 +92,11 @@ export function groupThreads(index: ThreadIndex): Array<{ project: Project; thre
       const rightAt = right.threads[0]?.updatedAt ?? right.project.lastUsedAt;
       return rightAt - leftAt;
     });
+}
+
+/** The archived ones, newest first. Their project is shown on the row instead. */
+export function archivedThreads(index: ThreadIndex): ThreadSummary[] {
+  return index.threads.filter((thread) => thread.archived).sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
 export function relativeTime(timestamp: number, now = Date.now()): string {

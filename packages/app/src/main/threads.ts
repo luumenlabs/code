@@ -72,6 +72,7 @@ export class ThreadStore {
       agent: thread.agent,
       placeName: thread.placeName,
       messageCount: thread.messageCount,
+      ...(thread.archived ? { archived: true } : {}),
     }));
 
     return { projects: this.projects, threads: summaries, activeThreadId: this.activeThreadId };
@@ -216,6 +217,21 @@ export class ThreadStore {
     const trimmed = title.trim();
     if (trimmed.length === 0) return;
     this.setMeta(id, { title: trimmed });
+  }
+
+  /**
+   * Files a conversation away, or brings it back.
+   *
+   * `updatedAt` is deliberately left alone: archiving is not work on the
+   * thread, and bumping it would shuffle the archive into a false order the
+   * moment it was tidied.
+   */
+  setArchived(id: string, archived: boolean): void {
+    const thread = this.threads.get(id);
+    if (!thread || Boolean(thread.archived) === archived) return;
+
+    thread.archived = archived;
+    this.touch(id);
   }
 
   remove(id: string): void {

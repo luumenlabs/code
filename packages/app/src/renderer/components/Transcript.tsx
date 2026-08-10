@@ -7,12 +7,12 @@
  */
 import * as React from "react";
 import {
-  AlertTriangle,
   Brain,
   Camera,
   Check,
   ChevronRight,
   CircleCheck,
+  CircleX,
   Copy,
   Eye,
   Gamepad2,
@@ -383,19 +383,21 @@ function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; b
 
   return (
     <Collapsible>
-      <div
-        className={cn(
-          "rounded-lg border bg-card/40 transition-colors",
-          item.isError && "border-destructive/30 bg-destructive/[0.06]",
-        )}
-      >
+      {/* A failure is marked, not highlighted. Filling the row with red made
+          every recoverable hiccup look like the end of the world, and a turn
+          with three of them unreadable — the mark in front says the same thing
+          without shouting it. */}
+      <div className="rounded-lg border bg-card/40 transition-colors">
         <CollapsibleTrigger className="group flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-muted-foreground">
-          <Wrench className={cn("size-3.5 shrink-0", item.isError && "text-destructive")} />
+          {item.isError ? (
+            <CircleX className="size-3.5 shrink-0 text-destructive" />
+          ) : (
+            <Wrench className="size-3.5 shrink-0" />
+          )}
           <span className="shrink-0 font-mono text-foreground/80">{item.name}</span>
           <span className="min-w-0 flex-1 truncate font-mono opacity-70">{truncate(input, 110)}</span>
 
           {pending && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
-          {item.isError && <Badge variant="destructive">failed</Badge>}
 
           <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
         </CollapsibleTrigger>
@@ -453,21 +455,21 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
   const failed = activity.status === "error";
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border bg-card/60 px-3 py-2 transition-colors",
-        failed && "border-destructive/30 bg-destructive/[0.06]",
-      )}
-    >
+    <div className="rounded-lg border bg-card/60 px-3 py-2 transition-colors">
       <div className="flex items-center gap-2">
-        <Icon className={cn("size-3.5 shrink-0", failed ? "text-destructive" : meta.tone)} />
+        {/* Same rule as a tool row: the mark in front carries the failure, so a
+            run of them stays readable. The detail is in the message below. */}
+        {failed ? (
+          <CircleX className="size-3.5 shrink-0 text-destructive" />
+        ) : (
+          <Icon className={cn("size-3.5 shrink-0", meta.tone)} />
+        )}
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{activity.title}</span>
 
         {activity.origin === "mcp" && <Badge variant="outline">external agent</Badge>}
 
         {activity.status === "running" && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
         {activity.status === "ok" && <CircleCheck className="size-3.5 shrink-0 text-[var(--success)] opacity-60" />}
-        {failed && <AlertTriangle className="size-3.5 shrink-0 text-destructive" />}
       </div>
 
       {activity.detail && !failed && (

@@ -66,6 +66,8 @@ export interface LuuCodeBridge {
   newThread(): Promise<null>;
   openThread(id: string): Promise<Thread | null>;
   renameThread(id: string, title: string): Promise<ThreadIndex>;
+  /** Files a conversation away, or brings it back. */
+  archiveThread(id: string, archived: boolean): Promise<ThreadIndex>;
   deleteThread(id: string): Promise<ThreadIndex>;
 
   approvePairing(sessionId: string): Promise<boolean>;
