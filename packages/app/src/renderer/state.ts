@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OutputEntry, PairingRequest, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
-import { createSelection, findModel, setModelCatalogue } from "../shared/models.js";
+import { setModelCatalogue } from "../shared/models.js";
 import type { ModelInfo, ModelSelection } from "../shared/models.js";
 import { DEFAULT_SETTINGS } from "../shared/settings.js";
 import type { AppSettings } from "../shared/settings.js";
@@ -38,9 +38,12 @@ export interface Harness {
   runBusy: boolean;
   pendingPairing: PairingRequest | null;
   modelSelection: ModelSelection | null;
-  setModelSelection(selection: ModelSelection): void;
-  /** Picks a model, and with it the CLI that serves it. */
-  chooseModel(slug: string): void;
+  /**
+   * Applies a model and its options together — a new model, a changed reasoning
+   * level, or a starred combination of both. Picking a model picks the CLI that
+   * serves it.
+   */
+  applyModel(selection: ModelSelection): void;
   send(text: string, attachments?: Attachment[]): Promise<void>;
   interrupt(): Promise<void>;
   refresh(): Promise<void>;
@@ -82,11 +85,11 @@ export function useHarness(): Harness {
     }
   }, []);
 
-  const setModelSelection = useCallback((selection: ModelSelection) => {
-    // Optimistic: the picker should feel instant, and the main process is
-    // writing the same value to the thread.
+  const applyModel = useCallback((selection: ModelSelection) => {
+    // Optimistic: the picker should settle on the value the user just clicked,
+    // not a round trip later. The main process writes the same value.
     setSelection(selection);
-    void window.luuCode.setModel(selection).catch(() => undefined);
+    void window.luuCode.applyModel(selection).then(setSelection).catch(() => undefined);
   }, []);
 
   /** Insert or replace by id, so an updated activity replaces its own row. */
@@ -165,13 +168,6 @@ export function useHarness(): Harness {
 
   const resetSettings = useCallback(() => {
     void window.luuCode.resetSettings().then(setSettings).catch(() => undefined);
-  }, []);
-
-  const chooseModel = useCallback((slug: string) => {
-    // Optimistic, like setModelSelection: the picker should close on the value
-    // the user just clicked, not a round trip later.
-    setSelection(createSelection(findModel(slug)?.provider ?? "claude", slug));
-    void window.luuCode.chooseModel(slug).then(setSelection).catch(() => undefined);
   }, []);
 
   const send = useCallback(async (text: string, attachments?: Attachment[]) => {
@@ -256,8 +252,7 @@ export function useHarness(): Harness {
     runBusy,
     pendingPairing,
     modelSelection,
-    setModelSelection,
-    chooseModel,
+    applyModel,
     send,
     interrupt,
     refresh,

@@ -38,6 +38,9 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [harness]);
 
+  const sessions = harness.snapshot?.status.sessions ?? [];
+  const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
+
   // The first runtime error is worth interrupting for: it is usually the thing
   // the agent is about to react to, and the user wants to see it too.
   const errorCount = harness.output.filter((entry) => entry.type === "error").length;
@@ -72,6 +75,7 @@ export function App(): React.JSX.Element {
                   items={harness.timeline}
                   onExample={setDraft}
                   showThinking={harness.settings.showThinking}
+                  placeName={place?.place.name ?? null}
                 />
                 <Composer harness={harness} value={draft} onValueChange={setDraft} />
               </main>

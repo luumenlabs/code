@@ -176,9 +176,9 @@ function requireSettings(): SettingsStore {
 /**
  * Names a thread from its opening message.
  *
- * Runs after the message is on its way, never in front of it: a title is worth
- * a second or two of a cheap model's time, but never a second of the user's.
- * A failure leaves the typed first line in place.
+ * Runs alongside the conversation, never in front of it: this is a separate
+ * one-shot call to a small model, so it has no reason to hold up the answer the
+ * user is actually waiting for. A failure leaves the typed first line in place.
  */
 async function nameThread(threadId: string, message: string): Promise<void> {
   const store = requireThreads();
@@ -189,7 +189,7 @@ async function nameThread(threadId: string, message: string): Promise<void> {
   if (!thread) return;
 
   const manager = requireAgents();
-  const agent = titleProvider(config, await manager.list(), thread.agent);
+  const agent = titleProvider(config, await manager.list());
   if (!agent) return;
 
   const title = await generateTitle(agent, config, message, scratchDirFor(thread.projectId));
@@ -420,15 +420,20 @@ function registerIpc(): void {
       broadcast("threads", store.index());
     }
 
+    // The message goes into the transcript before the CLI is touched, so it
+    // appears the moment it is sent rather than once the agent has started.
+    record(userEntry(text, attachments));
+
+    // Naming runs beside the turn, not before it. It is a separate call to a
+    // separate CLI, so the only thing serialising the two ever bought was a
+    // slower first answer.
+    if (isFirstMessage) void nameThread(active.id, text);
+
     // The CLI is implied by the model, so it is brought up here rather than
     // being something the user has to remember to start.
     manager.setModelSelection(selection);
     await manager.ensure(agent, active.agent === agent ? active.agentSessionId : null);
-
-    record(userEntry(text, attachments));
     await manager.send(text, attachments);
-
-    if (isFirstMessage) void nameThread(active.id, text);
   });
 
   ipcMain.handle("interrupt-agent", () => requireAgents().interrupt());
@@ -452,35 +457,21 @@ function registerIpc(): void {
     return null;
   });
 
-  ipcMain.handle("set-model", (_event, selection: ModelSelection) => {
-    const store = requireThreads();
-    const active = store.active();
-
-    draftSelection = selection;
-    requireAgents().setModelSelection(selection);
-
-    if (active) {
-      store.setMeta(active.id, { modelSelection: selection });
-      broadcast("threads", store.index());
-    }
-
-    return selection;
-  });
-
   /**
-   * Picking a model picks the CLI behind it.
+   * The model and everything set on it, applied as one thing.
    *
-   * A GPT model means Codex, a Claude model means Claude Code; asking for both
-   * separately was asking the same question twice. Switching provider ends the
+   * A model, its reasoning level, and its context window are a single choice —
+   * splitting them across two calls only meant the renderer had to know which
+   * one to make. Picking a model also picks the CLI behind it: a GPT model
+   * means Codex, a Claude model means Claude Code. Switching provider ends the
    * running session, because the other CLI cannot continue it.
    */
-  ipcMain.handle("choose-model", async (_event, slug: string) => {
-    const model = findModel(slug);
-    if (!model) throw new Error(`Unknown model: ${slug}`);
+  ipcMain.handle("apply-model", async (_event, selection: ModelSelection) => {
+    const model = findModel(selection.model);
+    if (!model) throw new Error(`Unknown model: ${selection.model}`);
 
     const store = requireThreads();
     const manager = requireAgents();
-    const selection = createSelection(model.provider, slug);
     const active = store.active();
 
     if (active && active.agent !== null && active.agent !== model.provider) await manager.stop();

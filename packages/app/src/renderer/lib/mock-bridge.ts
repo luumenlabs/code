@@ -14,7 +14,7 @@ import type { ActivityEvent, OutputEntry, ServerEvent } from "@luumen/code-proto
 import type { AgentEvent, TranscriptEntry } from "../../shared/agent.js";
 import type { HarnessSnapshot, LuuCodeBridge } from "../../shared/bridge.js";
 import type { Thread, ThreadIndex } from "../../shared/threads.js";
-import { CLAUDE_MODELS, CODEX_FALLBACK_MODELS, createSelection, findModel } from "../../shared/models.js";
+import { CLAUDE_MODELS, CODEX_FALLBACK_MODELS, createSelection } from "../../shared/models.js";
 import { DEFAULT_SETTINGS } from "../../shared/settings.js";
 import type { AppSettings } from "../../shared/settings.js";
 
@@ -247,8 +247,7 @@ export function installMockBridge(): void {
     },
     interruptAgent: async () => undefined,
 
-    setModel: async (selection) => selection,
-    chooseModel: async (slug) => createSelection(findModel(slug)?.provider ?? "claude", slug),
+    applyModel: async (selection) => selection,
 
     minimizeWindow: async () => undefined,
     toggleMaximizeWindow: async () => undefined,

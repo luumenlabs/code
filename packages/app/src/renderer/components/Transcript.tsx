@@ -40,19 +40,22 @@ const CATEGORY: Record<ActivityEvent["category"], { label: string; icon: React.E
 };
 
 const EXAMPLES = [
-  "The shop errors when I click Buy. Play it, find out why, and fix it.",
-  "Make the inventory UI open, and make the buy button actually buy the selected item.",
-  "Make the lobby spawn brighter, then show me a screenshot.",
+  "Fix the error when I click Buy",
+  "Make the inventory UI open and close",
+  "Brighten the lobby, then screenshot it",
 ];
 
 export function Transcript({
   items,
   onExample,
   showThinking,
+  placeName,
 }: {
   items: TimelineItem[];
   onExample: (text: string) => void;
   showThinking: boolean;
+  /** The place this chat is filed against, shown while it is still empty. */
+  placeName: string | null;
 }): React.JSX.Element {
   const viewport = React.useRef<HTMLDivElement>(null);
   const pinned = React.useRef(true);
@@ -72,7 +75,7 @@ export function Transcript({
   };
 
   if (items.length === 0) {
-    return <EmptyState onExample={onExample} />;
+    return <EmptyState onExample={onExample} placeName={placeName} />;
   }
 
   const visible = showThinking ? items : items.filter((item) => item.kind !== "thinking");
@@ -88,32 +91,39 @@ export function Transcript({
   );
 }
 
-function EmptyState({ onExample }: { onExample: (text: string) => void }): React.JSX.Element {
+/**
+ * The screen a new chat opens on.
+ *
+ * A blank chat is not the place to explain the product. It says where you are
+ * and asks the one question, and the examples are there to be clicked, not
+ * read: three short lines, not a feature list.
+ */
+function EmptyState({
+  onExample,
+  placeName,
+}: {
+  onExample: (text: string) => void;
+  placeName: string | null;
+}): React.JSX.Element {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center px-8">
-      <div className="w-full max-w-[580px]">
-        <BrandMark className="mb-5 size-8" />
+    <div className="flex min-h-0 flex-1 items-center justify-center px-8 pb-12">
+      <div className="flex w-full max-w-[520px] flex-col items-center text-center">
+        <BrandMark className="size-9" />
 
-        <h1 className="font-display text-[26px] leading-tight font-bold tracking-tight">
+        <h1 className="mt-5 font-display text-[27px] leading-tight font-bold tracking-tight">
           What should we change?
         </h1>
-        <p className="mt-3 max-w-[52ch] text-[13.5px] leading-relaxed text-muted-foreground">
-          Say it in your own words. The agent can edit your scripts, press Play, read the errors, click around the
-          running game, and check that it worked.
-        </p>
 
-        <div className="mt-7 flex flex-col gap-1">
-          <span className="eyebrow mb-1">Try</span>
+        {placeName && <p className="mt-2 truncate text-[12.5px] text-muted-foreground">in {placeName}</p>}
+
+        <div className="mt-7 flex flex-wrap justify-center gap-1.5">
           {EXAMPLES.map((example) => (
             <button
               key={example}
               onClick={() => onExample(example)}
-              className="row group flex items-start gap-2.5 px-3 py-2.5 text-left"
+              className="rounded-full border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
             >
-              <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              <span className="text-[12.5px] leading-relaxed text-muted-foreground group-hover:text-foreground">
-                {example}
-              </span>
+              {example}
             </button>
           ))}
         </div>

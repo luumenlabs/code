@@ -45,9 +45,11 @@ export interface LuuCodeBridge {
   sendMessage(text: string, attachments?: Attachment[]): Promise<void>;
   interruptAgent(): Promise<void>;
 
-  setModel(selection: import("./models.js").ModelSelection): Promise<import("./models.js").ModelSelection | null>;
-  /** Picks a model and, with it, the CLI that serves it. */
-  chooseModel(slug: string): Promise<import("./models.js").ModelSelection>;
+  /**
+   * Applies a model together with its options, and with it the CLI that serves
+   * it. One call, because they are one choice.
+   */
+  applyModel(selection: import("./models.js").ModelSelection): Promise<import("./models.js").ModelSelection>;
 
   minimizeWindow(): Promise<void>;
   toggleMaximizeWindow(): Promise<void>;

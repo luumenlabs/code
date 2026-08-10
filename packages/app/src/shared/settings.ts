@@ -6,6 +6,7 @@
  * from the connected place or the installed CLIs is inferred instead of asked.
  */
 import type { AgentId } from "./agent.js";
+import type { ModelSelection, OptionValue } from "./models.js";
 
 export interface TitleGenerationSettings {
   /**
@@ -21,6 +22,18 @@ export interface TitleGenerationSettings {
   model: string | null;
 }
 
+/**
+ * A starred model *and* the settings it was starred with.
+ *
+ * The same model at Low reasoning and at Max is two different tools in
+ * practice, so a favourite carries the whole selection and the same model can
+ * be starred more than once. The id is what lets it: two favourites can share a
+ * slug and still be told apart.
+ */
+export interface FavouriteSelection extends ModelSelection {
+  id: string;
+}
+
 export interface AppSettings {
   titleGeneration: TitleGenerationSettings;
   /**
@@ -28,8 +41,8 @@ export interface AppSettings {
    * but does not advertise. Keyed by agent id.
    */
   customModels: Record<string, string[]>;
-  /** Model slugs the user has starred, in the order they starred them. */
-  favouriteModels: string[];
+  /** Starred model-and-options combinations, in the order they were starred. */
+  favourites: FavouriteSelection[];
   /** Show the agent's reasoning in the transcript rather than folding it away. */
   showThinking: boolean;
   /** Jump to the Output tab the first time a runtime error appears. */
@@ -42,10 +55,24 @@ export const DEFAULT_TITLE_MODEL: Record<AgentId, string> = {
   codex: "gpt-5.6-luna",
 };
 
+/**
+ * Who names threads when the user has not said.
+ *
+ * Codex first: GPT-5.6-Luna is the cheapest of the small models to run for a
+ * one-line answer and it comes back fastest, so it gets the job whenever Codex
+ * is installed. Claude Code's Haiku takes over when it is not.
+ */
+export const TITLE_PROVIDER_ORDER: AgentId[] = ["codex", "claude"];
+
+/** The CLI that names threads on this machine, given what is installed. */
+export function autoTitleProvider(installed: AgentId[]): AgentId | null {
+  return TITLE_PROVIDER_ORDER.find((id) => installed.includes(id)) ?? null;
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   titleGeneration: { enabled: true, provider: "auto", model: null },
   customModels: {},
-  favouriteModels: [],
+  favourites: [],
   showThinking: true,
   followRuntimeErrors: true,
 };
@@ -68,8 +95,51 @@ export function withDefaults(stored: unknown): AppSettings {
       model: title.model ?? DEFAULT_SETTINGS.titleGeneration.model,
     },
     customModels: value.customModels ?? {},
-    favouriteModels: Array.isArray(value.favouriteModels) ? value.favouriteModels.filter((slug) => typeof slug === "string") : [],
+    favourites: readFavourites(stored),
     showThinking: value.showThinking ?? DEFAULT_SETTINGS.showThinking,
     followRuntimeErrors: value.followRuntimeErrors ?? DEFAULT_SETTINGS.followRuntimeErrors,
   };
+}
+
+/**
+ * Favourites, including the ones written before they carried options.
+ *
+ * The old shape was a list of slugs. Those become favourites with no options
+ * recorded, which resolves to the model's own defaults — the same thing the
+ * star used to mean.
+ */
+function readFavourites(stored: unknown): FavouriteSelection[] {
+  const value = (typeof stored === "object" && stored !== null ? stored : {}) as {
+    favourites?: unknown;
+    favouriteModels?: unknown;
+  };
+
+  if (Array.isArray(value.favourites)) {
+    return value.favourites.flatMap((entry) => {
+      const favourite = entry as Partial<FavouriteSelection>;
+      if (typeof favourite?.model !== "string" || favourite.model.length === 0) return [];
+
+      return [
+        {
+          id: typeof favourite.id === "string" && favourite.id.length > 0 ? favourite.id : `f_${favourite.model}`,
+          model: favourite.model,
+          options: Array.isArray(favourite.options)
+            ? favourite.options.filter(
+                (option): option is { id: string; value: OptionValue } =>
+                  typeof option?.id === "string" &&
+                  (typeof option.value === "string" || typeof option.value === "boolean"),
+              )
+            : [],
+        },
+      ];
+    });
+  }
+
+  if (Array.isArray(value.favouriteModels)) {
+    return value.favouriteModels
+      .filter((slug): slug is string => typeof slug === "string")
+      .map((slug) => ({ id: `f_${slug}`, model: slug, options: [] }));
+  }
+
+  return [];
 }

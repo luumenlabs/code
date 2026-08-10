@@ -307,6 +307,41 @@ export function withOption(selection: ModelSelection, id: string, value: OptionV
 }
 
 /**
+ * The selection with every option written out, defaults included.
+ *
+ * Used when a selection is stored rather than shown: a favourite that recorded
+ * only what the user touched would quietly change meaning the day a model's
+ * default reasoning level moves.
+ */
+export function normalizeSelection(selection: ModelSelection): ModelSelection {
+  const info = findModel(selection.model);
+  if (!info) return { model: selection.model, options: [...selection.options] };
+
+  return {
+    model: selection.model,
+    options: info.options.flatMap((descriptor) => {
+      const value = effectiveOption(selection, descriptor);
+      return value === undefined ? [] : [{ id: descriptor.id, value }];
+    }),
+  };
+}
+
+/**
+ * Identity of a selection, for comparing one to another.
+ *
+ * Two selections are the same star if they name the same model and resolve to
+ * the same options, whether or not the user set each one by hand.
+ */
+export function selectionKey(selection: ModelSelection | null | undefined): string {
+  if (!selection) return "";
+
+  const normalized = normalizeSelection(selection);
+  const options = normalized.options.map((entry) => `${entry.id}=${String(entry.value)}`).sort();
+
+  return [normalized.model, ...options].join("|");
+}
+
+/**
  * Short label for the composer chip, for example "High · 1M" — the settings
  * that actually change the answer, in the order the menu shows them.
  */

@@ -154,22 +154,20 @@ function StudioDetails({
         )}
       </div>
 
+      {/* Facts, written as facts. These were badges, which made them look like
+          controls that had stopped working; nothing here is clickable. */}
       <Field label="Mode">
         {session.run.running ? (
-          <Badge variant="success">Playtest · {session.run.realm}</Badge>
+          <span className="text-[11.5px] text-[var(--success)]">Playtest · {session.run.realm}</span>
         ) : (
-          <Badge variant="outline">Edit</Badge>
+          <span className="text-[11.5px]">Edit</span>
         )}
       </Field>
 
       <Field label="Connections">
-        <div className="flex flex-wrap justify-end gap-1">
-          {session.endpoints.map((endpoint) => (
-            <Badge key={endpoint.id} variant={endpoint.realm === "edit" ? "outline" : "primary"}>
-              {endpoint.realm}
-            </Badge>
-          ))}
-        </div>
+        <span className="truncate text-[11.5px] capitalize">
+          {session.endpoints.map((endpoint) => endpoint.realm).join(" · ") || "None"}
+        </span>
       </Field>
 
       <div className="flex gap-1.5">

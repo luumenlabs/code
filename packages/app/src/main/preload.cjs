@@ -18,8 +18,7 @@ contextBridge.exposeInMainWorld("luuCode", {
   sendMessage: (text, attachments) => ipcRenderer.invoke("send-message", text, attachments ?? []),
   interruptAgent: () => ipcRenderer.invoke("interrupt-agent"),
 
-  setModel: (selection) => ipcRenderer.invoke("set-model", selection),
-  chooseModel: (slug) => ipcRenderer.invoke("choose-model", slug),
+  applyModel: (selection) => ipcRenderer.invoke("apply-model", selection),
 
   minimizeWindow: () => ipcRenderer.invoke("window-minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("window-toggle-maximize"),

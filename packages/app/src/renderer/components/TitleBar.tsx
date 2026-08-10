@@ -47,15 +47,15 @@ export function TitleBar({
       <span className="h-4 w-px shrink-0 bg-border" />
 
       {session ? (
+        // Only the playtest gets a badge. "Edit" is the resting state of every
+        // Studio session, so labelling it said nothing and read like a button.
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[12.5px] font-medium">{session.place.name}</span>
-          {running ? (
+          {running && (
             <Badge variant="success">
               <CirclePlay className="size-3" />
               Playtest · {session.run.realm}
             </Badge>
-          ) : (
-            <Badge variant="outline">Edit</Badge>
           )}
         </div>
       ) : (

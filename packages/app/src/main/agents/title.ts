@@ -13,8 +13,8 @@
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentId, AgentInfo } from "../../shared/agent.js";
-import { DEFAULT_TITLE_MODEL } from "../../shared/settings.js";
+import type { AgentInfo } from "../../shared/agent.js";
+import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../shared/settings.js";
 import type { AppSettings } from "../../shared/settings.js";
 import { spawnAgent } from "./adapter.js";
 
@@ -53,15 +53,18 @@ const SCHEMA = {
 
 const TIMEOUT_MS = 45_000;
 
-/** Which CLI names the thread: the configured one, or whatever is installed. */
-export function titleProvider(settings: AppSettings, agents: AgentInfo[], preferred: AgentId | null): AgentInfo | null {
+/**
+ * Which CLI names the thread: the configured one, or the default for this
+ * machine — Codex, because GPT-5.6-Luna is the quickest way to get one good
+ * line, and Claude Code's Haiku when Codex is not installed.
+ */
+export function titleProvider(settings: AppSettings, agents: AgentInfo[]): AgentInfo | null {
   const installed = agents.filter((agent) => agent.installed && agent.command);
   const chosen = settings.titleGeneration.provider;
 
   if (chosen !== "auto") return installed.find((agent) => agent.id === chosen) ?? null;
 
-  // The agent already running the conversation is the one most likely to be
-  // signed in and warm, so it goes first.
+  const preferred = autoTitleProvider(installed.map((agent) => agent.id));
   return installed.find((agent) => agent.id === preferred) ?? installed[0] ?? null;
 }
 

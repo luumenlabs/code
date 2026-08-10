@@ -5,7 +5,6 @@ import { Textarea } from "@/components/ui/misc";
 import { Hint } from "@/components/ui/tooltip";
 import { AccessChip } from "@/components/composer/AccessChip";
 import { ModelChip } from "@/components/composer/ModelChip";
-import { OptionsChip } from "@/components/composer/OptionsChip";
 import { cn } from "@/lib/utils";
 import type { Attachment, Harness } from "@/state";
 
@@ -155,7 +154,6 @@ export function Composer({
 
           <div className="flex items-center gap-0.5 px-2 pt-0.5 pb-2">
             <ModelChip harness={harness} />
-            <OptionsChip selection={harness.modelSelection} onChange={harness.setModelSelection} />
             {snapshot && <AccessChip permissions={snapshot.capabilities.permissions} />}
 
             <span className="flex-1" />
