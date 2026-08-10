@@ -22,6 +22,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
+import { ProviderIcon } from "@/components/ProviderIcon";
 import { Notice } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -356,11 +357,26 @@ function ThreadRow({
           </span>
         </span>
 
-        <span className="flex w-full items-center gap-1.5 pl-5 text-[11.5px] text-muted-foreground/70">
+        <span className="flex w-full items-center gap-2 text-[11.5px] text-muted-foreground/70">
+          {/*
+            Which agent this conversation belongs to, in the icon column under
+            the one above it.
+
+            It goes here rather than on the title line because the title line
+            is where running lives, and which agent is working is exactly the
+            thing you want to know while it is. The box is kept whether or not
+            there is a mark to put in it: a thread from before Luu Code recorded
+            the agent would otherwise pull its own second line 12px left of
+            every other one.
+          */}
+          <span className="flex size-3 shrink-0 items-center justify-center">
+            {thread.agent && <ProviderIcon provider={thread.agent} className="size-3" />}
+          </span>
+
           {running ? (
             <span className="text-primary">Working…</span>
           ) : (
-            <>
+            <span className="flex min-w-0 items-center gap-1.5">
               <span>{relativeTime(thread.updatedAt)}</span>
               {thread.messageCount > 0 && (
                 <>
@@ -370,7 +386,7 @@ function ThreadRow({
                   </span>
                 </>
               )}
-            </>
+            </span>
           )}
         </span>
       </button>
