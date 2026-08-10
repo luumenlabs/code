@@ -27,6 +27,11 @@ export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () 
   const [renaming, setRenaming] = React.useState<string | null>(null);
 
   const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
+  const connected = (harness.snapshot?.status.sessions.length ?? 0) > 0;
+
+  // Nothing is highlighted while a draft is open: it is not in the list yet,
+  // and it will not be until the first message is sent.
+  const drafting = harness.activeThreadId === null;
 
   const toggle = (projectId: string): void => {
     setCollapsed((current) => {
@@ -40,7 +45,15 @@ export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () 
   return (
     <aside className="flex h-full min-h-0 w-sidebar shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
       <div className="flex flex-col gap-1.5 p-2">
-        <Button variant="outline" size="sm" className="justify-start" onClick={() => void harness.newThread()}>
+        {/* A conversation is filed against a place, so there is nowhere to put
+            one until Studio is connected. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-start"
+          disabled={!connected}
+          onClick={() => void harness.newThread()}
+        >
           <Plus />
           New chat
         </Button>
@@ -59,6 +72,12 @@ export function Sidebar({ harness, onSearch }: { harness: Harness; onSearch: () 
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 px-2 pb-3">
+          {drafting && groups.length > 0 && (
+            <p className="px-1.5 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+              New chat — it appears here once you send the first message.
+            </p>
+          )}
+
           {groups.length === 0 && (
             <p className="px-1.5 pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
               No conversations yet. Describe a change to start one.

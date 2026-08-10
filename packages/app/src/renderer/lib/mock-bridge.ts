@@ -14,7 +14,9 @@ import type { ActivityEvent, OutputEntry, ServerEvent } from "@luumen/code-proto
 import type { AgentEvent, TranscriptEntry } from "../../shared/agent.js";
 import type { HarnessSnapshot, LuuCodeBridge } from "../../shared/bridge.js";
 import type { Thread, ThreadIndex } from "../../shared/threads.js";
-import { createSelection, findModel } from "../../shared/models.js";
+import { CLAUDE_MODELS, CODEX_FALLBACK_MODELS, createSelection, findModel } from "../../shared/models.js";
+import { DEFAULT_SETTINGS } from "../../shared/settings.js";
+import type { AppSettings } from "../../shared/settings.js";
 
 const SELECTION = createSelection("claude", "claude-opus-5");
 
@@ -185,6 +187,9 @@ const SNAPSHOT: HarnessSnapshot = {
       installHint: "Install the Codex CLI, then run `codex` once to sign in.",
     },
   ],
+  models: [...CLAUDE_MODELS.map(({ minCliVersion: _drop, ...model }) => model), ...CODEX_FALLBACK_MODELS],
+  modelProblem: null,
+  settings: DEFAULT_SETTINGS,
   session: { agent: "claude", state: "working", sessionId: "demo", model: "claude-opus-5", message: null },
   serverPort: 33770,
   mcpCommand: "luu-code-mcp.cmd",
@@ -196,6 +201,7 @@ const SNAPSHOT: HarnessSnapshot = {
     modelSelection: SELECTION,
     items: ITEMS,
   } as Thread,
+  modelSelection: SELECTION,
 };
 
 function runState(running: boolean): HarnessSnapshot["status"]["sessions"][number]["run"] {
@@ -249,8 +255,7 @@ export function installMockBridge(): void {
     isWindowMaximized: async () => false,
     onWindowStateChanged: () => () => undefined,
 
-    newThread: async () =>
-      ({ ...THREADS.threads[0]!, id: "t_new", title: "New chat", agentSessionId: null, modelSelection: SELECTION, items: [] }) as Thread,
+    newThread: async () => null,
     openThread: async (id) =>
       ({
         ...(THREADS.threads.find((thread) => thread.id === id) ?? THREADS.threads[0]!),
@@ -268,6 +273,9 @@ export function installMockBridge(): void {
     setPermission: async () => undefined,
     execute: async () => ({}),
 
+    updateSettings: async (patch) => ({ ...DEFAULT_SETTINGS, ...patch }) as AppSettings,
+    resetSettings: async () => DEFAULT_SETTINGS,
+
     onServerEvent: (listener) => {
       serverListeners.add(listener);
       return () => serverListeners.delete(listener);
@@ -284,6 +292,9 @@ export function installMockBridge(): void {
       threadListeners.add(listener);
       return () => threadListeners.delete(listener);
     },
+    onCatalogue: () => () => undefined,
+    onSettingsChanged: () => () => undefined,
+    onModelSelectionChanged: () => () => undefined,
   };
 
   window.luuCode = bridge;

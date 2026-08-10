@@ -152,6 +152,19 @@ export class ThreadStore {
     return thread;
   }
 
+  /**
+   * Leaves no thread open, which is what "New chat" means.
+   *
+   * A conversation that was never sent is not a conversation: writing one to
+   * disk and listing it in the sidebar puts an empty row in the user's history
+   * every time they change their mind. The thread is created by the first
+   * message instead.
+   */
+  clearActive(): void {
+    this.activeThreadId = null;
+    this.markIndexDirty();
+  }
+
   append(id: string, item: TranscriptEntry): void {
     const thread = this.threads.get(id);
     if (!thread) return;

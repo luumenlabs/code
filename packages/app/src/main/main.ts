@@ -14,13 +14,16 @@ import { createLuuCodeServer } from "@luumen/code-server";
 import type { LuuCodeServer } from "@luumen/code-server";
 import type { PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
+import { generateTitle, titleProvider } from "./agents/title.js";
 import { createElectronScreenshotProvider } from "./screenshot.js";
+import { SettingsStore } from "./settings.js";
 import { ThreadStore } from "./threads.js";
 import { fromAgentEvent, fromServerEvent, userEntry } from "./transcript.js";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
-import { createSelection, findModel } from "../shared/models.js";
+import { createSelection, defaultModelFor, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
+import type { AppSettings } from "../shared/settings.js";
 
 /**
  * The place the agent is currently pointed at.
@@ -57,6 +60,21 @@ let window: BrowserWindow | null = null;
 let server: LuuCodeServer | null = null;
 let agents: AgentManager | null = null;
 let threads: ThreadStore | null = null;
+let settings: SettingsStore | null = null;
+
+/**
+ * The model the next message will use.
+ *
+ * A draft has no thread to store a selection on, but the composer still shows
+ * one and the user can still change it, so it lives here until a message turns
+ * the draft into a thread.
+ */
+let draftSelection: ModelSelection | null = null;
+
+/** The open thread's model, or the draft's. */
+function activeSelection(): ModelSelection | null {
+  return threads?.active()?.modelSelection ?? draftSelection;
+}
 
 function broadcast(channel: string, payload: unknown): void {
   window?.webContents.send(channel, payload);
@@ -126,6 +144,41 @@ function requireThreads(): ThreadStore {
   return threads;
 }
 
+function requireSettings(): SettingsStore {
+  if (!settings) throw new Error("Settings are not ready.");
+  return settings;
+}
+
+/**
+ * Names a thread from its opening message.
+ *
+ * Runs after the message is on its way, never in front of it: a title is worth
+ * a second or two of a cheap model's time, but never a second of the user's.
+ * A failure leaves the typed first line in place.
+ */
+async function nameThread(threadId: string, message: string): Promise<void> {
+  const store = requireThreads();
+  const config = requireSettings().current();
+  if (!config.titleGeneration.enabled) return;
+
+  const thread = store.get(threadId);
+  if (!thread) return;
+
+  const manager = requireAgents();
+  const agent = titleProvider(config, await manager.list(), thread.agent);
+  if (!agent) return;
+
+  const title = await generateTitle(agent, config, message, scratchDirFor(thread.projectId));
+  if (!title) return;
+
+  // The user may have renamed it in the meantime; their name wins.
+  const current = store.get(threadId);
+  if (!current || current.title !== thread.title) return;
+
+  store.rename(threadId, title);
+  broadcast("threads", store.index());
+}
+
 /**
  * Locates the MCP stdio entry point.
  *
@@ -187,6 +240,7 @@ function record(entry: TranscriptEntry): void {
 
 async function bootstrap(): Promise<void> {
   threads = new ThreadStore(app.getPath("userData"));
+  settings = new SettingsStore(app.getPath("userData"));
 
   server = await createLuuCodeServer({
     screenshotProvider: createElectronScreenshotProvider(),
@@ -229,9 +283,30 @@ async function bootstrap(): Promise<void> {
 
   const active = requireThreads().active();
   agents.setWorkingDirectory(scratchDirFor(active?.projectId ?? "default"));
+  draftSelection = active?.modelSelection ?? null;
 
   registerIpc();
   await createWindow();
+
+  // Probing `codex app-server` takes a moment, so it happens after the window
+  // is up: the catalogue arrives as an event rather than holding the app back.
+  void requireAgents()
+    .list()
+    .then(() => {
+      const manager = requireAgents();
+      broadcast("catalogue", { models: manager.models(), problem: manager.catalogueProblem() });
+
+      // A draft with no model yet takes the default of whichever CLI is here.
+      if (draftSelection) return;
+
+      const installed = manager.models()[0];
+      if (installed) {
+        draftSelection = createSelection(installed.provider, defaultModelFor(installed.provider)?.slug);
+        manager.setModelSelection(draftSelection);
+        broadcast("model-selection", draftSelection);
+      }
+    })
+    .catch(() => undefined);
 }
 
 function registerIpc(): void {
@@ -240,20 +315,43 @@ function registerIpc(): void {
     const manager = requireAgents();
     const store = requireThreads();
 
+    // `list()` performs discovery on first call, so the catalogue is read after.
+    const agents = await manager.list();
+
     return {
       status: local.status(),
       capabilities: local.capabilities(),
-      agents: await manager.list(),
+      agents,
+      models: manager.models(),
+      modelProblem: manager.catalogueProblem(),
+      settings: requireSettings().current(),
       session: manager.status(),
       serverPort: local.port,
       mcpCommand: process.platform === "win32" ? "luu-code-mcp.cmd" : "luu-code-mcp",
       platform: process.platform,
       threads: store.index(),
       thread: store.active(),
+      modelSelection: activeSelection(),
     };
   });
 
-  ipcMain.handle("refresh-agents", () => requireAgents().list(true));
+  ipcMain.handle("refresh-agents", async () => {
+    const agents = await requireAgents().list(true);
+    broadcast("catalogue", { models: requireAgents().models(), problem: requireAgents().catalogueProblem() });
+    return agents;
+  });
+
+  ipcMain.handle("update-settings", (_event, patch: Partial<AppSettings>) => {
+    const next = requireSettings().update(patch);
+    broadcast("settings", next);
+    return next;
+  });
+
+  ipcMain.handle("reset-settings", () => {
+    const next = requireSettings().reset();
+    broadcast("settings", next);
+    return next;
+  });
 
   ipcMain.handle("window-minimize", () => window?.minimize());
   ipcMain.handle("window-toggle-maximize", () => {
@@ -269,57 +367,65 @@ function registerIpc(): void {
     const place = requirePlace();
     const manager = requireAgents();
 
-    // A message always belongs to a thread, so create one if this is the first.
+    const selection = activeSelection();
+    const agent = findModel(selection?.model)?.provider ?? store.active()?.agent ?? null;
+    if (!agent) throw new Error("Pick a model first.");
+
+    // The message is what promotes a draft into a real conversation. Until
+    // this point nothing was written and nothing appeared in the sidebar.
     let active = store.active();
+    const isFirstMessage = active === null;
 
     if (!active) {
-      const agent = manager.status().agent;
-      active = store.create(place, agent, agent ? createSelection(agent) : null);
+      active = store.create(place, agent, selection);
       manager.setWorkingDirectory(scratchDirFor(active.projectId));
       broadcast("threads", store.index());
     }
 
     // The CLI is implied by the model, so it is brought up here rather than
     // being something the user has to remember to start.
-    const selection = active.modelSelection;
-    const agent = findModel(selection?.model)?.provider ?? active.agent;
-
-    if (!agent) throw new Error("Pick a model first.");
-
     manager.setModelSelection(selection);
     await manager.ensure(agent, active.agent === agent ? active.agentSessionId : null);
 
     record(userEntry(text, attachments));
     await manager.send(text, attachments);
+
+    if (isFirstMessage) void nameThread(active.id, text);
   });
 
   ipcMain.handle("interrupt-agent", () => requireAgents().interrupt());
 
   // ---- Conversation history ------------------------------------------------
 
+  /**
+   * Starts a draft rather than a thread.
+   *
+   * Nothing is written and nothing is listed until the first message: a chat
+   * the user opened and abandoned should leave no trace in their history.
+   */
   ipcMain.handle("new-thread", async () => {
     const store = requireThreads();
-    const place = requirePlace();
-    const agent = requireAgents().status().agent;
+    requirePlace();
 
-    const thread = store.create(place, agent, agent ? createSelection(agent) : null);
-    requireAgents().setWorkingDirectory(scratchDirFor(thread.projectId));
-
-    // A new conversation must not continue the previous one.
+    store.clearActive();
     await requireAgents().stop();
 
     broadcast("threads", store.index());
-    return thread;
+    return null;
   });
 
   ipcMain.handle("set-model", (_event, selection: ModelSelection) => {
     const store = requireThreads();
     const active = store.active();
-    if (!active) return null;
 
-    store.setMeta(active.id, { modelSelection: selection });
+    draftSelection = selection;
     requireAgents().setModelSelection(selection);
-    broadcast("threads", store.index());
+
+    if (active) {
+      store.setMeta(active.id, { modelSelection: selection });
+      broadcast("threads", store.index());
+    }
+
     return selection;
   });
 
@@ -336,17 +442,20 @@ function registerIpc(): void {
 
     const store = requireThreads();
     const manager = requireAgents();
-
-    const active = store.active() ?? store.create(requirePlace(), model.provider, createSelection(model.provider, slug));
     const selection = createSelection(model.provider, slug);
+    const active = store.active();
 
-    if (active.agent !== null && active.agent !== model.provider) await manager.stop();
+    if (active && active.agent !== null && active.agent !== model.provider) await manager.stop();
 
-    store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
-    manager.setWorkingDirectory(scratchDirFor(active.projectId));
+    draftSelection = selection;
     manager.setModelSelection(selection);
 
-    broadcast("threads", store.index());
+    if (active) {
+      store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
+      manager.setWorkingDirectory(scratchDirFor(active.projectId));
+      broadcast("threads", store.index());
+    }
+
     return selection;
   });
 

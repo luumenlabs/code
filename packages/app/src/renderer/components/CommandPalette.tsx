@@ -7,7 +7,7 @@
  * Escape closes.
  */
 import * as React from "react";
-import { CirclePlay, MessageSquare, Plus, ScrollText, Search, SquareTerminal } from "lucide-react";
+import { CirclePlay, MessageSquare, Plus, ScrollText, Search, Settings, SquareTerminal } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
@@ -28,10 +28,12 @@ export function CommandPalette({
   harness,
   open,
   onOpenChange,
+  onOpenSettings,
 }: {
   harness: Harness;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenSettings: () => void;
 }): React.JSX.Element {
   const [query, setQuery] = React.useState("");
   const [index, setIndex] = React.useState(0);
@@ -81,6 +83,13 @@ export function CommandPalette({
         group: "Actions",
         run: close(() => harness.clearOutput()),
       },
+      {
+        id: "settings",
+        label: "Open settings",
+        icon: Settings,
+        group: "Actions",
+        run: close(onOpenSettings),
+      },
     ];
 
     const threads = harness.threads
@@ -97,7 +106,7 @@ export function CommandPalette({
       : [];
 
     return [...actions, ...threads];
-  }, [harness, onOpenChange, place, running]);
+  }, [harness, onOpenChange, onOpenSettings, place, running]);
 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase();

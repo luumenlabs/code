@@ -4,6 +4,7 @@ import { Composer } from "@/components/Composer";
 import { PairingDialog } from "@/components/PairingDialog";
 import { RightDock } from "@/components/RightDock";
 import type { DockTab } from "@/components/RightDock";
+import { SettingsView } from "@/components/settings/SettingsView";
 import { Sidebar } from "@/components/Sidebar";
 import { TitleBar } from "@/components/TitleBar";
 import { Transcript } from "@/components/Transcript";
@@ -16,6 +17,7 @@ export function App(): React.JSX.Element {
   const [dockOpen, setDockOpen] = React.useState(true);
   const [dockTab, setDockTab] = React.useState<DockTab>("studio");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
   React.useEffect(() => {
@@ -41,28 +43,44 @@ export function App(): React.JSX.Element {
   const lastErrorCount = React.useRef(errorCount);
 
   React.useEffect(() => {
+    if (!harness.settings.followRuntimeErrors) return;
     if (errorCount > lastErrorCount.current && dockOpen) setDockTab("output");
     lastErrorCount.current = errorCount;
-  }, [errorCount, dockOpen]);
+  }, [errorCount, dockOpen, harness.settings.followRuntimeErrors]);
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
       <div className="flex h-full flex-col">
-        <TitleBar harness={harness} dockOpen={dockOpen} onToggleDock={() => setDockOpen((open) => !open)} />
+        <TitleBar
+          harness={harness}
+          dockOpen={dockOpen}
+          onToggleDock={() => setDockOpen((open) => !open)}
+          settingsOpen={settingsOpen}
+          onToggleSettings={() => setSettingsOpen((open) => !open)}
+        />
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar harness={harness} onSearch={() => setPaletteOpen(true)} />
+        {settingsOpen ? (
+          <SettingsView harness={harness} onClose={() => setSettingsOpen(false)} />
+        ) : (
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <Sidebar harness={harness} onSearch={() => setPaletteOpen(true)} />
 
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Transcript items={harness.timeline} onExample={setDraft} />
-            <Composer harness={harness} value={draft} onValueChange={setDraft} />
-          </main>
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <Transcript items={harness.timeline} onExample={setDraft} showThinking={harness.settings.showThinking} />
+              <Composer harness={harness} value={draft} onValueChange={setDraft} />
+            </main>
 
-          {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
-        </div>
+            {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
+          </div>
+        )}
       </div>
 
-      <CommandPalette harness={harness} open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <CommandPalette
+        harness={harness}
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
       <PairingDialog request={harness.pendingPairing} />
     </TooltipProvider>
   );

@@ -7,20 +7,28 @@
  */
 import type { CapabilityReport, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
 import type { AgentEvent, AgentInfo, AgentSessionSnapshot, Attachment, TranscriptEntry } from "./agent.js";
+import type { AppSettings } from "./settings.js";
 import type { Thread, ThreadIndex } from "./threads.js";
 
 export interface HarnessSnapshot {
   status: SessionStatus;
   capabilities: CapabilityReport;
   agents: AgentInfo[];
+  /** What the installed CLIs currently offer, not a list baked into the build. */
+  models: import("./models.js").ModelInfo[];
+  /** Why the Codex list is the built-in fallback, when it is. */
+  modelProblem: string | null;
+  settings: AppSettings;
   session: AgentSessionSnapshot;
   serverPort: number;
   mcpCommand: string;
   /** Drives platform-specific chrome, such as room for window controls. */
   platform: string;
   threads: ThreadIndex;
-  /** The conversation currently open, including its transcript. */
+  /** The conversation currently open, or null while a draft is being composed. */
   thread: Thread | null;
+  /** The open thread's model, or the draft's. */
+  modelSelection: import("./models.js").ModelSelection | null;
 }
 
 export interface LuuCodeBridge {
@@ -46,7 +54,8 @@ export interface LuuCodeBridge {
   onWindowStateChanged(listener: (maximized: boolean) => void): () => void;
 
   // Conversation history. Spec section 45.
-  newThread(): Promise<Thread>;
+  /** Starts a draft. Returns null: nothing is stored until the first message. */
+  newThread(): Promise<null>;
   openThread(id: string): Promise<Thread | null>;
   renameThread(id: string, title: string): Promise<ThreadIndex>;
   deleteThread(id: string): Promise<ThreadIndex>;
@@ -57,6 +66,9 @@ export interface LuuCodeBridge {
   disconnectSession(sessionId: string): Promise<void>;
   setPermission(group: PermissionGroup, allowed: boolean): Promise<void>;
 
+  updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  resetSettings(): Promise<AppSettings>;
+
   /** Runs a Roblox operation from the UI, for the manual controls. */
   execute(op: string, params?: unknown): Promise<unknown>;
 
@@ -64,6 +76,12 @@ export interface LuuCodeBridge {
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** Fires when the thread list changes, so the sidebar stays current. */
   onThreadsChanged(listener: (index: ThreadIndex) => void): () => void;
+  /** Fires when CLI discovery finishes, which happens after the window opens. */
+  onCatalogue(
+    listener: (payload: { models: import("./models.js").ModelInfo[]; problem: string | null }) => void,
+  ): () => void;
+  onSettingsChanged(listener: (settings: AppSettings) => void): () => void;
+  onModelSelectionChanged(listener: (selection: import("./models.js").ModelSelection) => void): () => void;
   /** The main process persists the transcript; this echoes what it stored. */
   onTranscript(listener: (entry: TranscriptEntry) => void): () => void;
 }

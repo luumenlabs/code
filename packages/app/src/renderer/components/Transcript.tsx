@@ -48,9 +48,11 @@ const EXAMPLES = [
 export function Transcript({
   items,
   onExample,
+  showThinking,
 }: {
   items: TimelineItem[];
   onExample: (text: string) => void;
+  showThinking: boolean;
 }): React.JSX.Element {
   const viewport = React.useRef<HTMLDivElement>(null);
   const pinned = React.useRef(true);
@@ -73,10 +75,12 @@ export function Transcript({
     return <EmptyState onExample={onExample} />;
   }
 
+  const visible = showThinking ? items : items.filter((item) => item.kind !== "thinking");
+
   return (
     <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
       <div className="mx-auto flex max-w-[820px] flex-col gap-3 px-6 py-6">
-        {items.map((item) => (
+        {visible.map((item) => (
           <Row key={item.id} item={item} />
         ))}
       </div>

@@ -10,8 +10,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OutputEntry, PairingRequest, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
-import { createSelection, findModel } from "../shared/models.js";
-import type { ModelSelection } from "../shared/models.js";
+import { createSelection, findModel, setModelCatalogue } from "../shared/models.js";
+import type { ModelInfo, ModelSelection } from "../shared/models.js";
+import { DEFAULT_SETTINGS } from "../shared/settings.js";
+import type { AppSettings } from "../shared/settings.js";
 import type { ThreadIndex } from "../shared/threads.js";
 
 export type TimelineItem = TranscriptEntry;
@@ -25,6 +27,13 @@ export interface Harness {
   output: OutputEntry[];
   threads: ThreadIndex | null;
   activeThreadId: string | null;
+  /** What the installed CLIs offer right now. */
+  models: ModelInfo[];
+  /** Why the Codex list is the built-in fallback, when it is. */
+  modelProblem: string | null;
+  settings: AppSettings;
+  updateSettings(patch: Partial<AppSettings>): void;
+  resetSettings(): void;
   busy: boolean;
   runBusy: boolean;
   pendingPairing: PairingRequest | null;
@@ -51,6 +60,9 @@ export function useHarness(): Harness {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [runBusy, setRunBusy] = useState(false);
   const [modelSelection, setSelection] = useState<ModelSelection | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelProblem, setModelProblem] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   const refresh = useCallback(async () => {
     const next = await window.luuCode.snapshot();
@@ -58,7 +70,16 @@ export function useHarness(): Harness {
     setThreads(next.threads);
     setActiveThreadId(next.thread?.id ?? null);
     setTimeline(next.thread?.items ?? []);
-    setSelection(next.thread?.modelSelection ?? null);
+    setSelection(next.modelSelection);
+    setSettings(next.settings);
+    setModelProblem(next.modelProblem);
+
+    if (next.models.length > 0) {
+      // Adapters and helpers resolve slugs through the shared catalogue, so
+      // the renderer's copy has to match what the main process discovered.
+      setModelCatalogue(next.models);
+      setModels(next.models);
+    }
   }, []);
 
   const setModelSelection = useCallback((selection: ModelSelection) => {
@@ -115,13 +136,36 @@ export function useHarness(): Harness {
       setActiveThreadId(index.activeThreadId);
     });
 
+    // Discovery runs after the window opens, so the catalogue arrives late.
+    const offCatalogue = window.luuCode.onCatalogue(({ models: discovered, problem }) => {
+      setModelProblem(problem);
+      if (discovered.length === 0) return;
+      setModelCatalogue(discovered);
+      setModels(discovered);
+    });
+
+    const offSettings = window.luuCode.onSettingsChanged(setSettings);
+    const offSelection = window.luuCode.onModelSelectionChanged(setSelection);
+
     return () => {
       offServer();
       offAgent();
       offTranscript();
       offThreads();
+      offCatalogue();
+      offSettings();
+      offSelection();
     };
   }, [refresh, upsert]);
+
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((current) => ({ ...current, ...patch }) as AppSettings);
+    void window.luuCode.updateSettings(patch).then(setSettings).catch(() => undefined);
+  }, []);
+
+  const resetSettings = useCallback(() => {
+    void window.luuCode.resetSettings().then(setSettings).catch(() => undefined);
+  }, []);
 
   const chooseModel = useCallback((slug: string) => {
     // Optimistic, like setModelSelection: the picker should close on the value
@@ -156,9 +200,10 @@ export function useHarness(): Harness {
 
   const newThread = useCallback(async () => {
     await window.luuCode.newThread();
+    // A draft has no stored transcript to replay, and the model carries over.
     setTimeline([]);
-    await refresh();
-  }, [refresh]);
+    setActiveThreadId(null);
+  }, []);
 
   const openThread = useCallback(
     async (id: string) => {
@@ -202,6 +247,11 @@ export function useHarness(): Harness {
     output,
     threads,
     activeThreadId,
+    models,
+    modelProblem,
+    settings,
+    updateSettings,
+    resetSettings,
     busy,
     runBusy,
     pendingPairing,

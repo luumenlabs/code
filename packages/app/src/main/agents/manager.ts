@@ -8,7 +8,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentEvent, AgentId, AgentInfo, AgentSessionSnapshot, Attachment } from "../../shared/agent.js";
+import { setModelCatalogue } from "../../shared/models.js";
+import type { ModelInfo } from "../../shared/models.js";
 import type { AgentAdapter, McpServerSpec } from "./adapter.js";
+import { discoverModels } from "./catalog.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
 import { discoverAgents } from "./discovery.js";
@@ -33,6 +36,9 @@ export interface AgentManagerOptions {
 export class AgentManager {
   private adapter: AgentAdapter | null = null;
   private agents: AgentInfo[] = [];
+  private catalogue: ModelInfo[] = [];
+  private problem: string | null = null;
+  private discovery: Promise<AgentInfo[]> | null = null;
   private snapshot: AgentSessionSnapshot = { agent: null, state: "stopped", sessionId: null, model: null, message: null };
   private workingDirectory: string = process.cwd();
   private permissionMode = "acceptEdits";
@@ -45,10 +51,40 @@ export class AgentManager {
   constructor(private readonly options: AgentManagerOptions) {}
 
   async list(refresh = false): Promise<AgentInfo[]> {
-    if (refresh || this.agents.length === 0) {
-      this.agents = await discoverAgents();
-    }
+    if (!refresh && this.agents.length > 0) return this.agents;
+
+    // Startup and the renderer's first snapshot both want this, and discovery
+    // spawns a real `codex app-server`. Share one run rather than two.
+    this.discovery ??= this.discover().finally(() => {
+      this.discovery = null;
+    });
+
+    return this.discovery;
+  }
+
+  private async discover(): Promise<AgentInfo[]> {
+    this.agents = await discoverAgents();
+    await this.refreshModels();
     return this.agents;
+  }
+
+  /** What the installed CLIs currently offer. Empty until the first `list()`. */
+  models(): ModelInfo[] {
+    return this.catalogue;
+  }
+
+  /** Why the Codex list is the built-in fallback rather than the live one. */
+  catalogueProblem(): string | null {
+    return this.problem;
+  }
+
+  private async refreshModels(): Promise<void> {
+    const result = await discoverModels(this.agents);
+    this.catalogue = result.models;
+    this.problem = result.problem;
+    // Adapters and the thread store resolve slugs through the shared
+    // catalogue, so the discovered list has to become the one they see.
+    setModelCatalogue(result.models);
   }
 
   status(): AgentSessionSnapshot {

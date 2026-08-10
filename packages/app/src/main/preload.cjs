@@ -38,10 +38,16 @@ contextBridge.exposeInMainWorld("luuCode", {
   disconnectSession: (sessionId) => ipcRenderer.invoke("disconnect-session", sessionId),
   setPermission: (group, allowed) => ipcRenderer.invoke("set-permission", group, allowed),
 
+  updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
+  resetSettings: () => ipcRenderer.invoke("reset-settings"),
+
   execute: (op, params) => ipcRenderer.invoke("execute", op, params),
 
   onServerEvent: (listener) => subscribe("server-event", listener),
   onAgentEvent: (listener) => subscribe("agent-event", listener),
   onThreadsChanged: (listener) => subscribe("threads", listener),
   onTranscript: (listener) => subscribe("transcript", listener),
+  onCatalogue: (listener) => subscribe("catalogue", listener),
+  onSettingsChanged: (listener) => subscribe("settings", listener),
+  onModelSelectionChanged: (listener) => subscribe("model-selection", listener),
 });

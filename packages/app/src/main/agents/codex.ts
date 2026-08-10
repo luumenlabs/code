@@ -69,6 +69,7 @@ export class CodexAdapter implements AgentAdapter {
     // ~/.codex/config.toml is never rewritten by Luu Code.
     const selection = options.modelSelection;
     const effort = selection?.options.find((entry) => entry.id === "reasoningEffort")?.value;
+    const tier = selection?.options.find((entry) => entry.id === "serviceTier")?.value;
 
     const overrides = [
       "-c",
@@ -79,6 +80,8 @@ export class CodexAdapter implements AgentAdapter {
       `mcp_servers.luu-code.env=${JSON.stringify(options.mcp.env)}`,
       ...(selection ? ["-c", `model=${JSON.stringify(selection.model)}`] : []),
       ...(typeof effort === "string" ? ["-c", `model_reasoning_effort=${JSON.stringify(effort)}`] : []),
+      // "default" is Luu Code's name for "say nothing and take Codex's own".
+      ...(typeof tier === "string" && tier !== "default" ? ["-c", `service_tier=${JSON.stringify(tier)}`] : []),
     ];
 
     // Resuming by id targets the exact conversation the thread belongs to;
