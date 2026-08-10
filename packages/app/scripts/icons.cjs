@@ -1,8 +1,9 @@
 /**
  * Renders the icon masters into every raster format the app and the README need.
  *
- * Two channels: the blue release icon and the purple nightly one, so a nightly
- * build is recognisable in a dock full of app icons.
+ * Three channels: blue for release, purple for nightly, amber for a build run
+ * from source — so which window you are looking at is answered by the dock,
+ * before you have clicked anything.
  *
  * Run with `pnpm assets:icons` from the repo root. Output is committed, so this
  * only needs running when a master SVG changes.
@@ -46,6 +47,7 @@ const ICNS_TYPES = [
 const VARIANTS = [
   { name: "release", master: "icon.svg", stem: "icon", renderer: true },
   { name: "nightly", master: "icon-nightly.svg", stem: "icon-nightly", renderer: false },
+  { name: "dev", master: "icon-dev.svg", stem: "icon-dev", renderer: false },
 ];
 
 app.disableHardwareAcceleration();

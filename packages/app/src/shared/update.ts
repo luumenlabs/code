@@ -11,7 +11,16 @@
  * Each channel updates only from itself: a nightly never offers a release build
  * and a release never offers a nightly.
  */
-export type Channel = "release" | "nightly";
+/**
+ * Which build this is.
+ *
+ * `dev` is a checkout running from source. It is a channel rather than a flag
+ * because it needs the same separation the other two have from each other: its
+ * own icon, its own window, its own state on disk. Sharing any of those with an
+ * installed build is how you end up reading the wrong app's threads, or
+ * debugging a window that was never the one you started.
+ */
+export type Channel = "release" | "nightly" | "dev";
 
 export type UpdateState =
   /** Not an installed build, so there is nothing to update. */

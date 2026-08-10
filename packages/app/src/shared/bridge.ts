@@ -28,8 +28,8 @@ export interface HarnessSnapshot {
   versions: VersionStatus;
   /** Drives platform-specific chrome, such as room for window controls. */
   platform: string;
-  /** Release or nightly, so the chrome can say which build this is. */
-  channel: "release" | "nightly";
+  /** Release, nightly, or a build run from source. */
+  channel: import("./update.js").Channel;
   threads: ThreadIndex;
   /** The conversation currently open, or null while a draft is being composed. */
   thread: Thread | null;

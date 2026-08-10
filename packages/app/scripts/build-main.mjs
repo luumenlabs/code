@@ -77,11 +77,16 @@ await build({
 });
 
 // The window and taskbar icons come from the shared asset bank at the repo
-// root, copied in so the packaged app carries them. Both channels ship: which
-// one the app shows is decided at runtime from LUU_CODE_CHANNEL.
+// root, copied in so the packaged app carries them. All three channels ship:
+// which one the app shows is decided at runtime, and a checkout picks the dev
+// icon on its own.
 mkdirSync(join(root, "dist", "icons"), { recursive: true });
 
-const icons = ["icon", "icon-nightly"].flatMap((stem) => [`${stem}.png`, `${stem}.ico`, `${stem}.icns`]);
+const icons = ["icon", "icon-nightly", "icon-dev"].flatMap((stem) => [
+  `${stem}.png`,
+  `${stem}.ico`,
+  `${stem}.icns`,
+]);
 
 for (const icon of icons) {
   const source = join(repoRoot, "assets", icon);

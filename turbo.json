@@ -2,8 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
   // The app build copies icons out of assets/, which sits outside every
-  // package, so nothing else would notice them changing.
-  "globalDependencies": ["assets/icon.png", "assets/icon.ico", "assets/icon.icns"],
+  // package, so nothing else would notice them changing. One entry per channel:
+  // a rebuilt nightly or dev icon has to invalidate the cache too.
+  "globalDependencies": ["assets/icon*.png", "assets/icon*.ico", "assets/icon*.icns"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

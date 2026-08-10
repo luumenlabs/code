@@ -26,7 +26,7 @@ import type { HarnessSnapshot } from "../shared/bridge.js";
 import { createSelection, defaultModel, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 import type { AppSettings } from "../shared/settings.js";
-import type { UpdateStatus, VersionStatus } from "../shared/update.js";
+import type { Channel, UpdateStatus, VersionStatus } from "../shared/update.js";
 
 /**
  * The place the agent is currently pointed at.
@@ -60,12 +60,60 @@ const isDev = !app.isPackaged;
 /**
  * Which build this is.
  *
- * Set explicitly by the nightly workflow; otherwise inferred from the version,
- * so a `0.2.0-nightly.3` build carries the nightly identity without anyone
- * having to remember the environment variable.
+ * A checkout is a dev build, decided by asking Electron rather than by any
+ * convention someone has to remember. Otherwise the nightly workflow sets the
+ * variable, and the version is the fallback so a `0.2.0-nightly.3` build
+ * carries the nightly identity on its own.
+ *
+ * The environment variable still wins, so `LUU_CODE_CHANNEL=nightly pnpm dev`
+ * shows the nightly identity from source.
  */
-const channel: "release" | "nightly" =
-  process.env.LUU_CODE_CHANNEL === "nightly" || app.getVersion().includes("nightly") ? "nightly" : "release";
+function resolveChannel(): Channel {
+  const requested = process.env.LUU_CODE_CHANNEL;
+  if (requested === "release" || requested === "nightly" || requested === "dev") return requested;
+
+  if (!app.isPackaged) return "dev";
+  return app.getVersion().includes("nightly") ? "nightly" : "release";
+}
+
+const channel: Channel = resolveChannel();
+
+/**
+ * A dev build keeps its own threads, settings, and plugin record.
+ *
+ * Without this, working on Luu Code means writing to the history of the copy
+ * you actually use — and a stray test conversation is indistinguishable from a
+ * real one a week later. The installed builds are already separated from each
+ * other by their product names.
+ *
+ * Deliberately not extended to the local server: Studio finds it on a fixed
+ * port with a paired token, and moving those would mean re-pairing Studio every
+ * time you switch between the dev app and the installed one. Two servers still
+ * cannot share the port, which is reported as the conflict it is.
+ */
+if (channel === "dev") {
+  app.setPath("userData", join(app.getPath("appData"), "Luu Code Dev"));
+}
+
+/** Blue for release, purple for nightly, amber for a build run from source. */
+const ICON_STEM: Record<Channel, string> = {
+  release: "icon",
+  nightly: "icon-nightly",
+  dev: "icon-dev",
+};
+
+const WINDOW_TITLE: Record<Channel, string> = {
+  release: "Luu Code",
+  nightly: "Luu Code Nightly",
+  dev: "Luu Code (dev)",
+};
+
+/** Taskbar grouping and pinned shortcuts. One identity per channel. */
+const APP_USER_MODEL_ID: Record<Channel, string> = {
+  release: "dev.luumen.code",
+  nightly: "dev.luumen.code.nightly",
+  dev: "dev.luumen.code.dev",
+};
 
 /**
  * The app icon, copied out of the repo's asset bank at build time.
@@ -74,9 +122,8 @@ const channel: "release" | "nightly" =
  * Missing icons are not worth failing to start over, so this can return null.
  */
 function iconPath(): string | null {
-  const stem = channel === "nightly" ? "icon-nightly" : "icon";
   const extension = process.platform === "win32" ? "ico" : "png";
-  const path = join(appRoot(), "dist", "icons", `${stem}.${extension}`);
+  const path = join(appRoot(), "dist", "icons", `${ICON_STEM[channel]}.${extension}`);
   return existsSync(path) ? path : null;
 }
 
@@ -119,7 +166,7 @@ async function createWindow(): Promise<void> {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: "#171717",
-    title: channel === "nightly" ? "Luu Code Nightly" : "Luu Code",
+    title: WINDOW_TITLE[channel],
     ...(icon ? { icon } : {}),
     autoHideMenuBar: true,
     // The window chrome is part of the app: the title bar carries the Studio
@@ -135,6 +182,12 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   });
+
+  // The renderer's <title> is applied over the window title the moment the page
+  // loads, which would put all three channels back on the same name in the
+  // taskbar and the window switcher. The title set above is the one that means
+  // something, so the document's is refused.
+  window.on("page-title-updated", (event) => event.preventDefault());
 
   // External links belong in the user's browser, not in a window that can talk
   // to Roblox Studio.
@@ -309,10 +362,10 @@ function record(entry: TranscriptEntry): void {
 
 async function bootstrap(): Promise<void> {
   // Windows groups taskbar buttons and picks the icon by this id; without it,
-  // a development run shows up as Electron. Nightly gets its own id so the two
-  // never share a taskbar button or a pinned shortcut.
+  // a development run shows up as Electron. Each channel gets its own, so no
+  // two ever share a taskbar button or a pinned shortcut.
   if (process.platform === "win32") {
-    app.setAppUserModelId(channel === "nightly" ? "dev.luumen.code.nightly" : "dev.luumen.code");
+    app.setAppUserModelId(APP_USER_MODEL_ID[channel]);
   }
 
   // macOS takes the dock icon from the bundle once packaged, but not before.

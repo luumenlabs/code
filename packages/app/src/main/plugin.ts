@@ -27,6 +27,10 @@ const BUNDLED_NAME = "LuuCode.rbxm";
 const INSTALLED_NAME: Record<Channel, string> = {
   release: "LuuCode.rbxm",
   nightly: "LuuCodeNightly.rbxm",
+  // A dev build must not overwrite the plugin the installed app put there.
+  // `luu build` in plugin/ still writes LuuCode.rbxm, which is the plugin
+  // author's own loop and is left alone.
+  dev: "LuuCodeDev.rbxm",
 };
 
 interface InstallRecord {
@@ -40,18 +44,34 @@ interface InstallRecord {
  *
  * These are Studio's own locations, not a preference: Studio reads this folder
  * on start and nowhere else. Linux has no Studio, so it has no answer.
+ *
+ * Only the platform decides whether there is an answer. An earlier version
+ * returned null when %LOCALAPPDATA% was missing from the environment, which
+ * made a launcher that happened to strip it look identical to "Roblox Studio
+ * does not run here" — the one message a Windows user can do nothing about.
+ * The path is derived from the home directory instead, the same way the
+ * server's own config paths are.
  */
 export function studioPluginsDir(): string | null {
   if (process.platform === "win32") {
-    const local = process.env.LOCALAPPDATA;
-    return local ? join(local, "Roblox", "Plugins") : null;
+    return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Roblox", "Plugins");
   }
 
   if (process.platform === "darwin") {
-    return join(homedir(), "Documents", "Roblox", "Plugins");
+    // Through Electron, so a Documents folder relocated by iCloud or a
+    // redirected home still resolves to the one Studio actually uses.
+    return join(documentsDir(), "Roblox", "Plugins");
   }
 
   return null;
+}
+
+function documentsDir(): string {
+  try {
+    return app.getPath("documents");
+  } catch {
+    return join(homedir(), "Documents");
+  }
 }
 
 export class PluginInstaller {
@@ -119,9 +139,12 @@ export class PluginInstaller {
     }
 
     if (bundled === null) {
+      // A checkout has no plugin until someone builds one, which is the normal
+      // state of a fresh clone rather than a fault — so it says what to run,
+      // and mentions the shorter path a plugin author actually wants.
       return app.isPackaged
         ? "This build did not ship a plugin. Download LuuCode.rbxm from the release instead."
-        : "No plugin built yet. Run `luu run bundle` in plugin/ first.";
+        : "No plugin in this build. Run `luu run bundle` in plugin/ and restart the app, or `luu build` to install it into Studio directly.";
     }
 
     return null;

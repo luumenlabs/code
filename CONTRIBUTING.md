@@ -46,6 +46,21 @@ pnpm dev              # the app, with reload
 pnpm serve            # the local server on its own, no window
 ```
 
+`pnpm dev` runs on its own **dev channel**: an amber icon, a window titled
+`Luu Code (dev)`, its own taskbar identity, and its own chats, settings, and
+plugin file (`LuuCodeDev.rbxm`). Nothing it writes touches an installed copy, so
+a test conversation never turns up in your real history and the app you use
+keeps its plugin.
+
+The local server is deliberately *not* separated — Studio finds it on a fixed
+port with a paired token, and moving those would mean re-pairing every time you
+switched. One consequence: a dev build and an installed build cannot run at the
+same time. The second one to start says the port is taken; set `LUU_CODE_PORT`
+and `LUU_CODE_HOME` if you really need both.
+
+`LUU_CODE_CHANNEL` overrides the channel, so `LUU_CODE_CHANNEL=nightly pnpm dev`
+shows the nightly identity from source.
+
 The plugin is a separate build; see below. A source checkout will not see a
 Studio panel until you have run `luu build` at least once.
 
@@ -59,8 +74,10 @@ pnpm assets:icons
 ```
 
 Output is committed. The build copies the icons into the app, it does not
-generate them. Run the app with `LUU_CODE_CHANNEL=nightly` to see the nightly
-identity — purple icon, its own taskbar id, and a badge in the title bar.
+generate them. There are three masters, one per channel: blue `icon.svg` for
+release, purple `icon-nightly.svg`, and amber `icon-dev.svg` for a build run
+from source. All three ship in every build; which one appears is decided at
+runtime, so the icon in your dock always says which app you are looking at.
 
 ## Working on the plugin
 

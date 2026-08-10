@@ -29,7 +29,7 @@ import {
 import { PERMISSION_GROUPS } from "@luumen/code-protocol";
 import type { PermissionGroup } from "@luumen/code-protocol";
 import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../../shared/settings.js";
-import type { PluginStatus, UpdateStatus } from "../../../shared/update.js";
+import type { Channel, PluginStatus, UpdateStatus } from "../../../shared/update.js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -332,6 +332,18 @@ function Updates({ harness }: { harness: Harness }): React.JSX.Element {
   );
 }
 
+const CHANNEL_LABEL: Record<Channel, string> = {
+  release: "Release",
+  nightly: "Nightly",
+  dev: "Dev",
+};
+
+const CHANNEL_NOTE: Record<Channel, string> = {
+  release: "Release builds update from the release channel only.",
+  nightly: "Nightly builds update from the nightly channel only, and install beside a release build.",
+  dev: "This is a build running from source. It keeps its own chats, settings, and Studio plugin, separate from any installed copy.",
+};
+
 function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus }): React.JSX.Element {
   const [busy, setBusy] = React.useState<string | null>(null);
 
@@ -365,9 +377,7 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[12.5px] font-medium">Luu Code {status.currentVersion}</span>
-            <Badge variant={status.channel === "nightly" ? "primary" : "outline"}>
-              {status.channel === "nightly" ? "Nightly" : "Release"}
-            </Badge>
+            <Badge variant={status.channel === "release" ? "outline" : "primary"}>{CHANNEL_LABEL[status.channel]}</Badge>
           </div>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{detail}</p>
         </div>
@@ -403,11 +413,7 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
       {/* A channel only ever updates from itself, which is worth saying once
           rather than leaving someone to wonder why a nightly never offers a
           release. */}
-      <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-        {status.channel === "nightly"
-          ? "Nightly builds update from the nightly channel only, and install beside a release build."
-          : "Release builds update from the release channel only."}
-      </p>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{CHANNEL_NOTE[status.channel]}</p>
 
       {status.state === "downloading" && (
         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -450,15 +456,16 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
   const matched = status.installed && status.installedVersion === status.bundledVersion;
   const canInstall = status.supported && status.bundledVersion !== null;
 
-  const detail = !status.supported
-    ? (status.message ?? "Roblox Studio does not run on this platform.")
-    : status.message !== null
-      ? status.message
-      : !status.installed
-        ? `Not installed yet. This build carries ${status.bundledVersion}.`
-        : matched
-          ? `${status.installedVersion} installed — the same version as the app.`
-          : `${status.installedVersion ?? "An older build"} installed. This app carries ${status.bundledVersion}.`;
+  // The main process already says why it cannot install, when it cannot. The
+  // renderer used to carry its own copy of one of those sentences, which meant
+  // two places could disagree about the reason.
+  const detail =
+    status.message ??
+    (!status.installed
+      ? `Not installed yet. This build carries ${status.bundledVersion}.`
+      : matched
+        ? `${status.installedVersion} installed — the same version as the app.`
+        : `${status.installedVersion ?? "An older build"} installed. This app carries ${status.bundledVersion}.`);
 
   return (
     <div className="py-4">

@@ -38,9 +38,19 @@ export function TitleBar({
     >
       <Wordmark className="shrink-0" />
 
-      {snapshot?.channel === "nightly" && (
-        <span className="shrink-0 rounded border border-[#a855f7]/40 bg-[#a855f7]/12 px-1.5 py-px text-[9.5px] font-semibold tracking-[0.08em] text-[#c084fc] uppercase">
-          Nightly
+      {/* Release wears nothing; anything else says what it is, in its own
+          colour, so two windows side by side are never mistaken for each
+          other. */}
+      {snapshot && snapshot.channel !== "release" && (
+        <span
+          className={cn(
+            "shrink-0 rounded border px-1.5 py-px text-[9.5px] font-semibold tracking-[0.08em] uppercase",
+            snapshot.channel === "nightly"
+              ? "border-[#a855f7]/40 bg-[#a855f7]/12 text-[#c084fc]"
+              : "border-[#f59e0b]/40 bg-[#f59e0b]/12 text-[#fbbf24]",
+          )}
+        >
+          {snapshot.channel === "nightly" ? "Nightly" : "Dev"}
         </span>
       )}
 
