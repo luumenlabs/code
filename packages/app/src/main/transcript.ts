@@ -36,6 +36,29 @@ function nextId(prefix: string): string {
   return `${prefix}_${counter}_${Date.now().toString(36)}`;
 }
 
+/**
+ * Roblox calls that were suppressed, kept until their result arrives.
+ *
+ * A suppressed call that then fails still has to be shown — it performed no
+ * operation, so nothing else in the transcript accounts for it — and the only
+ * readable way to show it is as the call it was. That means remembering the
+ * name and arguments the row would have carried, because the result event does
+ * not repeat them.
+ *
+ * Bounded, because a CLI that never reports a result for a call would otherwise
+ * grow this for the life of the process.
+ */
+const SUPPRESSED_LIMIT = 200;
+const suppressed = new Map<string, { name: string; input: unknown }>();
+
+function remember(id: string, call: { name: string; input: unknown }): void {
+  if (suppressed.size >= SUPPRESSED_LIMIT) {
+    const oldest = suppressed.keys().next().value;
+    if (oldest !== undefined) suppressed.delete(oldest);
+  }
+  suppressed.set(id, call);
+}
+
 export function userEntry(text: string, attachments: Attachment[] = []): TranscriptEntry {
   return {
     kind: "user",
@@ -55,7 +78,11 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
       return { kind: "thinking", id: event.id, at: Date.now(), text: event.text };
 
     case "tool-use":
-      if (isRobloxTool(event.name)) return null;
+      if (isRobloxTool(event.name)) {
+        remember(event.id, { name: event.name, input: event.input });
+        return null;
+      }
+
       return {
         kind: "tool",
         id: event.id,
@@ -70,13 +97,29 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
       const previous = existing(event.id);
       if (previous && previous.kind === "tool") return { ...previous, result: event.text, isError: event.isError };
 
+      const call = suppressed.get(event.id);
+      suppressed.delete(event.id);
+
       // A Roblox tool has no row of its own, by design — its work appears as
       // the operation it performed. But a call that fails performs nothing, so
       // it produces no operation either, and without this the whole thing
       // vanishes: the user sees the agent say it could not reach Studio, with
       // nothing in the transcript to say why.
+      //
+      // It surfaces as the tool row it would have been rather than as a notice.
+      // A notice is a banner — full width, red, unfoldable — and a turn that
+      // retries a call three times painted the conversation in them. The row
+      // says the same thing in one line and keeps the reason one click away.
       if (event.isError && event.text.trim().length > 0) {
-        return { kind: "notice", id: nextId("n"), at: Date.now(), text: event.text, tone: "error" };
+        return {
+          kind: "tool",
+          id: event.id,
+          at: Date.now(),
+          name: call?.name ?? "Roblox operation",
+          input: call?.input ?? null,
+          result: event.text,
+          isError: true,
+        };
       }
 
       return null;

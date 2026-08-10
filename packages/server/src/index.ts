@@ -41,7 +41,11 @@ export interface LuuCodeServer {
   readonly token: string;
   readonly bus: EventBus;
   readonly settings: SettingsStore;
-  execute(op: Op | string, params?: unknown, context?: { origin?: "harness" | "mcp" | "internal"; sessionId?: string; realm?: StudioRealm }): Promise<unknown>;
+  execute(
+    op: Op | string,
+    params?: unknown,
+    context?: { origin?: "harness" | "mcp" | "internal"; sessionId?: string; realm?: StudioRealm; chat?: string },
+  ): Promise<unknown>;
   status(): SessionStatus;
   capabilities(): CapabilityReport;
   approvePairing(sessionId: string): boolean;
@@ -130,6 +134,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
         origin: context?.origin ?? "internal",
         ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
         ...(context?.realm ? { realm: context.realm } : {}),
+        ...(context?.chat ? { chat: context.chat } : {}),
       }),
     status: () => sessions.status(),
     capabilities: () => dispatcher.capabilityReport(),

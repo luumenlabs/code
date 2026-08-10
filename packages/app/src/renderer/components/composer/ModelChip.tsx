@@ -189,7 +189,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
     >
       <PopoverTrigger
         className={cn(
-          "flex h-6 max-w-[280px] items-center gap-1.5 rounded-md px-1.5 text-[11.5px] transition-colors outline-none",
+          "flex h-7 max-w-[300px] items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors outline-none",
           "hover:bg-accent hover:text-foreground focus-visible:ring-[2px] focus-visible:ring-ring/60",
           unavailable ? "text-destructive" : "text-muted-foreground",
         )}
@@ -208,10 +208,10 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
         <ChevronDown className="size-3 shrink-0 opacity-60" />
       </PopoverTrigger>
 
-      <PopoverContent align="start" side="top" collisionPadding={12} className="w-[480px] overflow-hidden p-0">
+      <PopoverContent align="start" side="top" collisionPadding={12} className="w-[524px] overflow-hidden p-0">
         <div className="flex items-stretch">
           {!searching && (
-            <div className="flex w-11 shrink-0 flex-col gap-1 border-r bg-muted/30 p-1">
+            <div className="flex w-12 shrink-0 flex-col gap-1 border-r bg-muted/30 p-1">
               <RailButton label="Favourites" active={rail === "favorites"} onClick={() => setRail("favorites")}>
                 <Star className={cn("size-4", favourites.length > 0 && "fill-current")} />
               </RailButton>
@@ -239,7 +239,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
           )}
 
           <div className="flex min-w-0 flex-1 flex-col border-r">
-            <div className="relative h-9 shrink-0 border-b">
+            <div className="relative h-10 shrink-0 border-b">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={search}
@@ -247,7 +247,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search models…"
                 spellCheck={false}
-                className="h-full w-full bg-transparent pr-2 pl-8 text-[12.5px] outline-none placeholder:text-muted-foreground"
+                className="h-full w-full bg-transparent pr-2 pl-8 text-[13.5px] outline-none placeholder:text-muted-foreground"
                 style={{ userSelect: "text", cursor: "auto" }}
               />
             </div>
@@ -278,13 +278,13 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                 ))}
 
               {showingFavourites && favourites.length === 0 && (
-                <p className="px-2 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted-foreground">
                   No favourites yet. Set a model up the way you like it, then star it — the settings are saved with it.
                 </p>
               )}
 
               {!showingFavourites && current.length === 0 && legacy.length === 0 && (
-                <p className="px-2 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted-foreground">
                   {models.length === 0 ? "Looking for installed CLIs…" : "No models match."}
                 </p>
               )}
@@ -295,8 +295,8 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                   className="row mt-1 flex w-full items-center gap-2 px-2 py-1.5 text-left"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12.5px] font-medium">Legacy models</span>
-                    <span className="block text-[10.5px] text-muted-foreground">{legacy.length} models</span>
+                    <span className="block text-[13.5px] font-medium">Legacy models</span>
+                    <span className="block text-[11.5px] text-muted-foreground">{legacy.length} models</span>
                   </span>
                   <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", showLegacy && "rotate-90")} />
                 </button>
@@ -317,7 +317,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
             </div>
 
             {harness.modelProblem && (
-              <p className="border-t px-2.5 py-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
+              <p className="border-t px-2.5 py-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
                 Codex models could not be read: {harness.modelProblem}
               </p>
             )}
@@ -357,9 +357,9 @@ function Setup({
   onToggleStar: () => void;
 }): React.JSX.Element {
   return (
-    <div className="flex w-[212px] shrink-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium">
+    <div className="flex w-[228px] shrink-0 flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
           {model?.name ?? "No model selected"}
         </span>
 
@@ -378,11 +378,11 @@ function Setup({
 
       <div className="max-h-[300px] flex-1 overflow-y-auto p-1">
         {!model || !selection ? (
-          <p className="px-2 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="px-2 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
             Pick a model to see what can be set on it.
           </p>
         ) : model.options.length === 0 ? (
-          <p className="px-2 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="px-2 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
             Nothing to adjust on this one.
           </p>
         ) : (
@@ -419,7 +419,7 @@ function Option({
   if (descriptor.kind === "boolean") {
     return (
       <div className={cn("flex items-center gap-2 px-2 py-1.5", !first && "mt-1 border-t pt-2.5")}>
-        <span className="min-w-0 flex-1 truncate text-[12px]">{descriptor.label}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px]">{descriptor.label}</span>
         <Switch
           checked={value === true}
           onCheckedChange={(next) => onChange(withOption(selection, descriptor.id, next))}
@@ -430,7 +430,7 @@ function Option({
 
   return (
     <div className={cn(!first && "mt-1 border-t pt-1")}>
-      <div className="px-2 py-1 text-[10.5px] font-medium text-muted-foreground">{descriptor.label}</div>
+      <div className="px-2 py-1 text-[11.5px] font-medium text-muted-foreground">{descriptor.label}</div>
 
       {descriptor.choices.map((choice) => {
         const active = value === choice.value;
@@ -440,10 +440,10 @@ function Option({
             key={choice.value}
             onClick={() => onChange(withOption(selection, descriptor.id, choice.value))}
             data-active={active}
-            className="row flex w-full items-center gap-2 px-2 py-1 text-left text-[12px]"
+            className="row flex w-full items-center gap-2 px-2 py-1 text-left text-[13px]"
           >
             <span className="min-w-0 flex-1 truncate">{choice.label}</span>
-            {choice.isDefault && !active && <span className="shrink-0 text-[10px] text-muted-foreground">Default</span>}
+            {choice.isDefault && !active && <span className="shrink-0 text-[11px] text-muted-foreground">Default</span>}
             {active && <Check className="size-3 shrink-0 text-primary" />}
           </button>
         );
@@ -505,8 +505,8 @@ function FavouriteRow({
       className="row flex w-full items-center gap-2 px-2 py-1.5 text-left"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-medium">{model?.name ?? favourite.model}</span>
-        <span className="mt-0.5 flex items-center gap-1.5 truncate text-[10.5px] text-muted-foreground">
+        <span className="block truncate text-[13.5px] font-medium">{model?.name ?? favourite.model}</span>
+        <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11.5px] text-muted-foreground">
           {model && <ProviderIcon provider={model.provider} className="size-3 shrink-0" />}
           {summary || "Default settings"}
         </span>
@@ -547,8 +547,8 @@ function ModelRow({
       className={cn("row flex w-full items-center gap-2 px-2 py-1.5 text-left", missing && "opacity-55")}
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-medium">{model.name}</span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+        <span className="block truncate text-[13.5px] font-medium">{model.name}</span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           {missing ? <CircleAlert className="size-3 shrink-0" /> : <ProviderIcon provider={model.provider} className="size-3 shrink-0" />}
           {PROVIDER_LABEL[model.provider]}
           {missing && " — not installed"}
@@ -558,7 +558,7 @@ function ModelRow({
       {active && <Check className="size-3 shrink-0 text-primary" />}
 
       {!active && index >= 0 && index < 9 && (
-        <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[9.5px] text-muted-foreground">
+        <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[10.5px] text-muted-foreground">
           Ctrl+{index + 1}
         </kbd>
       )}

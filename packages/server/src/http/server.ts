@@ -145,13 +145,21 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
   }
 
   if (path === ROUTES.command && req.method === "POST") {
-    const body = await readJson<{ op: string; params?: unknown; sessionId?: string; realm?: string; origin?: string }>(req);
+    const body = await readJson<{
+      op: string;
+      params?: unknown;
+      sessionId?: string;
+      realm?: string;
+      origin?: string;
+      chat?: string;
+    }>(req);
 
     try {
       const data = await deps.dispatcher.execute(body.op, body.params, {
         origin: body.origin === "mcp" ? "mcp" : body.origin === "internal" ? "internal" : "harness",
         ...(body.sessionId ? { sessionId: body.sessionId } : {}),
         ...(body.realm ? { realm: body.realm as never } : {}),
+        ...(body.chat ? { chat: body.chat } : {}),
       });
       sendJson(res, 200, { ok: true, data });
     } catch (error) {

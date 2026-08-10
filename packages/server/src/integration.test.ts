@@ -325,6 +325,32 @@ describe("command round trips", () => {
     await expect(server.execute("dm.get", {})).rejects.toMatchObject({ code: "INVALID_PARAMS" });
     await expect(server.execute("dm.search", {})).rejects.toMatchObject({ code: "INVALID_PARAMS" });
   });
+
+  /**
+   * Several agents share this server, one per chat in the app, so an operation
+   * has to say whose it is. Without the label the app can only guess, and it
+   * guesses at whatever is on screen — which is the wrong chat exactly when two
+   * of them are working at once.
+   */
+  it("labels activity with the conversation that asked for it", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.services", () => ({ services: [] }));
+    plugin.start();
+
+    const seen: Array<{ chat: string | null; status: string }> = [];
+    const off = server.bus.subscribe((event) => {
+      if (event.type === "activity") seen.push({ chat: event.activity.chat, status: event.activity.status });
+    });
+
+    await server.execute("dm.services", {}, { origin: "mcp", chat: "t_abc" });
+    await server.execute("dm.services", {}, { origin: "mcp" });
+
+    off();
+
+    expect(seen.filter((entry) => entry.chat === "t_abc").length).toBeGreaterThan(0);
+    // No chat given means no chat claimed, rather than the last one seen.
+    expect(seen.some((entry) => entry.chat === null)).toBe(true);
+  });
 });
 
 describe("permissions and capabilities", () => {

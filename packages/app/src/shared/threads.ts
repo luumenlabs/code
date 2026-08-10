@@ -19,10 +19,38 @@ import type { AgentId, TranscriptEntry } from "./agent.js";
  */
 export interface Project {
   id: string;
+  /**
+   * The plugin's stable identifier for the game, or null when Studio had none
+   * to give. Grouping used to fall back to the place name, which quietly filed
+   * two different places that happened to share one under the same heading.
+   */
+  identity: string | null;
   /** Roblox place id. 0 for a place that has never been saved or published. */
   placeId: number;
   name: string;
   lastUsedAt: number;
+}
+
+/** Where a project with no identity goes, and what its heading reads. */
+export const UNKNOWN_PROJECT_NAME = "Unknown";
+
+/** What a thread needs to know about the place it is filed against. */
+export interface PlaceRef {
+  identity: string | null;
+  placeId: number;
+  name: string;
+}
+
+/**
+ * A project's identity, including ones stored before the plugin sent one.
+ *
+ * An older record carries only a place id, and that is exactly what the plugin
+ * would report for the same place today, so it is reconstructed rather than
+ * throwing the grouping away on upgrade.
+ */
+export function projectIdentity(project: Project): string | null {
+  if (project.identity) return project.identity;
+  return project.placeId > 0 ? `place:${project.placeId}` : null;
 }
 
 export interface ThreadSummary {

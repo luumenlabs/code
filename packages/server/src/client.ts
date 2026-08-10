@@ -58,7 +58,11 @@ export class LocalClient {
     return (await response.json()) as ServerSnapshot;
   }
 
-  async execute(op: string, params: unknown, options: { sessionId?: string; realm?: string; origin?: string } = {}): Promise<unknown> {
+  async execute(
+    op: string,
+    params: unknown,
+    options: { sessionId?: string; realm?: string; origin?: string; chat?: string } = {},
+  ): Promise<unknown> {
     const response = await this.http(`${this.base}/command`, {
       method: "POST",
       headers: this.headers(),

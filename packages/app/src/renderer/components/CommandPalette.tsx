@@ -150,7 +150,7 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[18%] max-w-[560px] translate-y-0 overflow-hidden p-0" onKeyDown={onKeyDown}>
+      <DialogContent className="top-[18%] max-w-[600px] translate-y-0 overflow-hidden p-0" onKeyDown={onKeyDown}>
         <DialogTitle className="sr-only">Search commands and chats</DialogTitle>
 
         <div className="relative border-b">
@@ -161,14 +161,14 @@ export function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search commands and chats…"
             spellCheck={false}
-            className="h-12 w-full bg-transparent pr-3 pl-10 text-[13.5px] outline-none placeholder:text-muted-foreground"
+            className="h-13 w-full bg-transparent pr-3 pl-10 text-[15px] outline-none placeholder:text-muted-foreground"
             style={{ userSelect: "text", cursor: "auto" }}
           />
         </div>
 
-        <div ref={listRef} className="max-h-[380px] overflow-y-auto p-1.5">
+        <div ref={listRef} className="max-h-[420px] overflow-y-auto p-1.5">
           {filtered.length === 0 && (
-            <p className="px-2.5 py-6 text-center text-[12.5px] text-muted-foreground">No matches.</p>
+            <p className="px-2.5 py-6 text-center text-[13.5px] text-muted-foreground">No matches.</p>
           )}
 
           {filtered.map((command, position) => {
@@ -191,12 +191,12 @@ export function CommandPalette({
                   {...(position === index ? { "data-active": true } : {})}
                 >
                   <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px]">{command.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13.5px]">{command.label}</span>
                   {command.hint && (
-                    <span className="shrink-0 text-[10.5px] text-muted-foreground">{command.hint}</span>
+                    <span className="shrink-0 text-[11.5px] text-muted-foreground">{command.hint}</span>
                   )}
                   {command.shortcut && (
-                    <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[9.5px] text-muted-foreground">
+                    <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[10.5px] text-muted-foreground">
                       {command.shortcut}
                     </kbd>
                   )}
@@ -206,7 +206,7 @@ export function CommandPalette({
           })}
         </div>
 
-        <div className="flex items-center gap-4 border-t px-3 py-2 text-[10.5px] text-muted-foreground">
+        <div className="flex items-center gap-4 border-t px-3 py-2 text-[11.5px] text-muted-foreground">
           <Legend keys="↑ ↓" label="Navigate" />
           <Legend keys="Enter" label="Select" />
           <Legend keys="Esc" label="Close" />
@@ -219,7 +219,7 @@ export function CommandPalette({
 function Legend({ keys, label }: { keys: string; label: string }): React.JSX.Element {
   return (
     <span className="flex items-center gap-1.5">
-      <kbd className="rounded border px-1 py-px font-mono text-[9.5px]">{keys}</kbd>
+      <kbd className="rounded border px-1 py-px font-mono text-[10.5px]">{keys}</kbd>
       {label}
     </span>
   );

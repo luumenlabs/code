@@ -44,7 +44,7 @@ export function TitleBar({
       {snapshot && snapshot.channel !== "release" && (
         <span
           className={cn(
-            "shrink-0 rounded border px-1.5 py-px text-[9.5px] font-semibold tracking-[0.08em] uppercase",
+            "shrink-0 rounded border px-1.5 py-px text-[10.5px] font-semibold tracking-[0.08em] uppercase",
             snapshot.channel === "nightly"
               ? "border-[#a855f7]/40 bg-[#a855f7]/12 text-[#c084fc]"
               : "border-[#f59e0b]/40 bg-[#f59e0b]/12 text-[#fbbf24]",
@@ -60,7 +60,7 @@ export function TitleBar({
         // Only the playtest gets a badge. "Edit" is the resting state of every
         // Studio session, so labelling it said nothing and read like a button.
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[12.5px] font-medium">{session.place.name}</span>
+          <span className="truncate text-[13.5px] font-medium">{session.place.name}</span>
           {running && (
             <Badge variant="success">
               <CirclePlay className="size-3" />

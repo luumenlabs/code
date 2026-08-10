@@ -16,6 +16,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Attachment } from "../../shared/agent.js";
+import type { ModelSelection } from "../../shared/models.js";
 import { JsonLineReader, describeExit, extensionFor, nextId, spawnAgent } from "./adapter.js";
 import { withBriefing } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
@@ -127,6 +128,13 @@ export class CodexAdapter implements AgentAdapter {
     // of starting a new one.
     this.hasConversation = this.resumeId !== null;
     options.onEvent({ type: "state", state: "idle" });
+  }
+
+  setModelSelection(selection: ModelSelection | null): void {
+    if (!this.options) return;
+    // Every turn is its own `codex exec`, so the next one simply gets different
+    // config overrides.
+    this.options = { ...this.options, ...(selection ? { modelSelection: selection } : { modelSelection: undefined }) };
   }
 
   async send(text: string, attachments: Attachment[] = []): Promise<void> {

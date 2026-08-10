@@ -133,6 +133,8 @@ export interface CommandRequestBody {
   /** Force routing to a specific DataModel instead of the default for the run state. */
   realm?: StudioRealm;
   origin?: "harness" | "mcp" | "internal";
+  /** The conversation this was issued for, so its activity is filed there. */
+  chat?: string;
 }
 
 export type CommandResponseBody = { ok: true; data: unknown } | { ok: false; error: WireError };

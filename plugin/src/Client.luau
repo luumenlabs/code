@@ -88,6 +88,28 @@ local function baseUrl(): string
 	return string.format("%s:%d", Constants.DEFAULT_HOST, state.port)
 end
 
+--[[
+	A stable id for the game, so Luu Code never files two places as one.
+
+	The place id is the real identity when there is one. An unpublished place
+	that still belongs to a universe has a game id, which is the next best
+	thing. A place with neither has nothing durable to key on — Studio does not
+	expose the file it was opened from — and returning the name instead would
+	merge every "Baseplate" on the machine into a single history. Saying nothing
+	is the honest answer; the harness files those under Unknown.
+]]
+local function placeIdentity(): string?
+	if game.PlaceId > 0 then
+		return string.format("place:%d", game.PlaceId)
+	end
+
+	if game.GameId > 0 then
+		return string.format("game:%d", game.GameId)
+	end
+
+	return nil
+end
+
 local function placeInfo(): any
 	local name = game.Name
 	if name == nil or name == "" then
@@ -99,6 +121,7 @@ local function placeInfo(): any
 		gameId = game.GameId,
 		name = name,
 		unsaved = game.PlaceId == 0,
+		identity = placeIdentity(),
 	}
 end
 

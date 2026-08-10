@@ -49,6 +49,16 @@ export interface PlaceInfo {
   name: string;
   /** True when the place has never been saved or published. */
   unsaved: boolean;
+  /**
+   * A stable identifier for this game, decided by the plugin.
+   *
+   * Absent when Studio has nothing durable to key on — an unpublished place
+   * belonging to no universe has no id, and Studio does not expose the file it
+   * was opened from. Names are deliberately not used as a fallback: two places
+   * called "Baseplate" are two places, and merging them silently mixed their
+   * conversations together. Also absent from plugins older than this field.
+   */
+  identity?: string;
 }
 
 export type ConnectionStatus = "disconnected" | "pairing" | "connected" | "stale";

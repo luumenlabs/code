@@ -8,8 +8,8 @@ import { ModelChip } from "@/components/composer/ModelChip";
 import { cn } from "@/lib/utils";
 import type { Attachment, Harness } from "@/state";
 
-const MIN_HEIGHT = 64;
-const MAX_HEIGHT = 260;
+const MIN_HEIGHT = 76;
+const MAX_HEIGHT = 300;
 
 export function Composer({
   harness,
@@ -90,8 +90,10 @@ export function Composer({
   };
 
   return (
-    <div className="shrink-0 px-4 pt-1 pb-4">
-      <div className="mx-auto max-w-[860px]">
+    <div className="shrink-0 px-7 pt-1 pb-5">
+      {/* Same width as the transcript's column, so the box lines up with the
+          conversation above it rather than sitting a little wider. */}
+      <div className="mx-auto w-full max-w-[804px]">
         <div
           onDragOver={(event) => {
             event.preventDefault();
@@ -130,7 +132,7 @@ export function Composer({
             </div>
           )}
 
-          <div className="px-3.5 pt-3 pb-1">
+          <div className="px-4 pt-3.5 pb-1">
             <Textarea
               ref={textarea}
               rows={3}
@@ -152,7 +154,7 @@ export function Composer({
             />
           </div>
 
-          <div className="flex items-center gap-0.5 px-2 pt-0.5 pb-2">
+          <div className="flex items-center gap-0.5 px-2.5 pt-0.5 pb-2.5">
             <ModelChip harness={harness} />
             {snapshot && <AccessChip permissions={snapshot.capabilities.permissions} />}
 

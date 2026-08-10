@@ -13,8 +13,8 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { AgentId, TranscriptEntry } from "../shared/agent.js";
-import type { Project, Thread, ThreadIndex, ThreadSummary } from "../shared/threads.js";
-import { titleFrom } from "../shared/threads.js";
+import type { PlaceRef, Project, Thread, ThreadIndex, ThreadSummary } from "../shared/threads.js";
+import { UNKNOWN_PROJECT_NAME, projectIdentity, titleFrom } from "../shared/threads.js";
 
 const FLUSH_DELAY_MS = 400;
 /** Guards against a runaway agent writing an unbounded transcript. */
@@ -60,6 +60,56 @@ export class ThreadStore {
         // leave the file in place so it can be inspected.
       }
     }
+
+    this.regroupByIdentity();
+  }
+
+  /**
+   * Folds the stored projects onto their identity.
+   *
+   * Projects used to be keyed by place id *or*, when there was none, by name —
+   * so two unsaved places called the same thing shared one heading and one
+   * scratch directory. Reading them back through the identity rule collapses
+   * every duplicate onto one record and moves the identity-less ones into the
+   * Unknown bucket, repointing their threads on the way. Without the repoint,
+   * a thread would name a project that no longer exists and vanish from the
+   * sidebar, which is the one outcome worse than a wrong heading.
+   */
+  private regroupByIdentity(): void {
+    if (this.projects.length === 0) return;
+
+    const kept = new Map<string, Project>();
+    const remap = new Map<string, string>();
+
+    for (const project of this.projects) {
+      const identity = projectIdentity(project);
+      const key = identity ?? "";
+      const existing = kept.get(key);
+
+      if (!existing) {
+        kept.set(key, {
+          ...project,
+          identity,
+          ...(identity ? {} : { placeId: 0, name: UNKNOWN_PROJECT_NAME }),
+        });
+        continue;
+      }
+
+      remap.set(project.id, existing.id);
+      existing.lastUsedAt = Math.max(existing.lastUsedAt, project.lastUsedAt);
+    }
+
+    this.projects = [...kept.values()];
+    if (remap.size === 0) return;
+
+    for (const thread of this.threads.values()) {
+      const target = remap.get(thread.projectId);
+      if (!target) continue;
+      thread.projectId = target;
+      this.touch(thread.id);
+    }
+
+    this.markIndexDirty();
   }
 
   index(): ThreadIndex {
@@ -89,26 +139,30 @@ export class ThreadStore {
   /**
    * Finds or creates the project record for a Roblox place.
    *
-   * Identity is the place, not the folder: an unsaved place has no id, so it is
-   * keyed by name instead, and a published place opened from a different
-   * directory still lands in the same group.
+   * Identity is the game, not the folder and not the name: a published place
+   * opened from a different directory lands in the same group, and two places
+   * that merely share a title do not. When the plugin has no identity to give,
+   * everything goes to one Unknown bucket — an honest "we cannot tell these
+   * apart" rather than a heading that claims they are the same game.
    */
-  project(place: { placeId: number; name: string }): Project {
-    const existing = this.projects.find((entry) =>
-      place.placeId > 0 ? entry.placeId === place.placeId : entry.placeId === 0 && entry.name === place.name,
-    );
+  project(place: PlaceRef): Project {
+    const identity = place.identity ?? null;
+    const existing = this.projects.find((entry) => projectIdentity(entry) === identity);
 
     if (existing) {
       existing.lastUsedAt = Date.now();
-      existing.name = place.name;
+      // The Unknown bucket holds more than one place, so no single place gets
+      // to rename it.
+      if (identity) existing.name = place.name;
       this.markIndexDirty();
       return existing;
     }
 
     const project: Project = {
       id: `p_${randomUUID().slice(0, 8)}`,
-      placeId: place.placeId,
-      name: place.name,
+      identity,
+      placeId: identity ? place.placeId : 0,
+      name: identity ? place.name : UNKNOWN_PROJECT_NAME,
       lastUsedAt: Date.now(),
     };
 
@@ -117,11 +171,7 @@ export class ThreadStore {
     return project;
   }
 
-  create(
-    place: { placeId: number; name: string },
-    agent: AgentId | null,
-    modelSelection: Thread["modelSelection"],
-  ): Thread {
+  create(place: PlaceRef, agent: AgentId | null, modelSelection: Thread["modelSelection"]): Thread {
     const project = this.project(place);
     const now = Date.now();
 

@@ -48,6 +48,13 @@ Which model the user picks decides which CLI runs — there is no separate agent
 picker. Codex models are discovered live from `codex app-server`; Claude models
 are declared in `src/shared/models.ts` and gated on the installed CLI version.
 
+**One agent session per chat, all running at once.** `AgentManager` keys sessions
+by thread id, and every agent event carries the thread it came from. Opening a
+chat is a change of view and stops nothing. Because they share one server, each
+session's MCP child is given `LUU_CODE_CHAT`, which comes back on
+`ActivityEvent.chat` and is how a Roblox operation is filed against the chat that
+asked for it rather than the one on screen.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.
@@ -109,6 +116,12 @@ These are all real, and all cost time when hit blind.
   any new launcher, and unset it before smoke-testing a packaged build.
 - **The renderer only runs under Electron.** There is no browser mock bridge; a
   bare `vite` serve renders nothing.
+- **Do not stop an agent when the user switches chat.** It used to, and the stop
+  was not honest: the state went to `stopped` while the CLI was still draining
+  its stream, so a chat that was very much still working looked finished and its
+  remaining output was recorded against whichever chat had just been opened.
+  Anything that ends a session has to be something the user asked for — deleting
+  the chat, interrupting it, or switching to the other CLI.
 - **Ports belong to the user.** `33770` (server) and `5273` (renderer) are probably
   their running `pnpm dev`. Do not kill them; use `LUU_CODE_PORT` and
   `LUU_CODE_HOME` for an isolated run.

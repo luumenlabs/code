@@ -6,7 +6,14 @@
  * rules out turning this into a general local tooling surface.
  */
 import type { CapabilityReport, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
-import type { AgentEvent, AgentInfo, AgentSessionSnapshot, Attachment, TranscriptEntry } from "./agent.js";
+import type {
+  AgentEvent,
+  AgentInfo,
+  AgentSessionSnapshot,
+  AgentState,
+  Attachment,
+  TranscriptEntry,
+} from "./agent.js";
 import type { AppSettings } from "./settings.js";
 import type { Thread, ThreadIndex } from "./threads.js";
 import type { VersionStatus } from "./update.js";
@@ -20,7 +27,16 @@ export interface HarnessSnapshot {
   /** Why the Codex list is the built-in fallback, when it is. */
   modelProblem: string | null;
   settings: AppSettings;
+  /** The open conversation's session. Chats each have their own. */
   session: AgentSessionSnapshot;
+  /**
+   * Every conversation's agent state, keyed by thread id.
+   *
+   * Conversations run in parallel, so "is something working" is a question per
+   * chat rather than per app — the sidebar needs all of them to know which rows
+   * to spin.
+   */
+  agentStates: Record<string, AgentState>;
   serverPort: number;
   /** The command that runs this build's own MCP server. */
   mcpCommand: string;
@@ -47,6 +63,7 @@ export interface LuuCodeBridge {
    * picks a model, and the CLI that serves it follows.
    */
   sendMessage(text: string, attachments?: Attachment[]): Promise<void>;
+  /** Stops the turn in the open conversation. Others keep working. */
   interruptAgent(): Promise<void>;
 
   /**
@@ -95,7 +112,10 @@ export interface LuuCodeBridge {
   execute(op: string, params?: unknown): Promise<unknown>;
 
   onServerEvent(listener: (event: ServerEvent) => void): () => void;
-  onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** Carries the thread the event came from: several may be running. */
+  onAgentEvent(listener: (payload: { threadId: string; event: AgentEvent }) => void): () => void;
+  /** Fires whenever any conversation starts or stops working. */
+  onAgentStates(listener: (states: Record<string, AgentState>) => void): () => void;
   /** Fires when the thread list changes, so the sidebar stays current. */
   onThreadsChanged(listener: (index: ThreadIndex) => void): () => void;
   /** Fires when CLI discovery finishes, which happens after the window opens. */
@@ -106,8 +126,12 @@ export interface LuuCodeBridge {
   /** Fires as a check runs, a download progresses, or the plugin is written. */
   onVersionStatus(listener: (status: VersionStatus) => void): () => void;
   onModelSelectionChanged(listener: (selection: import("./models.js").ModelSelection) => void): () => void;
-  /** The main process persists the transcript; this echoes what it stored. */
-  onTranscript(listener: (entry: TranscriptEntry) => void): () => void;
+  /**
+   * The main process persists the transcript; this echoes what it stored, with
+   * the conversation it was stored against. Entries for a chat that is not open
+   * are already on disk and arrive with it when it is.
+   */
+  onTranscript(listener: (payload: { threadId: string; entry: TranscriptEntry }) => void): () => void;
 }
 
 declare global {

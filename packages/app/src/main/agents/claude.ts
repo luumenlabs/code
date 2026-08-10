@@ -94,6 +94,13 @@ export class ClaudeAdapter implements AgentAdapter {
     options.onEvent({ type: "state", state: "idle" });
   }
 
+  setModelSelection(selection: ModelSelection | null): void {
+    if (!this.options) return;
+    // Read again on every send, so the next message uses it. A run already
+    // streaming keeps the model it started on — the API call is made.
+    this.options = { ...this.options, ...(selection ? { modelSelection: selection } : { modelSelection: undefined }) };
+  }
+
   async send(text: string, attachments: Attachment[] = []): Promise<void> {
     const options = this.options;
     if (!options) throw new Error("Claude Code is not running.");

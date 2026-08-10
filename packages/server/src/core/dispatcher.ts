@@ -46,6 +46,14 @@ export interface ExecuteContext {
   origin: ActivityEvent["origin"];
   sessionId?: string;
   realm?: StudioRealm;
+  /**
+   * The conversation this was issued for, when the caller knows of one.
+   *
+   * Several coding agents share this server, one per chat in the app, and the
+   * operation stream is common to all of them. This is how their work is told
+   * apart. An external MCP client has no chat and sends nothing.
+   */
+  chat?: string;
 }
 
 export interface DispatcherDeps {
@@ -89,6 +97,7 @@ export class Dispatcher {
       id: `a_${randomUUID().slice(0, 8)}`,
       op,
       origin: context.origin,
+      chat: context.chat ?? null,
       title: titleFor(op, params),
       detail: null,
       category: categoryFor(op),

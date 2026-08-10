@@ -128,8 +128,8 @@ function StudioDetails({
     <div className="flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{session.place.name}</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+          <div className="truncate text-[14px] font-medium">{session.place.name}</div>
+          <div className="mt-0.5 text-[12px] text-muted-foreground">
             Studio {session.studioVersion} · plugin {session.pluginVersion}
           </div>
         </div>
@@ -158,14 +158,14 @@ function StudioDetails({
           controls that had stopped working; nothing here is clickable. */}
       <Field label="Mode">
         {session.run.running ? (
-          <span className="text-[11.5px] text-[var(--success)]">Playtest · {session.run.realm}</span>
+          <span className="text-[12.5px] text-[var(--success)]">Playtest · {session.run.realm}</span>
         ) : (
-          <span className="text-[11.5px]">Edit</span>
+          <span className="text-[12.5px]">Edit</span>
         )}
       </Field>
 
       <Field label="Connections">
-        <span className="truncate text-[11.5px] capitalize">
+        <span className="truncate text-[12.5px] capitalize">
           {session.endpoints.map((endpoint) => endpoint.realm).join(" · ") || "None"}
         </span>
       </Field>
@@ -197,10 +197,10 @@ function StudioEmpty(): React.JSX.Element {
         <Unplug className="size-3" />
         Not connected
       </Badge>
-      <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
         Open your place in Roblox Studio. The Luu Code panel there shows a six-digit code — approve it here.
       </p>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[12px] leading-relaxed text-muted-foreground">
         No panel in Studio? Install the plugin from <span className="text-foreground/80">Settings → Updates</span>, then
         restart Studio.
       </p>
@@ -219,14 +219,14 @@ function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Elemen
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         <TriangleAlert className="size-3" />
         Unavailable right now
       </div>
       {blocked.map((entry) => (
         <div key={entry.id} className="rounded-md bg-muted/40 px-2 py-1.5">
-          <code className="font-mono text-[10.5px] text-foreground/80">{entry.id}</code>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{entry.reason}</p>
+          <code className="font-mono text-[11.5px] text-foreground/80">{entry.id}</code>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{entry.reason}</p>
         </div>
       ))}
     </div>
@@ -247,19 +247,19 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+      <div className="text-[11.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         Use from your terminal
       </div>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[12px] leading-relaxed text-muted-foreground">
         Any MCP-capable agent can use these same Roblox tools.
       </p>
       <div className="flex items-center gap-1 rounded-md border bg-background p-1.5">
-        <code className="selectable min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted-foreground">{snippet}</code>
+        <code className="selectable min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{snippet}</code>
         <Button variant="ghost" size="icon-sm" onClick={() => void copy()}>
           {copied ? <Check className="text-[var(--success)]" /> : <Copy />}
         </Button>
       </div>
-      <p className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
         <KeyRound className="size-3" />
         Runs on 127.0.0.1:{port}. Nothing leaves this machine.
       </p>
@@ -289,7 +289,7 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
             key={value}
             onClick={() => setFilter(value)}
             className={cn(
-              "rounded-md px-1.5 py-0.5 text-[11px] capitalize transition-colors",
+              "rounded-md px-1.5 py-0.5 text-[12px] capitalize transition-colors",
               filter === value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -299,9 +299,9 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
       </div>
 
       <ScrollArea className="min-h-0 flex-1" viewportRef={viewport}>
-        <div className="flex flex-col gap-1 px-2.5 pb-3 font-mono text-[10.5px] leading-[1.6]">
+        <div className="flex flex-col gap-1 px-2.5 pb-3 font-mono text-[11.5px] leading-[1.6]">
           {shown.length === 0 && (
-            <p className="py-2 font-sans text-[11.5px] text-muted-foreground">
+            <p className="py-2 font-sans text-[12.5px] text-muted-foreground">
               Nothing yet. Whatever Studio prints shows up here.
             </p>
           )}
@@ -323,7 +323,7 @@ function OutputTab({ entries }: { entries: OutputEntry[] }): React.JSX.Element {
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
+      <span className="text-[12.5px] text-muted-foreground">{label}</span>
       {children}
     </div>
   );

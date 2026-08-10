@@ -41,15 +41,31 @@ interface ResolvedBackend {
   mode: string;
 }
 
+/**
+ * Which conversation this process is serving.
+ *
+ * Luu Code starts one of these per chat and stamps the id into the child's
+ * environment, so the operations it performs can be filed against the chat that
+ * asked for them rather than against whichever one is on screen. An MCP client
+ * the user configured themselves has no chat here and sets nothing.
+ */
+function chatId(): string | undefined {
+  const value = process.env.LUU_CODE_CHAT;
+  return value && value.length > 0 ? value : undefined;
+}
+
 async function resolveBackend(): Promise<ResolvedBackend> {
   const existing = LocalClient.fromAuthFile();
+  const chat = chatId();
 
   if (existing && (await existing.isAlive())) {
     // Sharing the running server means the harness and this agent see the same
     // Studio session, the same output buffer, and the same permissions.
     return {
       mode: "attached to the running Luu Code server",
-      backend: { execute: (op, params) => existing.execute(op, params, { origin: "mcp" }) },
+      backend: {
+        execute: (op, params) => existing.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
+      },
       dispose: async () => undefined,
     };
   }
@@ -65,7 +81,9 @@ async function resolveBackend(): Promise<ResolvedBackend> {
 
   return {
     mode: `started its own server on port ${owned.port}`,
-    backend: { execute: (op, params) => owned.execute(op, params, { origin: "mcp" }) },
+    backend: {
+      execute: (op, params) => owned.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
+    },
     dispose: () => owned.close(),
   };
 }

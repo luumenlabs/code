@@ -46,6 +46,15 @@ export interface AgentAdapter {
   interrupt(): void;
   stop(): Promise<void>;
   readonly running: boolean;
+  /**
+   * Retargets a session that is already up.
+   *
+   * Changing the model used to mean restarting the CLI, which threw away the
+   * conversation it was holding — so in practice the model was fixed the moment
+   * you sent the first message. Both CLIs read the selection when they send, so
+   * the change lands on the next message rather than on a new session.
+   */
+  setModelSelection(selection: import("../../shared/models.js").ModelSelection | null): void;
 }
 
 /** File extension for an attachment, so a written temp file is recognisable. */

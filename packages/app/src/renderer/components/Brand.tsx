@@ -26,7 +26,7 @@ export function Wordmark({ className }: { className?: string }): React.JSX.Eleme
   return (
     <span className={cn("flex items-center gap-[7px]", className)}>
       <BrandMark className="size-[18px]" />
-      <span className="font-display text-[14.5px] leading-none font-bold tracking-[-0.01em]">Luu Code</span>
+      <span className="font-display text-[15.5px] leading-none font-bold tracking-[-0.01em]">Luu Code</span>
     </span>
   );
 }

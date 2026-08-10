@@ -32,8 +32,9 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { isBusyState } from "@/state";
 import type { Harness } from "@/state";
-import { archivedThreads, groupThreads, relativeTime } from "../../shared/threads.js";
+import { archivedThreads, groupThreads, projectIdentity, relativeTime } from "../../shared/threads.js";
 import type { ThreadSummary } from "../../shared/threads.js";
 import { updateWaiting } from "../../shared/update.js";
 
@@ -96,24 +97,24 @@ export function Sidebar({
             thing you do to the whole app, not just to this list. */}
         <button
           onClick={onSearch}
-          className="flex h-7 items-center gap-2 rounded-md px-2 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-7 items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Search className="size-3.5" />
           <span className="flex-1 text-left">Search</span>
-          <kbd className="font-mono text-[9.5px] text-muted-foreground/70">⌘K</kbd>
+          <kbd className="font-mono text-[10.5px] text-muted-foreground/70">⌘K</kbd>
         </button>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 px-2 pb-3">
           {drafting && groups.length > 0 && (
-            <p className="px-1.5 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="px-1.5 pt-1 text-[12px] leading-relaxed text-muted-foreground">
               New chat — it lands here when you send.
             </p>
           )}
 
           {groups.length === 0 && (
-            <p className="px-1.5 pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="px-1.5 pt-2 text-[12.5px] leading-relaxed text-muted-foreground">
               No chats yet. Ask for a change to start one.
             </p>
           )}
@@ -125,13 +126,19 @@ export function Sidebar({
               <section key={project.id} className="flex flex-col gap-0.5">
                 <button
                   onClick={() => toggle(project.id)}
-                  className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[11px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
-                  title={project.placeId > 0 ? `Place ${project.placeId}` : "Unsaved place"}
+                  className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[12px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
+                  title={
+                    project.placeId > 0
+                      ? `Place ${project.placeId}`
+                      : projectIdentity(project)
+                        ? `Universe ${projectIdentity(project)?.replace("game:", "")}`
+                        : "Places Studio could not identify — save or publish one to give it a home of its own"
+                  }
                 >
                   <ChevronRight className={cn("size-3 shrink-0 transition-transform", !isCollapsed && "rotate-90")} />
                   <Folder className="size-3 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  <span className="shrink-0 text-[10px] font-normal text-muted-foreground/60">{threads.length}</span>
+                  <span className="shrink-0 text-[11px] font-normal text-muted-foreground/60">{threads.length}</span>
                 </button>
 
                 {!isCollapsed &&
@@ -140,9 +147,10 @@ export function Sidebar({
                       key={thread.id}
                       thread={thread}
                       active={harness.activeThreadId === thread.id}
-                      // Only one agent runs at a time, so the open chat is the
-                      // one the busy flag belongs to.
-                      running={harness.busy && harness.activeThreadId === thread.id}
+                      // Chats run in parallel, so this is asked of the thread
+                      // rather than of the app: a conversation still working
+                      // spins here whether or not you are looking at it.
+                      running={isBusyState(harness.agentStates[thread.id])}
                       renaming={renaming === thread.id}
                       onOpen={() => {
                         onExitSettings();
@@ -173,7 +181,7 @@ export function Sidebar({
         <button
           onClick={onToggleSettings}
           data-active={settingsOpen}
-          className="row flex w-full items-center gap-2 px-2 py-1.5 text-left text-[12px]"
+          className="row flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px]"
         >
           <Settings className="size-3.5 shrink-0 text-muted-foreground" />
           Settings
@@ -205,7 +213,7 @@ function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => voi
     <button
       onClick={onOpen}
       className={cn(
-        "mb-1 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[11.5px] transition-colors",
+        "mb-1 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[12.5px] transition-colors",
         update.state === "ready"
           ? "border-[var(--success)]/35 bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/15"
           : "border-primary/35 bg-primary/10 text-primary hover:bg-primary/15",
@@ -217,7 +225,7 @@ function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => voi
         <ArrowUpCircle className="size-3.5 shrink-0" />
       )}
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-      {update.channel === "nightly" && <span className="shrink-0 text-[9.5px] opacity-70">nightly</span>}
+      {update.channel === "nightly" && <span className="shrink-0 text-[10.5px] opacity-70">nightly</span>}
     </button>
   );
 }
@@ -248,12 +256,12 @@ function ArchivedSection({
     <section className="flex flex-col gap-0.5">
       <button
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[11px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[12px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
         <Archive className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">Archived</span>
-        <span className="shrink-0 text-[10px] font-normal text-muted-foreground/60">{archived.length}</span>
+        <span className="shrink-0 text-[11px] font-normal text-muted-foreground/60">{archived.length}</span>
       </button>
 
       {open &&
@@ -267,8 +275,8 @@ function ArchivedSection({
               className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
             >
               <MessageSquare className="size-3 shrink-0 text-muted-foreground/40" />
-              <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground">{thread.title}</span>
-              <span className="shrink-0 text-[10px] text-muted-foreground/50">{relativeTime(thread.updatedAt)}</span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">{thread.title}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground/50">{relativeTime(thread.updatedAt)}</span>
             </button>
 
             <Hint label="Bring this chat back">
@@ -276,7 +284,7 @@ function ArchivedSection({
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => void harness.archiveThread(thread.id, false)}
-                className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
               >
                 <ArchiveRestore />
               </Button>
@@ -330,7 +338,7 @@ function ThreadRow({
           if (event.key === "Escape") onRename(thread.title);
         }}
         autoFocus
-        className="mx-0.5 h-7 rounded-md border border-primary/50 bg-background px-2 text-[12px] outline-none"
+        className="mx-0.5 h-7 rounded-md border border-primary/50 bg-background px-2 text-[13px] outline-none"
         style={{ userSelect: "text", cursor: "auto" }}
       />
     );
@@ -348,12 +356,12 @@ function ThreadRow({
           ) : (
             <MessageSquare className={cn("size-3 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
           )}
-          <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-snug", active && "font-medium")}>
+          <span className={cn("min-w-0 flex-1 truncate text-[14px] leading-snug", active && "font-medium")}>
             {thread.title}
           </span>
         </span>
 
-        <span className="flex w-full items-center gap-1.5 pl-5 text-[10.5px] text-muted-foreground/70">
+        <span className="flex w-full items-center gap-1.5 pl-5 text-[11.5px] text-muted-foreground/70">
           {running ? (
             <span className="text-primary">Working…</span>
           ) : (
@@ -379,7 +387,7 @@ function ThreadRow({
           variant="ghost"
           size="icon-sm"
           onClick={onArchive}
-          className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
         >
           <Archive />
         </Button>
@@ -391,7 +399,7 @@ function ThreadRow({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             >
               <MoreHorizontal />
             </Button>

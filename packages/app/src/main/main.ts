@@ -26,6 +26,7 @@ import type { HarnessSnapshot } from "../shared/bridge.js";
 import { createSelection, defaultModel, findModel } from "../shared/models.js";
 import type { ModelSelection } from "../shared/models.js";
 import type { AppSettings } from "../shared/settings.js";
+import type { PlaceRef } from "../shared/threads.js";
 import type { Channel, UpdateStatus, VersionStatus } from "../shared/update.js";
 
 /**
@@ -35,14 +36,21 @@ import type { Channel, UpdateStatus, VersionStatus } from "../shared/update.js";
  * while Studio is disconnected. Rather than inventing an "unknown" bucket, the
  * app refuses to start a chat until a place is connected.
  */
-function connectedPlace(): { placeId: number; name: string } | null {
+function connectedPlace(): PlaceRef | null {
   const status = server?.status();
   const session = status?.sessions.find((entry) => entry.active) ?? status?.sessions[0];
   if (!session) return null;
-  return { placeId: session.place.placeId, name: session.place.name };
+
+  return {
+    // Older plugins do not send one, and neither does a place Studio cannot
+    // identify. Both mean the same thing to the thread store.
+    identity: session.place.identity ?? null,
+    placeId: session.place.placeId,
+    name: session.place.name,
+  };
 }
 
-function requirePlace(): { placeId: number; name: string } {
+function requirePlace(): PlaceRef {
   const place = connectedPlace();
 
   if (!place) {
@@ -51,6 +59,12 @@ function requirePlace(): { placeId: number; name: string } {
 
   return place;
 }
+
+/** What to call each CLI when the transcript has to name one. */
+const AGENT_LABEL: Record<import("../shared/agent.js").AgentId, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+};
 
 // Resolved from the app root rather than the module path: the main process is
 // bundled, so a module-relative path would depend on the bundle layout.
@@ -345,18 +359,25 @@ function scratchDirFor(projectId: string): string {
   return dir;
 }
 
-/** Writes an entry to the open thread and mirrors it to the window. */
-function record(entry: TranscriptEntry): void {
+
+/**
+ * Writes an entry to the thread it belongs to and mirrors it to the window.
+ *
+ * The thread is named, never inferred from whichever chat happens to be open:
+ * conversations run in parallel, so an entry that arrives while the user is
+ * reading something else still belongs to the one that produced it.
+ */
+function record(threadId: string, entry: TranscriptEntry): void {
   const store = requireThreads();
-  const active = store.active();
-  if (!active) return;
+  const thread = store.get(threadId);
+  if (!thread) return;
 
-  const existing = active.items.find((item) => item.id === entry.id);
+  const existing = thread.items.find((item) => item.id === entry.id);
 
-  if (existing) store.update(active.id, entry.id, entry);
-  else store.append(active.id, entry);
+  if (existing) store.update(threadId, entry.id, entry);
+  else store.append(threadId, entry);
 
-  broadcast("transcript", entry);
+  broadcast("transcript", { threadId, entry });
   broadcast("threads", store.index());
 }
 
@@ -398,8 +419,19 @@ async function bootstrap(): Promise<void> {
   server.bus.subscribe((event: ServerEvent) => {
     broadcast("server-event", event);
 
+    /**
+     * A Roblox operation belongs to whoever asked for it.
+     *
+     * Agents label their calls with the conversation they are serving, so the
+     * usual case is exact. What is left over is the manual controls in the
+     * dock and an MCP client the user wired up themselves — neither carries a
+     * chat, and both belong in front of whoever is looking.
+     */
     const entry = fromServerEvent(event);
-    if (entry) record(entry);
+    if (entry) {
+      const owner = (entry.kind === "activity" ? entry.activity.chat : null) ?? requireThreads().active()?.id;
+      if (owner) record(owner, entry);
+    }
 
     // Remember which place the conversation was about, so the sidebar can say.
     if (event.type === "session.connected") {
@@ -414,25 +446,26 @@ async function bootstrap(): Promise<void> {
     stateDir: app.getPath("userData"),
     luuCodeHome: process.env.LUU_CODE_HOME,
     mcpScriptPath: mcpScript,
-    onEvent: (event: AgentEvent) => {
-      broadcast("agent-event", event);
+    onEvent: (threadId: string, event: AgentEvent) => {
+      broadcast("agent-event", { threadId, event });
+
+      const store = requireThreads();
+      const thread = store.get(threadId);
+      if (!thread) return;
 
       if (event.type === "session" && event.sessionId) {
-        const active = requireThreads().active();
         // Storing the CLI's own id is what makes a reopened thread resumable
         // rather than a transcript we cannot continue. Spec section 45.
-        if (active) requireThreads().setMeta(active.id, { agentSessionId: event.sessionId });
+        store.setMeta(threadId, { agentSessionId: event.sessionId });
       }
 
-      const active = requireThreads().active();
-      const entry = fromAgentEvent(event, (id) => active?.items.find((item) => item.id === id) ?? null);
-      if (entry) record(entry);
+      const entry = fromAgentEvent(event, (id) => thread.items.find((item) => item.id === id) ?? null);
+      if (entry) record(threadId, entry);
     },
+    onStates: (states) => broadcast("agent-states", states),
   });
 
-  const active = requireThreads().active();
-  agents.setWorkingDirectory(scratchDirFor(active?.projectId ?? "default"));
-  draftSelection = active?.modelSelection ?? null;
+  draftSelection = requireThreads().active()?.modelSelection ?? null;
 
   registerIpc();
   await createWindow();
@@ -453,8 +486,9 @@ async function bootstrap(): Promise<void> {
 
       const model = defaultModel();
       if (model) {
+        // Only the draft: a live session already has the model it was started
+        // on, and the app default has no business retargeting it.
         draftSelection = createSelection(model.provider, model.slug);
-        manager.setModelSelection(draftSelection);
         broadcast("model-selection", draftSelection);
       }
     })
@@ -477,7 +511,8 @@ function registerIpc(): void {
       models: manager.models(),
       modelProblem: manager.catalogueProblem(),
       settings: requireSettings().current(),
-      session: manager.status(),
+      session: manager.status(store.active()?.id ?? null),
+      agentStates: manager.states(),
       serverPort: local.port,
       mcpCommand: mcpCommandLine(),
       versions: versionStatus(),
@@ -580,13 +615,12 @@ function registerIpc(): void {
 
     if (!active) {
       active = store.create(place, agent, selection);
-      manager.setWorkingDirectory(scratchDirFor(active.projectId));
       broadcast("threads", store.index());
     }
 
     // The message goes into the transcript before the CLI is touched, so it
     // appears the moment it is sent rather than once the agent has started.
-    record(userEntry(text, attachments));
+    record(active.id, userEntry(text, attachments));
 
     // Naming runs beside the turn, not before it. It is a separate call to a
     // separate CLI, so the only thing serialising the two ever bought was a
@@ -594,13 +628,21 @@ function registerIpc(): void {
     if (isFirstMessage) void nameThread(active.id, text);
 
     // The CLI is implied by the model, so it is brought up here rather than
-    // being something the user has to remember to start.
-    manager.setModelSelection(selection);
-    await manager.ensure(agent, active.agent === agent ? active.agentSessionId : null);
-    await manager.send(text, attachments);
+    // being something the user has to remember to start. Resuming is only
+    // offered to the CLI that produced the id — `agentSessionId` is cleared
+    // whenever the provider changes, so this cannot hand a Codex id to Claude.
+    await manager.ensure(active.id, {
+      agent,
+      cwd: scratchDirFor(active.projectId),
+      modelSelection: selection,
+      resumeSessionId: active.agent === agent ? active.agentSessionId : null,
+    });
+
+    await manager.send(active.id, text, attachments);
   });
 
-  ipcMain.handle("interrupt-agent", () => requireAgents().interrupt());
+  /** Stops the turn in the chat the user is looking at, and only that one. */
+  ipcMain.handle("interrupt-agent", () => requireAgents().interrupt(requireThreads().active()?.id ?? null));
 
   // ---- Conversation history ------------------------------------------------
 
@@ -609,13 +651,15 @@ function registerIpc(): void {
    *
    * Nothing is written and nothing is listed until the first message: a chat
    * the user opened and abandoned should leave no trace in their history.
+   *
+   * Whatever was running keeps running. Starting a new chat is not a request to
+   * abandon the last one.
    */
   ipcMain.handle("new-thread", async () => {
     const store = requireThreads();
     requirePlace();
 
     store.clearActive();
-    await requireAgents().stop();
 
     broadcast("threads", store.index());
     return null;
@@ -627,8 +671,15 @@ function registerIpc(): void {
    * A model, its reasoning level, and its context window are a single choice —
    * splitting them across two calls only meant the renderer had to know which
    * one to make. Picking a model also picks the CLI behind it: a GPT model
-   * means Codex, a Claude model means Claude Code. Switching provider ends the
-   * running session, because the other CLI cannot continue it.
+   * means Codex, a Claude model means Claude Code.
+   *
+   * Staying on the same CLI changes the model on the live session, so the
+   * conversation carries on. Changing CLI cannot: the other one has no way to
+   * continue a session it did not create. That ends this chat's session and
+   * clears the stored id — handing a Codex id to Claude Code is what used to
+   * make switching provider mid-chat look impossible — and the transcript says
+   * so, because losing the agent's context without being told is worse than
+   * being refused.
    */
   ipcMain.handle("apply-model", async (_event, selection: ModelSelection) => {
     const model = findModel(selection.model);
@@ -638,30 +689,46 @@ function registerIpc(): void {
     const manager = requireAgents();
     const active = store.active();
 
-    if (active && active.agent !== null && active.agent !== model.provider) await manager.stop();
-
     draftSelection = selection;
-    manager.setModelSelection(selection);
 
-    if (active) {
-      store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
-      manager.setWorkingDirectory(scratchDirFor(active.projectId));
-      broadcast("threads", store.index());
+    if (!active) return selection;
+
+    const switching = active.agent !== null && active.agent !== model.provider;
+
+    if (switching) {
+      await manager.stop(active.id);
+      store.setMeta(active.id, { agentSessionId: null });
+
+      record(active.id, {
+        kind: "notice",
+        id: `n_switch_${Date.now().toString(36)}`,
+        at: Date.now(),
+        tone: "info",
+        text: `Switched to ${AGENT_LABEL[model.provider]}. It starts with a fresh session — the transcript is kept, but ${AGENT_LABEL[active.agent!]}'s own context cannot be handed over.`,
+      });
     }
+
+    store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
+    manager.setModelSelection(active.id, selection);
+    broadcast("threads", store.index());
 
     return selection;
   });
 
+  /**
+   * Opens a conversation. Nothing is stopped.
+   *
+   * This used to end the running session, on the reasoning that it belonged to
+   * the thread being left — but it did not end it honestly: the state went to
+   * "stopped" while the CLI was still draining, so a chat that was very much
+   * still working looked finished, and its remaining output was filed against
+   * whichever chat had just been opened. Sessions are per conversation now, and
+   * opening one is only a change of view.
+   */
   ipcMain.handle("open-thread", async (_event, id: string) => {
     const store = requireThreads();
     const thread = store.select(id);
     if (!thread) return null;
-
-    requireAgents().setWorkingDirectory(scratchDirFor(thread.projectId));
-    requireAgents().setModelSelection(thread.modelSelection);
-
-    // The running agent belongs to the thread we just left.
-    await requireAgents().stop();
 
     broadcast("threads", store.index());
     return thread;
@@ -685,10 +752,11 @@ function registerIpc(): void {
 
   ipcMain.handle("delete-thread", async (_event, id: string) => {
     const store = requireThreads();
-    const wasActive = store.active()?.id === id;
 
     store.remove(id);
-    if (wasActive) await requireAgents().stop();
+    // Deleting a conversation does end its session — there is nothing left for
+    // it to write into.
+    await requireAgents().discard(id);
 
     const index = store.index();
     broadcast("threads", index);
@@ -735,6 +803,7 @@ app.on("before-quit", () => {
   // Anything buffered has to reach disk before the process goes away.
   threads?.flush();
   updater?.stop();
-  void agents?.stop();
+  // Every CLI the app started, not just the one on screen.
+  void agents?.stopAll();
   void server?.close();
 });

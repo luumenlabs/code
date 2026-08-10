@@ -96,7 +96,7 @@ export function SettingsView({
             key={id}
             onClick={() => setSection(id)}
             data-active={section === id}
-            className="row flex items-center gap-1.5 px-2 py-1 text-[12.5px]"
+            className="row flex items-center gap-1.5 px-2 py-1 text-[13.5px]"
           >
             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             {label}
@@ -234,7 +234,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
           <div key={agent.id} className="border-b py-4 last:border-b-0">
             <div className="flex items-center gap-2.5">
               <ProviderIcon provider={agent.id} className="size-4 shrink-0" />
-              <span className="text-[13px] font-medium">{agent.label}</span>
+              <span className="text-[14px] font-medium">{agent.label}</span>
               {agent.installed ? (
                 <Badge variant="success">
                   <CircleCheck className="size-3" />
@@ -248,7 +248,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
               )}
             </div>
 
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
               {agent.installed
                 ? `${models.length} model${models.length === 1 ? "" : "s"} available.`
                 : `${agent.problem ?? ""} ${agent.installHint}`}
@@ -260,7 +260,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
                   <span
                     key={model.slug}
                     className={cn(
-                      "rounded border px-1.5 py-px font-mono text-[10px] text-muted-foreground",
+                      "rounded border px-1.5 py-px font-mono text-[11px] text-muted-foreground",
                       model.legacy && "opacity-55",
                     )}
                   >
@@ -271,7 +271,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
             )}
 
             {agent.id === "codex" && harness.modelProblem && (
-              <p className="mt-2 text-[11px] leading-relaxed text-[var(--warning)]">
+              <p className="mt-2 text-[12px] leading-relaxed text-[var(--warning)]">
                 Showing built-in defaults: {harness.modelProblem}
               </p>
             )}
@@ -316,7 +316,7 @@ function Updates({ harness }: { harness: Harness }): React.JSX.Element {
   if (!versions) {
     return (
       <Panel title="Updates">
-        <p className="py-3 text-[12px] text-muted-foreground">Reading versions…</p>
+        <p className="py-3 text-[13px] text-muted-foreground">Reading versions…</p>
       </Panel>
     );
   }
@@ -376,10 +376,10 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
       <div className="flex items-start justify-between gap-6">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[12.5px] font-medium">Luu Code {status.currentVersion}</span>
+            <span className="text-[13.5px] font-medium">Luu Code {status.currentVersion}</span>
             <Badge variant={status.channel === "release" ? "outline" : "primary"}>{CHANNEL_LABEL[status.channel]}</Badge>
           </div>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{detail}</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{detail}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -413,7 +413,7 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
       {/* A channel only ever updates from itself, which is worth saying once
           rather than leaving someone to wonder why a nightly never offers a
           release. */}
-      <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{CHANNEL_NOTE[status.channel]}</p>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{CHANNEL_NOTE[status.channel]}</p>
 
       {status.state === "downloading" && (
         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -423,7 +423,7 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
 
       {status.state === "error" && status.message && (
         <div className="mt-2 flex items-start justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2">
-          <p className="text-[11.5px] leading-relaxed text-destructive">{status.message}</p>
+          <p className="text-[12.5px] leading-relaxed text-destructive">{status.message}</p>
           <Button variant="ghost" size="sm" onClick={() => void window.luuCode.openReleases()}>
             <ExternalLink />
             Releases
@@ -474,7 +474,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Blocks className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-[12.5px] font-medium">Studio plugin</span>
+            <span className="text-[13.5px] font-medium">Studio plugin</span>
             {matched && (
               <Badge variant="success">
                 <CircleCheck className="size-3" />
@@ -482,7 +482,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
               </Badge>
             )}
           </div>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{detail}</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{detail}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -506,7 +506,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
       </div>
 
       {status.directory && (
-        <p className="mt-1.5 truncate font-mono text-[10.5px] text-muted-foreground">
+        <p className="mt-1.5 truncate font-mono text-[11.5px] text-muted-foreground">
           {/* Windows and macOS disagree about the separator, and this is a real
               path the user may want to go and look at. */}
           {status.directory}
@@ -517,8 +517,8 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
 
       <div className="mt-3 flex items-start justify-between gap-6 border-t pt-3">
         <div className="min-w-0">
-          <div className="text-[12.5px] font-medium">Keep the plugin matching the app</div>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <div className="text-[13.5px] font-medium">Keep the plugin matching the app</div>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
             {/* On a dev build the plugin belongs to `luu dev`, which rebuilds it
                 on every save. Reinstalling over that would undo the watch. */}
             {isDev
@@ -563,8 +563,8 @@ function Connection({ harness }: { harness: Harness }): React.JSX.Element {
           copy. Nothing to install, and it can never be a different version
           from the app that printed it. */}
       <div className="border-b py-4">
-        <div className="text-[12.5px] font-medium">Use these tools from your own terminal</div>
-        <p className="mt-0.5 mb-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+        <div className="text-[13.5px] font-medium">Use these tools from your own terminal</div>
+        <p className="mt-0.5 mb-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
           Any MCP-capable agent can drive the same Roblox operations. There is nothing to install — this runs the copy
           that shipped with the app.
         </p>
@@ -583,10 +583,10 @@ function Connection({ harness }: { harness: Harness }): React.JSX.Element {
         <div key={session.id} className="border-b py-3 last:border-b-0">
           <div className="flex items-center gap-2">
             <Sparkles className="size-3.5 text-primary" />
-            <span className="text-[12.5px] font-medium">{session.place.name}</span>
+            <span className="text-[13.5px] font-medium">{session.place.name}</span>
             {session.active && <Badge variant="outline">Active</Badge>}
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-[12px] text-muted-foreground">
             {session.place.placeId > 0 ? `Place ${session.place.placeId}` : "Unsaved place"} · Studio{" "}
             {session.studioVersion} · plugin {session.pluginVersion} ·{" "}
             {session.endpoints.map((endpoint) => endpoint.realm).join(", ")}
@@ -612,9 +612,9 @@ function Panel({
     <section>
       <header className="flex items-start justify-between gap-4 pb-1">
         <div>
-          <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
           {description && (
-            <p className="mt-1 max-w-[46ch] text-[12px] leading-relaxed text-muted-foreground">{description}</p>
+            <p className="mt-1 max-w-[46ch] text-[13px] leading-relaxed text-muted-foreground">{description}</p>
           )}
         </div>
         {action}
@@ -637,8 +637,8 @@ function Row({
   return (
     <div className="flex items-start justify-between gap-6 border-b py-3.5 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-[12.5px] font-medium">{label}</div>
-        <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{detail}</p>
+        <div className="text-[13.5px] font-medium">{label}</div>
+        <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{detail}</p>
       </div>
       <div className="shrink-0 pt-0.5">{children}</div>
     </div>
@@ -677,7 +677,7 @@ function Snippet({ label, value }: { label: string; value: string }): React.JSX.
     <div className="mt-2 first:mt-0">
       <div className="eyebrow mb-1">{label}</div>
       <div className="flex items-start gap-1 rounded-md border bg-background p-1.5">
-        <code className="selectable min-w-0 flex-1 font-mono text-[10.5px] leading-relaxed break-all whitespace-pre-wrap text-muted-foreground">
+        <code className="selectable min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-muted-foreground">
           {value}
         </code>
         <Button variant="ghost" size="icon-sm" onClick={() => void copy()}>
@@ -691,8 +691,8 @@ function Snippet({ label, value }: { label: string; value: string }): React.JSX.
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-6 border-b py-2.5">
-      <span className="text-[12.5px]">{label}</span>
-      <span className="font-mono text-[11.5px] text-muted-foreground">{value}</span>
+      <span className="text-[13.5px]">{label}</span>
+      <span className="font-mono text-[12.5px] text-muted-foreground">{value}</span>
     </div>
   );
 }
@@ -711,7 +711,7 @@ function Select({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className={cn(
-        "h-7 min-w-[160px] rounded-md border bg-background px-2 text-[12px] outline-none",
+        "h-7 min-w-[160px] rounded-md border bg-background px-2 text-[13px] outline-none",
         "focus-visible:ring-[2px] focus-visible:ring-ring/60",
       )}
       style={{ cursor: "pointer" }}

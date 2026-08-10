@@ -29,13 +29,13 @@ export function PairingDialog({ request }: { request: PairingRequest | null }): 
             </DialogHeader>
 
             <div className="my-4 rounded-lg border bg-muted/40 py-3 text-center">
-              <div className="font-mono text-[28px] leading-none font-semibold tracking-[0.22em] text-primary">
+              <div className="font-mono text-[30px] leading-none font-semibold tracking-[0.22em] text-primary">
                 {request.code}
               </div>
-              <div className="mt-2 text-[11px] text-muted-foreground">Studio should be showing this code</div>
+              <div className="mt-2 text-[12px] text-muted-foreground">Studio should be showing this code</div>
             </div>
 
-            <p className="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-muted-foreground">
               <ShieldCheck className="mt-px size-3.5 shrink-0" />
               Approve only if the codes match. After that, the agent can change your scripts, run the game, and play it.
             </p>

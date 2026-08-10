@@ -38,7 +38,7 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
     <Popover>
       <PopoverTrigger
         className={cn(
-          "flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] transition-colors outline-none",
+          "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors outline-none",
           "hover:bg-accent focus-visible:ring-[2px] focus-visible:ring-ring/60",
           tone,
         )}
@@ -50,8 +50,8 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
 
       <PopoverContent align="start" side="top" className="w-[300px] p-0">
         <div className="border-b px-3 py-2.5">
-          <div className="text-[12.5px] font-medium">Agent access</div>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          <div className="text-[13.5px] font-medium">Agent access</div>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
             What the agent is allowed to do to your place.
           </p>
         </div>
@@ -64,8 +64,8 @@ export function AccessChip({ permissions }: { permissions: PermissionSettings })
             >
               <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] leading-tight">{name}</span>
-                <span className="mt-0.5 block text-[10.5px] leading-tight text-muted-foreground">{detail}</span>
+                <span className="block text-[13px] leading-tight">{name}</span>
+                <span className="mt-0.5 block text-[11.5px] leading-tight text-muted-foreground">{detail}</span>
               </span>
               <Switch
                 className="mt-0.5"

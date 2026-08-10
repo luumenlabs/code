@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld("luuCode", {
 
   onServerEvent: (listener) => subscribe("server-event", listener),
   onAgentEvent: (listener) => subscribe("agent-event", listener),
+  onAgentStates: (listener) => subscribe("agent-states", listener),
   onThreadsChanged: (listener) => subscribe("threads", listener),
   onTranscript: (listener) => subscribe("transcript", listener),
   onCatalogue: (listener) => subscribe("catalogue", listener),

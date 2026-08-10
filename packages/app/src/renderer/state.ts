@@ -6,9 +6,9 @@
  * them from disk. That keeps what the user sees and what survives a restart
  * identical. Spec sections 33 and 45.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OutputEntry, PairingRequest, ServerEvent } from "@luumen/code-protocol";
-import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
+import type { AgentEvent, AgentState, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
 import { setModelCatalogue } from "../shared/models.js";
 import type { ModelInfo, ModelSelection } from "../shared/models.js";
@@ -21,6 +21,11 @@ export type TimelineItem = TranscriptEntry;
 export type { Attachment };
 
 const MAX_OUTPUT = 500;
+
+/** The states that mean a turn is in flight. */
+export function isBusyState(state: AgentState | undefined): boolean {
+  return state === "starting" || state === "thinking" || state === "working";
+}
 
 /**
  * The version buttons. Each one returns the whole status, so the caller never
@@ -51,7 +56,13 @@ export interface Harness {
   versions: VersionStatus | null;
   /** Runs one of the version actions and folds the result back in. */
   versionAction(action: keyof VersionActions): Promise<void>;
+  /** The open conversation has a turn in flight. */
   busy: boolean;
+  /**
+   * Every conversation's agent state, so the sidebar can show which of them are
+   * working — including the ones nobody is looking at.
+   */
+  agentStates: Record<string, AgentState>;
   runBusy: boolean;
   pendingPairing: PairingRequest | null;
   modelSelection: ModelSelection | null;
@@ -85,6 +96,13 @@ export function useHarness(): Harness {
   const [modelProblem, setModelProblem] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [versions, setVersions] = useState<VersionStatus | null>(null);
+  const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({});
+
+  // Transcript entries name the conversation they belong to, and several may be
+  // arriving at once. Read through a ref so the subscription is set up once and
+  // still sees the chat that is open now.
+  const openThreadId = useRef<string | null>(null);
+  openThreadId.current = activeThreadId;
 
   const refresh = useCallback(async () => {
     const next = await window.luuCode.snapshot();
@@ -92,6 +110,7 @@ export function useHarness(): Harness {
     setThreads(next.threads);
     setActiveThreadId(next.thread?.id ?? null);
     setTimeline(next.thread?.items ?? []);
+    setAgentStates(next.agentStates);
     setSelection(next.modelSelection);
     setSettings(next.settings);
     setVersions(next.versions);
@@ -112,8 +131,16 @@ export function useHarness(): Harness {
     void window.luuCode.applyModel(selection).then(setSelection).catch(() => undefined);
   }, []);
 
-  /** Insert or replace by id, so an updated activity replaces its own row. */
-  const upsert = useCallback((entry: TimelineItem) => {
+  /**
+   * Insert or replace by id, so an updated activity replaces its own row.
+   *
+   * Entries for a conversation that is not on screen are dropped rather than
+   * merged into the wrong timeline — the main process has already written them
+   * to disk, and opening that chat replays them.
+   */
+  const upsert = useCallback(({ threadId, entry }: { threadId: string; entry: TimelineItem }) => {
+    if (threadId !== openThreadId.current) return;
+
     setTimeline((current) => {
       const index = current.findIndex((item) => item.id === entry.id);
       if (index === -1) return [...current, entry];
@@ -139,9 +166,12 @@ export function useHarness(): Harness {
       }
     });
 
-    const offAgent = window.luuCode.onAgentEvent((event: AgentEvent) => {
+    const offAgent = window.luuCode.onAgentEvent(({ threadId, event }: { threadId: string; event: AgentEvent }) => {
       // The transcript arrives separately, already persisted; this only tracks
-      // the session's live state.
+      // the live state of the session the user is looking at. Other chats are
+      // covered by the states map.
+      if (threadId !== openThreadId.current) return;
+
       if (event.type === "state") {
         setSnapshot((current) =>
           current ? { ...current, session: { ...current.session, state: event.state, message: event.message ?? null } } : current,
@@ -152,6 +182,8 @@ export function useHarness(): Harness {
         );
       }
     });
+
+    const offAgentStates = window.luuCode.onAgentStates(setAgentStates);
 
     const offTranscript = window.luuCode.onTranscript(upsert);
     const offThreads = window.luuCode.onThreadsChanged((index) => {
@@ -174,6 +206,7 @@ export function useHarness(): Harness {
     return () => {
       offServer();
       offAgent();
+      offAgentStates();
       offTranscript();
       offThreads();
       offCatalogue();
@@ -224,16 +257,24 @@ export function useHarness(): Harness {
   }, []);
 
   const newThread = useCallback(async () => {
-    await window.luuCode.newThread();
+    // Set first: entries still arriving from the chat being left must not be
+    // appended to the empty draft.
+    openThreadId.current = null;
+    setActiveThreadId(null);
     // A draft has no stored transcript to replay, and the model carries over.
     setTimeline([]);
-    setActiveThreadId(null);
+    await window.luuCode.newThread();
   }, []);
 
   const openThread = useCallback(
     async (id: string) => {
+      // Claim the id before awaiting: a chat that is still working streams
+      // entries the whole time, and they are only ours once this one is open.
+      openThreadId.current = id;
+
       const thread = await window.luuCode.openThread(id);
       if (!thread) return;
+
       setTimeline(thread.items);
       setActiveThreadId(thread.id);
       setSelection(thread.modelSelection);
@@ -263,10 +304,13 @@ export function useHarness(): Harness {
     [activeThreadId, refresh],
   );
 
-  const busy = useMemo(() => {
-    const state = snapshot?.session.state;
-    return state === "thinking" || state === "working" || state === "starting";
-  }, [snapshot?.session.state]);
+  // The states map is the authority: it is keyed by conversation and updated
+  // for every session, so it stays right when the one on screen is not the one
+  // working. A draft has no session yet, so it is never busy.
+  const busy = useMemo(
+    () => isBusyState(activeThreadId ? agentStates[activeThreadId] : undefined),
+    [activeThreadId, agentStates],
+  );
 
   const pendingPairing = useMemo(() => snapshot?.status.pending[0] ?? null, [snapshot?.status.pending]);
 
@@ -284,6 +328,7 @@ export function useHarness(): Harness {
     versions,
     versionAction,
     busy,
+    agentStates,
     runBusy,
     pendingPairing,
     modelSelection,

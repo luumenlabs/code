@@ -37,6 +37,16 @@ export interface ActivityEvent {
   op: Op;
   /** Who issued it, so the user can tell the harness agent from an MCP client. */
   origin: "harness" | "mcp" | "internal";
+  /**
+   * Which conversation asked for it, when the caller said.
+   *
+   * The app runs a coding agent per chat, all at once, and this operation
+   * stream is shared by every one of them. Without the label there is no way to
+   * tell whose work an operation is, and it would be filed against whichever
+   * chat happened to be on screen. Null for an external MCP client, which has
+   * no conversation in this app to belong to.
+   */
+  chat: string | null;
   /** Human-readable summary, for example "Changed Source on ServerScriptService.Shop". */
   title: string;
   detail: string | null;

@@ -21,9 +21,9 @@
 
   /* Structure. Named rather than sprinkled as magic numbers so the whole app
      stays on one rhythm. */
-  --topbar-height: 52px;
-  --sidebar-width: 260px;
-  --dock-width: 320px;
+  --topbar-height: 56px;
+  --sidebar-width: 276px;
+  --dock-width: 340px;
   --sidebar-inset: 0.5rem;
   --row-gap: 0.125rem;
 
@@ -150,7 +150,10 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-size: 13px;
+    /* One step above the density this started at. At 13px the app read as a
+       panel rather than something you sit in front of for an hour, and the
+       whole scale is set a point up from there to match. */
+    font-size: 14px;
     line-height: 1.55;
     /* A desktop app should not feel like a web page. */
     overflow: hidden;
@@ -237,7 +240,7 @@
 
   /* Section label above a group of controls. */
   .eyebrow {
-    @apply text-[10.5px] font-semibold tracking-[0.08em] uppercase;
+    @apply text-[11.5px] font-semibold tracking-[0.08em] uppercase;
     color: var(--muted-foreground);
   }
 }
