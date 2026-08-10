@@ -1,10 +1,8 @@
 <div align="center">
-  <img src="assets/banner.png" alt="Luu Code" width="680">
+  <img src="assets/banner.png" alt="Luu Code" width="800">
 </div>
 
 <div align="center">
-
-**Use Claude Code or Codex with Roblox Studio.**
 
 [Download](https://github.com/luumenlabs/code/releases/latest) · [Nightly builds](https://github.com/luumenlabs/code/releases) · [Contributing](CONTRIBUTING.md)
 
