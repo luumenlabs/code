@@ -1,0 +1,116 @@
+# Luu Code — notes for coding agents
+
+Luu Code hands an existing coding agent the keys to an open Roblox Studio place:
+read the DataModel, edit scripts, press Play, read the output, click around the
+running game, take screenshots. It drives **Claude Code** or **Codex** — whichever
+the user already has installed and signed in. It ships no model, holds no API key,
+and never asks for one.
+
+Everything runs on `127.0.0.1`. Nothing leaves the machine.
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `packages/protocol` | Shared types. `commands.ts` is the single source of truth for every Roblox operation: params schema, permission group, capability, summary. |
+| `packages/server` | The local server (default `127.0.0.1:33770`): Studio bridge, permissions, dispatcher, and the MCP interface. Also the `luu-code` / `luu-code-mcp` CLIs. |
+| `packages/app` | Electron. `src/main` (agent sessions, threads, settings, updater, plugin installer), `src/renderer` (React + Tailwind + Radix), `src/shared` (the IPC contract and types both sides use). |
+| `plugin/` | The Luau Studio plugin. Its own Luumen project driven by `luu`, toolchain pinned in `rokit.toml`. Needs none of the Node toolchain. |
+
+The two halves are independent: you can work on the plugin without Node, and on
+the harness without Studio.
+
+## Commands
+
+```bash
+pnpm install
+pnpm check            # build, typecheck, test, and the plugin checks
+pnpm dev              # the app, with reload
+pnpm serve            # the local server alone, no window
+
+cd plugin
+luu install           # Rojo, StyLua, Selene, luau-lsp, Lune
+luu dev               # rebuild into the Studio plugins folder on every save
+luu run check         # stylua, selene, luau-lsp
+```
+
+Tests are vitest, in `packages/protocol` and `packages/server`.
+
+## How the pieces fit
+
+Studio pairs with the server by six-digit code, then polls it. The app starts the
+user's CLI and points it at the Luu Code **MCP server**, so the agent reaches
+Roblox through the same tools an external terminal would. Every operation flows
+`agent → MCP → dispatcher → plugin → Studio`, and back as an `ActivityEvent` the
+transcript renders in Roblox language rather than tool ids.
+
+Which model the user picks decides which CLI runs — there is no separate agent
+picker. Codex models are discovered live from `codex app-server`; Claude models
+are declared in `src/shared/models.ts` and gated on the installed CLI version.
+
+## Adding an operation
+
+Operations are defined once and flow outward.
+
+1. Add it to `COMMANDS` in `packages/protocol/src/commands.ts`.
+2. Add its result type to `CommandResults` in the same file.
+3. Implement it in `plugin/src/Commands/` and register it in `Commands/init.luau` —
+   or handle it server-side in `dispatcher.ts` if it does not belong in Studio.
+4. Give it a title in `packages/server/src/core/activity.ts`, so the user sees
+   Roblox language.
+5. Add an MCP tool in `packages/server/src/mcp/tools.ts`. Write the description
+   for an agent that has never seen this project.
+6. Add a test.
+
+## House style
+
+Comments explain **why**, not what — the tricky decision, the constraint that made
+the obvious approach wrong, the failure the code is defending against. Match the
+density and voice of the file you are editing. Do not narrate what the next line
+plainly does.
+
+- Fail clearly. Every Roblox-facing failure carries a code an agent can act on and,
+  where possible, a hint naming what to try instead.
+- Never report a partial success as a success.
+- Do not guess at a target. Ambiguity is an error, not a coin flip.
+- Probe capabilities rather than assuming them; Studio differs by version, platform,
+  and run state.
+- Prefer a structured Studio API over desktop automation when both would work.
+- Keep the surface small. The product is the Studio connection, not a general local
+  coding environment.
+
+## Channels
+
+Three identities, decided at runtime, each with its own icon, window title, taskbar
+id, app state directory, and Studio plugin file:
+
+| | Release | Nightly | Dev (`pnpm dev`) |
+|---|---|---|---|
+| Icon | blue | purple | amber |
+| Plugin file | `LuuCode.rbxm` | `LuuCodeNightly.rbxm` | `LuuCodeDev.rbxm` |
+
+A build only ever updates from its own channel; the feed is baked in at package
+time. A dev build keeps separate chats and settings, so working on the app never
+touches the history of the installed one. `LUU_CODE_CHANNEL` overrides.
+
+Releasing is covered in [CONTRIBUTING.md](CONTRIBUTING.md): push a `v0.0.0` tag and
+the workflow does the rest.
+
+## Gotchas
+
+These are all real, and all cost time when hit blind.
+
+- **`git checkout` on a `.luau` file breaks stylua.** `core.autocrlf` rewrites it
+  CRLF; `plugin/.stylua.toml` sets `line_endings = "Unix"`, so `luu run check`
+  then fails on a file you did not mean to change. Normalise back to LF.
+- **`ELECTRON_RUN_AS_NODE` leaks from Electron-hosted terminals.** Left set, the
+  Electron binary starts as plain Node and dies confusingly — the app looks like
+  it crashes instantly. `dev.mjs` and `render-icons.mjs` delete it; do the same in
+  any new launcher, and unset it before smoke-testing a packaged build.
+- **The renderer only runs under Electron.** There is no browser mock bridge; a
+  bare `vite` serve renders nothing.
+- **Ports belong to the user.** `33770` (server) and `5273` (renderer) are probably
+  their running `pnpm dev`. Do not kill them; use `LUU_CODE_PORT` and
+  `LUU_CODE_HOME` for an isolated run.
+- **`plugin/` has no `.rbxm` until you build one.** A fresh clone cannot install a
+  plugin from the app until `luu run bundle` has run.

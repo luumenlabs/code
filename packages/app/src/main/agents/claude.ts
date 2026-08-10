@@ -16,6 +16,7 @@ import { effectiveOption, findModel } from "../../shared/models.js";
 import type { Attachment } from "../../shared/agent.js";
 import type { ModelSelection } from "../../shared/models.js";
 import { nextId } from "./adapter.js";
+import { HARNESS_BRIEFING } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
 type SdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
@@ -42,6 +43,34 @@ function apiModelId(selection: ModelSelection | undefined): string | undefined {
   if (!context) return selection.model;
 
   return effectiveOption(selection, context) === "1m" ? `${selection.model}[1m]` : selection.model;
+}
+
+/** Luu Code's own Roblox tools, once the MCP client has namespaced them. */
+const ROBLOX_TOOL = /^mcp__luu-code__/;
+
+/** Useful here and harmless: planning, and looking something up. */
+const KEPT = new Set(["TodoWrite", "WebSearch", "WebFetch"]);
+
+/**
+ * Which tools the agent may use.
+ *
+ * The Roblox tools are allowed outright — the server behind them already
+ * enforces the user's permissions, and asks nobody.
+ *
+ * The filesystem and shell tools are refused, and the refusal explains itself.
+ * The working directory is an empty scratch folder, so a file-first approach
+ * does not merely fail, it fails in a way that reads as "this workspace is
+ * broken" — which is what sent an agent off to report a Windows error instead
+ * of looking at the user's game. Saying why, in the tool result, corrects it
+ * mid-turn rather than after the user has lost a conversation to it.
+ */
+function permission(toolName: string): { behavior: "allow" } | { behavior: "deny"; message: string } {
+  if (ROBLOX_TOOL.test(toolName) || KEPT.has(toolName)) return { behavior: "allow" };
+
+  return {
+    behavior: "deny",
+    message: `${toolName} is not available in Luu Code, and there is no source tree here — the working directory is an empty scratch folder. The game is a live Roblox Studio session: use the luu-code tools to inspect and change it.`,
+  };
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -100,7 +129,9 @@ export class ClaudeAdapter implements AgentAdapter {
     const queryOptions: ClaudeQueryOptions = {
       cwd: options.cwd,
       ...(model ? { model } : {}),
-      systemPrompt: { type: "preset", preset: "claude_code" },
+      // The preset carries how Claude Code works; the append carries where it
+      // is. Without the second half it reasons about the game as files.
+      systemPrompt: { type: "preset", preset: "claude_code", append: HARNESS_BRIEFING },
       ...(sdkEffort(effort) ? { effort: sdkEffort(effort) } : {}),
       permissionMode: options.permissionMode as ClaudeQueryOptions["permissionMode"],
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
@@ -109,6 +140,15 @@ export class ClaudeAdapter implements AgentAdapter {
       mcpServers: {
         "luu-code": { command: options.mcp.command, args: options.mcp.args, env: options.mcp.env },
       },
+      // Luu Code enforces permissions itself, at the server, where the user can
+      // see and change them mid-conversation. A second approval prompt, in a
+      // CLI nobody is watching, would only stall the turn.
+      //
+      // Decided in code rather than through an allow-list of tool names: a
+      // name-matching rule that silently stops matching leaves the agent with
+      // no tools at all, which is the worst failure this product has. A
+      // callback either runs or does not.
+      canUseTool: (toolName) => Promise.resolve(permission(toolName)),
       abortController: abort,
     };
 

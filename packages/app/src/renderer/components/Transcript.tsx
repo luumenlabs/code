@@ -10,8 +10,10 @@ import {
   AlertTriangle,
   Brain,
   Camera,
+  Check,
   ChevronRight,
   CircleCheck,
+  Copy,
   Eye,
   Gamepad2,
   Loader2,
@@ -178,14 +180,7 @@ function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
       );
 
     case "tool":
-      return (
-        <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
-          <Wrench className="size-3.5 shrink-0" />
-          <span className="shrink-0 font-mono text-foreground/80">{item.name}</span>
-          <span className="truncate font-mono opacity-70">{summarize(item.input)}</span>
-          {item.isError && <Badge variant="destructive">failed</Badge>}
-        </div>
-      );
+      return <Tool item={item} />;
 
     case "activity":
       return <Activity activity={item.activity} />;
@@ -207,6 +202,85 @@ function Row({ item }: { item: TimelineItem }): React.JSX.Element | null {
     default:
       return null;
   }
+}
+
+/**
+ * A tool call, openable.
+ *
+ * Collapsed it is one line, because most of them are not what you are reading
+ * the transcript for. Open, it is the whole call and the whole result, as text
+ * you can select and copy — when a tool misbehaves, the exact arguments and the
+ * exact output are the only things worth having, and a truncated preview of
+ * either is the same as nothing.
+ */
+function Tool({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }): React.JSX.Element {
+  const input = format(item.input);
+  const pending = item.result === null;
+
+  return (
+    <Collapsible>
+      <div
+        className={cn(
+          "rounded-lg border bg-card/40 transition-colors",
+          item.isError && "border-destructive/30 bg-destructive/[0.06]",
+        )}
+      >
+        <CollapsibleTrigger className="group flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-muted-foreground">
+          <Wrench className={cn("size-3.5 shrink-0", item.isError && "text-destructive")} />
+          <span className="shrink-0 font-mono text-foreground/80">{item.name}</span>
+          <span className="min-w-0 flex-1 truncate font-mono opacity-70">{truncate(input, 110)}</span>
+
+          {pending && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
+          {item.isError && <Badge variant="destructive">failed</Badge>}
+
+          <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div className="flex flex-col gap-2 border-t px-2.5 py-2">
+            <Block label="Call" value={input} />
+            {item.result !== null && <Block label="Result" value={item.result} tone={item.isError ? "error" : undefined} />}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+/** Selectable, copyable, and scrolled rather than truncated. */
+function Block({ label, value, tone }: { label: string; value: string; tone?: "error" }): React.JSX.Element {
+  const [copied, setCopied] = React.useState(false);
+
+  const copy = async (): Promise<void> => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-2">
+        <span className="eyebrow">{label}</span>
+        <span className="flex-1" />
+        <button
+          onClick={() => void copy()}
+          className="flex items-center gap-1 rounded px-1 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {copied ? <Check className="size-3 text-[var(--success)]" /> : <Copy className="size-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+
+      <pre
+        className={cn(
+          "selectable max-h-[280px] overflow-auto rounded-md bg-muted/40 px-2.5 py-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap",
+          tone === "error" ? "text-destructive" : "text-foreground/80",
+        )}
+      >
+        {value}
+      </pre>
+    </div>
+  );
 }
 
 function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element {
@@ -304,14 +378,15 @@ function Prose({ text }: { text: string }): React.JSX.Element {
   );
 }
 
-function summarize(input: unknown): string {
+/** Readable in full when opened, so this indents rather than truncating. */
+function format(input: unknown): string {
   if (input === null || input === undefined) return "";
-  if (typeof input === "string") return truncate(input, 110);
+  if (typeof input === "string") return input;
 
   try {
-    return truncate(JSON.stringify(input), 110);
+    return JSON.stringify(input, null, 2);
   } catch {
-    return "";
+    return String(input);
   }
 }
 

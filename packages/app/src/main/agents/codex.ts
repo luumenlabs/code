@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Attachment } from "../../shared/agent.js";
 import { JsonLineReader, describeExit, extensionFor, nextId, spawnAgent } from "./adapter.js";
+import { withBriefing } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
 /**
@@ -118,7 +119,9 @@ export class CodexAdapter implements AgentAdapter {
 
     const child = spawnAgent(options.command, args, options.cwd);
     this.child = child;
-    child.stdin.end(text);
+    // Codex has no system-prompt channel, so where it is rides in front of the
+    // first message. A resumed conversation already has it in context.
+    child.stdin.end(this.hasConversation ? text : withBriefing(text));
 
     const reader = new JsonLineReader((value, raw) => this.handle(value, raw));
 
