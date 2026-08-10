@@ -19,6 +19,13 @@ export interface AgentInfo {
   /** Why the agent cannot be used, phrased for the user. Spec section 44. */
   problem: string | null;
   installHint: string;
+  /**
+   * The newest published version, or null when the registry could not be
+   * reached. Null is not "up to date" — it is "unknown", and reads that way.
+   */
+  latestVersion?: string | null;
+  /** How this install updates itself, which depends on how it was installed. */
+  updateCommand?: string | null;
 }
 
 /**

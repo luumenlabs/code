@@ -20,6 +20,7 @@ import { discoverModels } from "./catalog.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
 import { discoverAgents } from "./discovery.js";
+import { withUpdateAdvisory } from "./updates.js";
 
 export interface AgentManagerOptions {
   /** Where the MCP config file is written. */
@@ -80,15 +81,18 @@ export class AgentManager {
 
     // Startup and the renderer's first snapshot both want this, and discovery
     // spawns a real `codex app-server`. Share one run rather than two.
-    this.discovery ??= this.discover().finally(() => {
+    this.discovery ??= this.discover(refresh).finally(() => {
       this.discovery = null;
     });
 
     return this.discovery;
   }
 
-  private async discover(): Promise<AgentInfo[]> {
-    this.agents = await discoverAgents();
+  private async discover(refresh: boolean): Promise<AgentInfo[]> {
+    // The advisory is a network call and never blocks the answer: it resolves
+    // to nulls rather than failing, so a machine with no internet discovers its
+    // CLIs exactly as before.
+    this.agents = await withUpdateAdvisory(await discoverAgents(), refresh);
     await this.refreshModels();
     return this.agents;
   }

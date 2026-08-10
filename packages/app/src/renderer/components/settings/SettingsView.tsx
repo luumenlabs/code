@@ -9,6 +9,7 @@
 import * as React from "react";
 import {
   ArrowLeft,
+  ArrowUpCircle,
   Blocks,
   Bot,
   Check,
@@ -29,9 +30,12 @@ import {
 import { PERMISSION_GROUPS } from "@luumen/code-protocol";
 import type { PermissionGroup } from "@luumen/code-protocol";
 import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../../shared/settings.js";
+import { compareVersions } from "../../../shared/models.js";
+import type { AgentInfo } from "../../../shared/agent.js";
 import type { Channel, PluginStatus, UpdateStatus } from "../../../shared/update.js";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Hint } from "@/components/ui/tooltip";
@@ -196,6 +200,58 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
   );
 }
 
+/**
+ * Whether the installed CLI is older than what npm publishes.
+ *
+ * Behind is the only state worth drawing. A null `latestVersion` means the
+ * registry was unreachable, which is not the same as up to date and must not
+ * read like a problem with the user's machine.
+ */
+function isBehind(agent: AgentInfo): boolean {
+  if (!agent.installed || !agent.version || !agent.latestVersion) return false;
+  return compareVersions(agent.version, agent.latestVersion) < 0;
+}
+
+/**
+ * The version, when there is a newer one — and the command, one click away.
+ *
+ * The badge is the whole affordance: amber and carrying an arrow, it says an
+ * update exists without spending a line of the panel on it, and the command
+ * only appears for someone who has decided to act on it. Opening upward keeps
+ * it over the row it belongs to rather than over the provider below.
+ */
+function UpdateBadge({ agent }: { agent: AgentInfo }): React.JSX.Element {
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          badgeVariants({ variant: "warning" }),
+          "transition-opacity outline-none hover:opacity-80",
+          "focus-visible:ring-[2px] focus-visible:ring-ring/60",
+        )}
+      >
+        <ArrowUpCircle className="size-3" />
+        {agent.version ?? "installed"}
+      </PopoverTrigger>
+
+      <PopoverContent align="start" side="top" className="w-[320px] p-0">
+        <div className="border-b px-3 py-2.5">
+          <div className="text-[13.5px] font-medium">{agent.latestVersion} is out</div>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+            Luu Code only offers models your version can launch.
+          </p>
+        </div>
+
+        {agent.updateCommand && (
+          <div className="p-2">
+            <Snippet value={agent.updateCommand} />
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Providers({ harness }: { harness: Harness }): React.JSX.Element {
   const [refreshing, setRefreshing] = React.useState(false);
   const agents = harness.snapshot?.agents ?? [];
@@ -223,21 +279,24 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
     >
       {agents.map((agent) => {
         const models = harness.models.filter((model) => model.provider === agent.id);
+        const behind = isBehind(agent);
 
         return (
           <div key={agent.id} className="border-b py-4 last:border-b-0">
             <div className="flex items-center gap-2.5">
               <ProviderIcon provider={agent.id} className="size-4 shrink-0" />
               <span className="text-[14px] font-medium">{agent.label}</span>
-              {agent.installed ? (
-                <Badge variant="success">
-                  <CircleCheck className="size-3" />
-                  {agent.version ?? "installed"}
-                </Badge>
-              ) : (
+              {!agent.installed ? (
                 <Badge variant="warning">
                   <CircleX className="size-3" />
                   Not installed
+                </Badge>
+              ) : behind ? (
+                <UpdateBadge agent={agent} />
+              ) : (
+                <Badge variant="success">
+                  <CircleCheck className="size-3" />
+                  {agent.version ?? "installed"}
                 </Badge>
               )}
             </div>
@@ -664,7 +723,8 @@ function codexSnippet(command: string): string {
   ].join("\n");
 }
 
-function Snippet({ label, value }: { label: string; value: string }): React.JSX.Element {
+/** The label is optional: one command under its own heading needs no eyebrow. */
+function Snippet({ label, value }: { label?: string; value: string }): React.JSX.Element {
   const [copied, setCopied] = React.useState(false);
 
   const copy = async (): Promise<void> => {
@@ -675,7 +735,7 @@ function Snippet({ label, value }: { label: string; value: string }): React.JSX.
 
   return (
     <div className="mt-2 first:mt-0">
-      <div className="eyebrow mb-1">{label}</div>
+      {label && <div className="eyebrow mb-1">{label}</div>}
       <div className="flex items-start gap-1 rounded-md border bg-background p-1.5">
         <code className="selectable min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-muted-foreground">
           {value}

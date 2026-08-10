@@ -114,6 +114,15 @@ These are all real, and all cost time when hit blind.
   Electron binary starts as plain Node and dies confusingly — the app looks like
   it crashes instantly. `dev.mjs` and `render-icons.mjs` delete it; do the same in
   any new launcher, and unset it before smoke-testing a packaged build.
+- **The Claude Agent SDK must be told which `claude` to run.** Left to itself it
+  resolves the CLI it ships as an optional dependency, relative to its own module
+  URL — which after bundling is `dist/main/main.cjs`, where pnpm has linked the
+  SDK but never its platform packages. The binary is on disk and unreachable, and
+  the app reports "Native CLI binary for win32-x64 not found" while the user has a
+  working `claude` on PATH. `pathToClaudeCodeExecutable` is set from discovery for
+  exactly this reason. It must be a real executable: the SDK spawns it with no
+  shell and, on Windows, no PATHEXT lookup, so a bare `claude` never resolves and
+  an npm `claude.cmd` fails with `spawn EINVAL`. See `agents/claudeExecutable.ts`.
 - **The renderer only runs under Electron.** There is no browser mock bridge; a
   bare `vite` serve renders nothing.
 - **Do not stop an agent when the user switches chat.** It used to, and the stop

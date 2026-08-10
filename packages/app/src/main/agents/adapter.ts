@@ -109,7 +109,7 @@ export class JsonLineReader {
  * spawn. PATHEXT order decides which shim wins, and `.cmd` is the one Node can
  * drive without a PowerShell round trip.
  */
-function resolveWindowsExecutable(command: string): string | null {
+export function resolveWindowsExecutable(command: string): string | null {
   if (command.includes("/") || command.includes("\\")) {
     return existsSync(command) ? command : null;
   }
@@ -175,16 +175,23 @@ function resolveLaunch(command: string, args: string[]): {
   };
 }
 
-export function spawnAgent(command: string, args: string[], cwd: string): ChildProcessWithoutNullStreams {
-  // Inherit the environment so the CLI finds its own credentials, exactly as it
-  // would in a terminal.
+/**
+ * The environment an agent CLI should inherit.
+ *
+ * Everything the user has, so the CLI finds its own credentials exactly as it
+ * would in a terminal — minus one variable. Electron-based tools launched from
+ * an Electron-hosted terminal inherit ELECTRON_RUN_AS_NODE and silently start
+ * as plain Node instead of as themselves. Agent CLIs are often Electron apps,
+ * so it is stripped rather than passed on.
+ */
+export function agentEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-
-  // Electron-based tools launched from an Electron-hosted terminal inherit this
-  // and silently start as plain Node instead of as themselves. Agent CLIs are
-  // often Electron apps, so it is stripped rather than passed on.
   delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
 
+export function spawnAgent(command: string, args: string[], cwd: string): ChildProcessWithoutNullStreams {
+  const env = agentEnvironment();
   const launch = resolveLaunch(command, args);
 
   return spawn(launch.command, launch.args, {

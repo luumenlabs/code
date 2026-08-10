@@ -15,7 +15,8 @@ import type { Options as ClaudeQueryOptions, SDKMessage, SDKUserMessage } from "
 import { effectiveOption, findModel } from "../../shared/models.js";
 import type { Attachment } from "../../shared/agent.js";
 import type { ModelSelection } from "../../shared/models.js";
-import { nextId } from "./adapter.js";
+import { agentEnvironment, nextId } from "./adapter.js";
+import { resolveClaudeExecutable } from "./claudeExecutable.js";
 import { HARNESS_BRIEFING } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
@@ -135,6 +136,16 @@ export class ClaudeAdapter implements AgentAdapter {
 
     const queryOptions: ClaudeQueryOptions = {
       cwd: options.cwd,
+      // The user's own Claude Code, resolved to something spawnable. Left
+      // unset, the SDK hunts for the copy it ships as an optional dependency
+      // and cannot find it from a bundled main process. See claudeExecutable.
+      pathToClaudeCodeExecutable: resolveClaudeExecutable(options.command),
+      // The SDK hands the child `process.env` untouched, so it needs the same
+      // guard `spawnAgent` applies to Codex: a Luu Code started from a shell
+      // that exports ELECTRON_RUN_AS_NODE would otherwise pass it down, and a
+      // CLI that happens to be an Electron app starts as plain Node instead of
+      // as itself.
+      env: agentEnvironment(),
       ...(model ? { model } : {}),
       // The preset carries how Claude Code works; the append carries where it
       // is. Without the second half it reasons about the game as files.
