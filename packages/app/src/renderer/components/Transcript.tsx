@@ -24,6 +24,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ActivityEvent } from "@luumen/code-protocol";
+import type { AgentState } from "../../shared/agent.js";
 import { BrandMark } from "@/components/Brand";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
@@ -52,12 +53,17 @@ export function Transcript({
   onExample,
   showThinking,
   placeName,
+  busy,
+  state,
 }: {
   items: TimelineItem[];
   onExample: (text: string) => void;
   showThinking: boolean;
   /** The place this chat is filed against, shown while it is still empty. */
   placeName: string | null;
+  /** The agent is mid-turn, so the transcript says so rather than sitting still. */
+  busy: boolean;
+  state: AgentState | undefined;
 }): React.JSX.Element {
   const viewport = React.useRef<HTMLDivElement>(null);
   const pinned = React.useRef(true);
@@ -68,7 +74,9 @@ export function Transcript({
     if (!pinned.current) return;
     const element = viewport.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [items]);
+    // `busy` too: the working line appearing changes the height, and the point
+    // of it is to be seen.
+  }, [items, busy]);
 
   const onScroll = (): void => {
     const element = viewport.current;
@@ -81,16 +89,168 @@ export function Transcript({
   }
 
   const visible = showThinking ? items : items.filter((item) => item.kind !== "thinking");
+  const runs = groupRuns(visible);
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
       <div className="mx-auto flex max-w-[820px] flex-col gap-3 px-6 py-6">
-        {visible.map((item) => (
-          <Row key={item.id} item={item} />
-        ))}
+        {runs.map((run) =>
+          run.kind === "single" ? (
+            <Row key={run.item.id} item={run.item} />
+          ) : (
+            <Run key={run.items[0]!.id} items={run.items} />
+          ),
+        )}
+
+        {busy && <Working state={state} />}
       </div>
     </ScrollArea>
   );
+}
+
+/**
+ * Consecutive operations, folded down to the one happening now.
+ *
+ * A turn that inspects six things and edits two is eight rows of scrollback
+ * that push the conversation off the screen, and only the last of them is what
+ * the agent is doing right now. The earlier ones stay one click away.
+ *
+ * Kept in order — the folded ones are older, so they sit above the live one.
+ * A transcript that puts the newest row on top and its history underneath
+ * reads backwards.
+ */
+function Run({ items }: { items: TimelineItem[] }): React.JSX.Element {
+  const folded = items.slice(0, -1);
+  const latest = items[items.length - 1]!;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {folded.length > 0 && <Folded items={folded} />}
+      <Row item={latest} />
+    </div>
+  );
+}
+
+function Folded({ items }: { items: TimelineItem[] }): React.JSX.Element {
+  const failed = items.filter(hasFailed).length;
+  const noun = items[0]?.kind === "tool" ? "tool call" : "Roblox operation";
+
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group flex w-full items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+        <span>
+          {items.length} earlier {noun}
+          {items.length === 1 ? "" : "s"}
+        </span>
+        {/* Never let a fold hide a failure. */}
+        {failed > 0 && <span className="text-destructive">· {failed} failed</span>}
+      </CollapsibleTrigger>
+
+      <CollapsibleContent>
+        <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-border pl-3">
+          {items.map((item) => (
+            <Row key={item.id} item={item} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+type Grouped =
+  | { kind: "single"; item: TimelineItem }
+  | { kind: "run"; items: TimelineItem[] };
+
+/** Runs of three or more neighbouring rows of the same kind are foldable. */
+function groupRuns(items: TimelineItem[]): Grouped[] {
+  const out: Grouped[] = [];
+  let run: TimelineItem[] = [];
+
+  const flush = (): void => {
+    if (run.length === 0) return;
+    // Two in a row is not clutter; folding one row behind a disclosure that
+    // takes the same space as the row would be theatre.
+    if (run.length < 3) out.push(...run.map((item) => ({ kind: "single" as const, item })));
+    else out.push({ kind: "run", items: run });
+    run = [];
+  };
+
+  for (const item of items) {
+    const foldable = item.kind === "tool" || item.kind === "activity";
+
+    if (foldable && (run.length === 0 || run[0]!.kind === item.kind)) {
+      run.push(item);
+      continue;
+    }
+
+    flush();
+
+    if (foldable) run.push(item);
+    else out.push({ kind: "single", item });
+  }
+
+  flush();
+  return out;
+}
+
+function hasFailed(item: TimelineItem): boolean {
+  if (item.kind === "tool") return item.isError;
+  if (item.kind === "activity") return item.activity.status === "error";
+  return false;
+}
+
+const WORKING_LABEL: Partial<Record<AgentState, string>> = {
+  starting: "Starting",
+  thinking: "Thinking",
+  working: "Working",
+};
+
+/**
+ * Proof of life.
+ *
+ * A long turn — a playtest, a screenshot, a model that is thinking hard — looks
+ * exactly like a hung one. The elapsed time is the difference: it says the app
+ * is still with you, and it is the number you quote when something really has
+ * stopped.
+ */
+function Working({ state }: { state: AgentState | undefined }): React.JSX.Element {
+  const [elapsed, setElapsed] = React.useState(0);
+
+  React.useEffect(() => {
+    // Mounts when the turn starts and unmounts when it ends, so the clock
+    // belongs to this turn rather than needing to be reset.
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Date.now() - started), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+      <span className="flex gap-[3px]">
+        {[0, 1, 2].map((dot) => (
+          <span
+            key={dot}
+            className="size-1 animate-pulse rounded-full bg-current"
+            style={{ animationDelay: `${dot * 200}ms`, animationDuration: "1.2s" }}
+          />
+        ))}
+      </span>
+      {WORKING_LABEL[state ?? "working"] ?? "Working"} for {duration(elapsed)}
+    </div>
+  );
+}
+
+/** "8s", "5m 03s", "1h 04m" — precise where it is short, coarse where it is long. */
+function duration(ms: number): string {
+  const total = Math.floor(ms / 1_000);
+  const seconds = total % 60;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3_600);
+
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  return `${seconds}s`;
 }
 
 /**

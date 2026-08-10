@@ -87,6 +87,8 @@ export function App(): React.JSX.Element {
                   onExample={setDraft}
                   showThinking={harness.settings.showThinking}
                   placeName={place?.place.name ?? null}
+                  busy={harness.busy}
+                  state={harness.snapshot?.session.state}
                 />
                 <Composer harness={harness} value={draft} onValueChange={setDraft} />
               </main>
