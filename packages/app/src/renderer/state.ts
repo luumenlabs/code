@@ -7,7 +7,7 @@
  * identical. Spec sections 33 and 45.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { OutputEntry, PairingRequest, ServerEvent } from "@luumen/code-protocol";
+import type { ChangeRecord, OutputEntry, PairingRequest, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, AgentState, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
 import { setModelCatalogue } from "../shared/models.js";
@@ -84,6 +84,21 @@ export interface Harness {
    */
   agentStates: Record<string, AgentState>;
   runBusy: boolean;
+  /**
+   * What has been done to the DataModel in this session, oldest first.
+   *
+   * Every change in the connected Studio window, not only this chat's: the
+   * place is shared, and a panel that hid the other conversation's edits would
+   * be the wrong answer to "why does my Baseplate look like that".
+   */
+  changes: ChangeRecord[];
+  /** Change ids currently being put back, so their rows can say so. */
+  reverting: string[];
+  /**
+   * Puts changes back, newest first. Resolves with what actually happened —
+   * a conflict is an outcome, not a thrown error.
+   */
+  revert(ids: string[], force?: boolean): Promise<RevertOutcome[]>;
   pendingPairing: PairingRequest | null;
   modelSelection: ModelSelection | null;
   /**
@@ -117,6 +132,8 @@ export function useHarness(): Harness {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [versions, setVersions] = useState<VersionStatus | null>(null);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({});
+  const [changes, setChanges] = useState<ChangeRecord[]>([]);
+  const [reverting, setReverting] = useState<string[]>([]);
 
   // Transcript entries name the conversation they belong to, and several may be
   // arriving at once. Read through a ref so the subscription is set up once and
@@ -142,6 +159,35 @@ export function useHarness(): Harness {
       setModelCatalogue(next.models);
       setModels(next.models);
     }
+  }, []);
+
+  /**
+   * Reads the journal for the window the open chat is working in.
+   *
+   * No `chat` filter in the params, deliberately: the routing argument decides
+   * *which window* to ask, and the answer is everything that has been done to
+   * that place. Two conversations editing one game are still one game.
+   */
+  const loadChanges = useCallback(async (chat: string | null) => {
+    try {
+      const result = (await window.luuCode.execute("changes.list", {}, chat ?? undefined)) as {
+        records?: ChangeRecord[];
+      };
+      setChanges(result?.records ?? []);
+    } catch {
+      // Studio not connected, or no window bound yet. The panel says so; a
+      // failed background read is not something to put in front of anyone.
+      setChanges([]);
+    }
+  }, []);
+
+  /** Insert or replace by id, keeping the list in the order things happened. */
+  const mergeChanges = useCallback((incoming: ChangeRecord[]) => {
+    setChanges((current) => {
+      const byId = new Map(current.map((record) => [record.id, record]));
+      for (const record of incoming) byId.set(record.id, record);
+      return [...byId.values()].sort((left, right) => left.at - right.at);
+    });
   }, []);
 
   const applyModel = useCallback((selection: ModelSelection) => {
@@ -173,6 +219,7 @@ export function useHarness(): Harness {
 
   useEffect(() => {
     void refresh();
+    void loadChanges(openThreadId.current);
 
     const offServer = window.luuCode.onServerEvent((event: ServerEvent) => {
       if (event.type === "status") {
@@ -181,8 +228,15 @@ export function useHarness(): Harness {
         setSnapshot((current) => (current ? { ...current, capabilities: event.report } : current));
       } else if (event.type === "output") {
         setOutput((current) => [...current, ...event.entries].slice(-MAX_OUTPUT));
+      } else if (event.type === "changes") {
+        mergeChanges(event.records);
+      } else if (event.type === "changes.dropped") {
+        // The window went away and took the journal with it. Dropping only that
+        // window's records keeps a second connected place's history intact.
+        setChanges((current) => current.filter((record) => record.session !== event.session));
       } else if (event.type === "session.connected" || event.type === "session.disconnected" || event.type === "pairing.requested") {
         void refresh();
+        void loadChanges(openThreadId.current);
       }
     });
 
@@ -234,7 +288,7 @@ export function useHarness(): Harness {
       offSelection();
       offVersions();
     };
-  }, [refresh, upsert]);
+  }, [refresh, upsert, loadChanges, mergeChanges]);
 
   const versionAction = useCallback(async (action: keyof VersionActions) => {
     // Every one of these answers with the whole status, so there is no partial
@@ -276,6 +330,38 @@ export function useHarness(): Harness {
     [activeThreadId],
   );
 
+  /**
+   * Puts changes back.
+   *
+   * The server does the ordering and the app does not guess at the result: the
+   * records it touched come back over the event stream, so the only thing kept
+   * here is which rows are mid-flight. A conflict resolves normally with a
+   * conflict outcome — it is an answer, not a failure.
+   */
+  const revert = useCallback(
+    async (ids: string[], force = false): Promise<RevertOutcome[]> => {
+      if (ids.length === 0) return [];
+      setReverting((current) => [...current, ...ids]);
+
+      try {
+        const result = (await window.luuCode.execute(
+          "changes.revert",
+          { ids, force },
+          activeThreadId ?? undefined,
+        )) as { outcomes?: RevertOutcome[] };
+        return result?.outcomes ?? [];
+      } catch (error) {
+        // A thrown error is the whole call failing — Studio unreachable, the
+        // permission off — so it applies to every id rather than to one row.
+        const reason = error instanceof Error ? error.message : String(error);
+        return ids.map((id) => ({ id, status: "failed" as const, reason }));
+      } finally {
+        setReverting((current) => current.filter((id) => !ids.includes(id)));
+      }
+    },
+    [activeThreadId],
+  );
+
   const clearOutput = useCallback(() => {
     setOutput([]);
     void window.luuCode.execute("output.clear", {}, activeThreadId ?? undefined).catch(() => undefined);
@@ -304,8 +390,11 @@ export function useHarness(): Harness {
       setActiveThreadId(thread.id);
       setSelection(thread.modelSelection);
       await refresh();
+      // Chats can be bound to different Studio windows, so the journal is read
+      // again for the one this conversation works in.
+      await loadChanges(id);
     },
-    [refresh],
+    [refresh, loadChanges],
   );
 
   const renameThread = useCallback(async (id: string, title: string) => {
@@ -355,6 +444,9 @@ export function useHarness(): Harness {
     busy,
     agentStates,
     runBusy,
+    changes,
+    reverting,
+    revert,
     pendingPairing,
     modelSelection,
     applyModel,

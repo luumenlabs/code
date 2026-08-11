@@ -2,42 +2,24 @@
 --[[
 	Script reading and editing. Spec sections 9.2 and 10.2.
 
-	Reads prefer ScriptEditorService so the agent sees what the user sees,
-	including edits that are open in a tab but not yet committed to the
-	instance. Writes go back through the same service for the same reason:
-	assigning Source directly can be silently discarded when the script is open.
+	Source access itself lives in ScriptSource.luau, shared with the change journal so
+	the editor-service rules have one home. What is here is the command surface
+	on top of it: line ranges, targeted edits, and recording both sides of every
+	write so the user can review and take one back.
 ]]
 
-local ScriptEditorService = game:GetService("ScriptEditorService")
-
 local Errors = require(script.Parent.Parent.Errors)
+local Changes = require(script.Parent.Parent.Changes)
 local Handles = require(script.Parent.Parent.Handles)
 local History = require(script.Parent.Parent.History)
 local Path = require(script.Parent.Parent.Path)
+local ScriptSource = require(script.Parent.Parent.ScriptSource)
 local Value = require(script.Parent.Parent.Value)
 
 local ScriptOps = {}
 
-local function splitLines(source: string): { string }
-	local lines = {}
-	for line in string.gmatch(source .. "\n", "(.-)\n") do
-		table.insert(lines, line)
-	end
-	-- gmatch on the padded string yields one trailing empty entry for sources
-	-- that already ended in a newline; drop it so line numbers stay honest.
-	if #lines > 0 and lines[#lines] == "" and string.sub(source, -1) == "\n" then
-		table.remove(lines)
-	end
-	return lines
-end
-
-local function countLines(source: string): number
-	if #source == 0 then
-		return 0
-	end
-	local _, newlines = string.gsub(source, "\n", "")
-	return newlines + 1
-end
+local splitLines = ScriptSource.splitLines
+local countLines = ScriptSource.countLines
 
 local function requireScript(target: string): LuaSourceContainer
 	local instance = Handles.resolve(target)
@@ -53,57 +35,8 @@ local function requireScript(target: string): LuaSourceContainer
 	return instance
 end
 
-local function readSource(instance: LuaSourceContainer): string
-	local editorOk, editorSource = pcall(function()
-		return ScriptEditorService:GetEditorSource(instance)
-	end)
-
-	if editorOk and type(editorSource) == "string" then
-		return editorSource
-	end
-
-	local ok, source = pcall(function()
-		return (instance :: any).Source
-	end)
-
-	if not ok then
-		Errors.throw(
-			"NOT_ALLOWED_BY_ROBLOX",
-			string.format("Source is not readable on %s: %s", Path.of(instance), tostring(source)),
-			nil,
-			"Studio blocks source access for some protected instances."
-		)
-	end
-
-	return source
-end
-
-local function writeSource(instance: LuaSourceContainer, source: string)
-	local ok, err = pcall(function()
-		ScriptEditorService:UpdateSourceAsync(instance, function()
-			return source
-		end)
-	end)
-
-	if ok then
-		return
-	end
-
-	-- Older Studio versions, and some contexts, do not accept the editor path.
-	local fallbackOk, fallbackErr = pcall(function()
-		(instance :: any).Source = source
-	end)
-
-	if not fallbackOk then
-		error(
-			Errors.fromRobloxError(
-				string.format("Could not write source to %s: %s", Path.of(instance), tostring(fallbackErr)),
-				{ editorError = tostring(err) }
-			),
-			0
-		)
-	end
-end
+local readSource = ScriptSource.read
+local writeSource = ScriptSource.write
 
 function ScriptOps.list(params: any): any
 	local scope = params.scope and Handles.resolve(params.scope) or game
@@ -164,6 +97,10 @@ end
 
 function ScriptOps.set(params: any): any
 	local instance = requireScript(params.target)
+	-- Read before the write, and tolerate not being able to: a script whose
+	-- source Studio will not hand over can still be written, and the honest
+	-- record of that is "changed, cannot be put back".
+	local before, unreadable = ScriptSource.tryRead(instance)
 
 	local _, undoLabel = History.record(string.format("Edit %s", instance.Name), function()
 		writeSource(instance, params.source)
@@ -173,6 +110,7 @@ function ScriptOps.set(params: any): any
 		instances = { Handles.describe(instance) },
 		undoLabel = undoLabel,
 		lineCount = countLines(params.source),
+		changes = { Changes.source(instance, before, unreadable, params.source) },
 	}
 end
 
@@ -285,6 +223,7 @@ function ScriptOps.patch(params: any): any
 		applied = #params.edits,
 		lineCount = countLines(updated),
 		diff = table.concat(summaries, "; "),
+		changes = { Changes.source(instance, original, nil, updated) },
 	}
 end
 
@@ -315,6 +254,10 @@ function ScriptOps.create(params: any): any
 		instances = { Handles.describe(created) },
 		undoLabel = undoLabel,
 		lineCount = countLines(params.source or ""),
+		-- One record, not two. The script and its source arrived together, so
+		-- taking the create back takes the source with it, and a separate source
+		-- record would offer to revert a script into existing with no contents.
+		changes = { Changes.create(created) },
 	}
 end
 

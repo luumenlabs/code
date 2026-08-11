@@ -26,6 +26,7 @@ import {
 import type { ActivityEvent } from "@luumen/code-protocol";
 import type { AgentState } from "../../shared/agent.js";
 import { BrandMark } from "@/components/Brand";
+import { ActivityChanges } from "@/components/Changes";
 import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
@@ -713,6 +714,12 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
           ))}
         </div>
       )}
+
+      {/* What this operation actually changed, and the button that takes it
+          back — one click from the message that caused it, rather than in a
+          panel the user has to go and match up by eye. Renders nothing for the
+          operations that changed nothing, which is most of them. */}
+      <ActivityChanges activityId={activity.id} />
     </div>
   );
 }

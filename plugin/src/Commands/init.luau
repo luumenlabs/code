@@ -7,6 +7,7 @@
 	mistake in one handler can never take the connection down.
 ]]
 
+local Changes = require(script.Parent.Changes)
 local Errors = require(script.Parent.Errors)
 local Exec = require(script.Parent.Exec)
 local Handles = require(script.Parent.Handles)
@@ -41,6 +42,13 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["dm.clone"] = DataModelOps.clone,
 	["dm.attributes.set"] = DataModelOps.setAttributes,
 	["dm.tags.set"] = DataModelOps.setTags,
+
+	-- The server owns the journal and sends the records back to be undone, so
+	-- there is no list operation here: the plugin holds only the copies of
+	-- destroyed subtrees, which are not describable in JSON.
+	["changes.apply"] = function(params)
+		return Changes.apply(params.records or {}, params.force == true)
+	end,
 
 	["script.list"] = ScriptOps.list,
 	["script.get"] = ScriptOps.get,

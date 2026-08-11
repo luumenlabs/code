@@ -11,6 +11,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
+local Changes = require(script.Parent.Changes)
 local Handles = require(script.Parent.Handles)
 
 local RunState = {}
@@ -121,6 +122,11 @@ function RunState.start()
 				lastRunning = running
 				epoch += 1
 				Handles.setEpoch(epoch)
+				-- Held copies of deleted instances belong to the DataModel they
+				-- were taken from. Carrying one across the transition would
+				-- restore an edit-time instance into a running world, or the
+				-- reverse.
+				Changes.release()
 				emit()
 			end
 		end

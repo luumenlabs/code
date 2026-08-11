@@ -13,6 +13,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  GitCompareArrows,
   KeyRound,
   ScrollText,
   Trash2,
@@ -20,6 +21,8 @@ import {
   Unplug,
 } from "lucide-react";
 import type { CapabilityReport, OutputEntry, StudioSession } from "@luumen/code-protocol";
+import { isPending } from "@luumen/code-protocol";
+import { ChangesTab } from "@/components/Changes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +38,7 @@ import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
 
-export type DockTab = "studio" | "output";
+export type DockTab = "studio" | "changes" | "output";
 
 const TONE: Record<OutputEntry["type"], string> = {
   output: "text-foreground/70",
@@ -69,12 +72,15 @@ export function RightDock({
   if (!snapshot) return null;
 
   const errors = harness.output.filter((entry) => entry.type === "error").length;
+  const standing = harness.changes.filter(isPending).length;
 
   return (
     <aside className="flex h-full min-h-0 w-dock shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar">
       <div className="min-h-0 flex-1">
         {tab === "studio" ? (
           <StudioTab harness={harness} />
+        ) : tab === "changes" ? (
+          <ChangesTab harness={harness} />
         ) : (
           <OutputTab entries={harness.output} onClear={harness.clearOutput} />
         )}
@@ -82,20 +88,29 @@ export function RightDock({
 
       <div className="shrink-0 border-t border-sidebar-border p-2">
         <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)}>
-          {/* Full width, halves each: two destinations along the foot of a panel
-              read as a switch, where a small pill floating left reads as a
-              control for whatever happens to be above it. */}
+          {/* Full width, thirds: destinations along the foot of a panel read as
+              a switch, where a small pill floating left reads as a control for
+              whatever happens to be above it.
+
+              The labels lose their icons below three tabs' worth of room; the
+              count on a tab is the part that has to survive, because it is the
+              only thing on this row that changes on its own. */}
           <TabsList className="flex w-full">
-            <TabsTrigger value="studio" className="flex-1 justify-center">
+            <TabsTrigger value="studio" className="min-w-0 flex-1 justify-center">
               <Blocks className="size-3" />
               Studio
             </TabsTrigger>
-            <TabsTrigger value="output" className="flex-1 justify-center">
+            <TabsTrigger value="changes" className="min-w-0 flex-1 justify-center">
+              <GitCompareArrows className="size-3" />
+              Changes
+              {standing > 0 && <span className="ml-0.5 tabular-nums">{standing}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="output" className="min-w-0 flex-1 justify-center">
               {/* The same icon the transcript gives an Output line, so the tab
                   and the rows it holds are recognisably the same thing. */}
               <ScrollText className="size-3" />
               Output
-              {errors > 0 && <span className="ml-0.5 text-destructive">{errors}</span>}
+              {errors > 0 && <span className="ml-0.5 text-destructive tabular-nums">{errors}</span>}
             </TabsTrigger>
           </TabsList>
         </Tabs>

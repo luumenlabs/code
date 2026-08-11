@@ -4,6 +4,7 @@
  * up to the server.
  */
 import type { CapabilityReport } from "./capabilities.js";
+import type { ChangeRecord } from "./changes.js";
 import type { OutputEntry, Op } from "./commands.js";
 import type { PairingRequest, RunState, SessionStatus, StudioSession } from "./session.js";
 import type { WireError } from "./errors.js";
@@ -26,7 +27,18 @@ export type ServerEvent =
   | { type: "run"; sessionId: string; state: RunState }
   | { type: "output"; sessionId: string; entries: OutputEntry[] }
   | { type: "capabilities"; report: CapabilityReport }
-  | { type: "activity"; activity: ActivityEvent };
+  | { type: "activity"; activity: ActivityEvent }
+  /**
+   * Journal records that were added or moved on, upserted by id.
+   *
+   * A revert re-sends the record it put back rather than announcing a removal:
+   * the row stays in the panel, struck through, because "this was changed and
+   * then taken back" is a different and more useful thing to be told than
+   * nothing at all.
+   */
+  | { type: "changes"; records: ChangeRecord[] }
+  /** Every record for a Studio window, dropped, because the window is gone. */
+  | { type: "changes.dropped"; session: string };
 
 /**
  * A single Roblox operation, described in Roblox terms rather than protocol

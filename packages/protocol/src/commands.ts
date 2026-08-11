@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import type { CapabilityId, PermissionGroup } from "./capabilities.js";
+import type { ChangeRecord, RevertOutcome } from "./changes.js";
 import { targetSchema } from "./targets.js";
 import type { InstanceDetail, InstanceRef, TreeNode } from "./targets.js";
 import { rbxPropertyMapSchema, rbxValueSchema } from "./value.js";
@@ -24,6 +25,13 @@ export interface CommandSpec {
   /** True when the operation changes Studio state, for the activity log. */
   mutates: boolean;
   summary: string;
+  /**
+   * Housekeeping the user did not ask for, and which gets no row in the
+   * transcript. Reserved for reads the app makes on its own behalf: a panel
+   * refreshing itself is not something the agent did to the place, and a
+   * conversation littered with the app's own bookkeeping is unreadable.
+   */
+  silent?: boolean;
 }
 
 const limit = (max: number, fallback: number) => z.number().int().positive().max(max).default(fallback);
@@ -263,6 +271,36 @@ const screenshotParams = z.object({
     .describe('"studio" captures the Roblox Studio window; "screen" captures the primary display.'),
   maxWidth: z.number().int().min(160).max(4096).default(1280),
   format: z.enum(["png", "jpeg"]).default("png"),
+});
+
+// ---------------------------------------------------------------------------
+// Changes
+// ---------------------------------------------------------------------------
+
+const changesListParams = z.object({
+  chat: z.string().min(1).optional().describe("Only changes made for this conversation. Omit for every change in the window."),
+  limit: limit(2000, 500),
+  includeReverted: z.boolean().default(true),
+});
+
+const changesRevertParams = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500).describe("Change ids from changes.list, in any order."),
+  force: z
+    .boolean()
+    .default(false)
+    .describe("Put the change back even where the instance has been edited since. Off by default: a conflict is reported instead."),
+});
+
+/**
+ * The Studio half of a revert.
+ *
+ * Records travel with the request rather than being held in the plugin, so the
+ * server stays the single owner of the journal and the plugin only holds what
+ * cannot be described in JSON — the copy of a destroyed subtree.
+ */
+const changesApplyParams = z.object({
+  records: z.array(z.any()).min(1).max(500),
+  force: z.boolean().default(false),
 });
 
 // ---------------------------------------------------------------------------
@@ -604,6 +642,34 @@ export const COMMANDS = {
     mutates: false,
     summary: "Capture the Roblox Studio window as an image.",
   },
+
+  "changes.list": {
+    params: changesListParams,
+    executor: "server",
+    permission: "inspect",
+    capability: null,
+    mutates: false,
+    // Read from the server's own journal, so it answers with Studio closed —
+    // which is exactly when someone wants to read what was done to the place.
+    silent: true,
+    summary: "List the DataModel changes recorded in this session, with what each one changed.",
+  },
+  "changes.revert": {
+    params: changesRevertParams,
+    executor: "server",
+    permission: "edit",
+    capability: "edit.instances",
+    mutates: true,
+    summary: "Put recorded changes back, newest first, refusing any the user has edited since.",
+  },
+  "changes.apply": {
+    params: changesApplyParams,
+    executor: "studio",
+    permission: "edit",
+    capability: "edit.instances",
+    mutates: true,
+    summary: "Internal: apply the inverse of a set of change records inside Studio.",
+  },
 } as const satisfies Record<string, CommandSpec>;
 
 export type Op = keyof typeof COMMANDS;
@@ -617,6 +683,15 @@ export const OPS = Object.keys(COMMANDS) as Op[];
 
 export function isOp(value: unknown): value is Op {
   return typeof value === "string" && value in COMMANDS;
+}
+
+/**
+ * True when the operation is the app's own bookkeeping and earns no row in the
+ * transcript. Read through a function because `COMMANDS` is inferred literally,
+ * so the field is simply absent on every entry that does not set it.
+ */
+export function isSilent(op: Op): boolean {
+  return (COMMANDS[op] as CommandSpec).silent === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -672,6 +747,16 @@ export interface MutationResult {
   instances: InstanceRef[];
   /** Undo waypoint name recorded in Studio, when undo history was available. */
   undoLabel: string | null;
+  /**
+   * Before and after, for the change journal.
+   *
+   * The server takes these out of the result before it reaches the agent. They
+   * are for the user's review panel, not for the model: the old source of a
+   * script it just rewrote is the single largest thing this protocol can carry,
+   * and handing it back to the agent that supplied the new one would double the
+   * cost of every write to say nothing it does not already know.
+   */
+  changes?: import("./changes.js").ChangeDraft[];
 }
 
 export interface ScriptSourceResult {
@@ -749,6 +834,10 @@ export interface CommandResults {
   "input.gui_click": GuiClickResult;
   "view.viewport_info": ViewportInfo;
   "view.screenshot": ScreenshotResult;
+
+  "changes.list": { records: ChangeRecord[]; total: number; truncated: boolean };
+  "changes.revert": { outcomes: RevertOutcome[]; reverted: number };
+  "changes.apply": { outcomes: RevertOutcome[] };
 }
 
 export type CommandResult<O extends Op> = CommandResults[O];

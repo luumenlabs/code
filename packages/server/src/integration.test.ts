@@ -607,6 +607,149 @@ describe("status", () => {
   });
 });
 
+describe("change journal", () => {
+  /** A plugin that reports a property write the way the real one does. */
+  function editingPlugin(fake: FakePlugin): FakePlugin {
+    return fake.on("dm.set_properties", (params) => ({
+      instances: [{ handle: "@h1", path: params.target, name: "Baseplate", className: "Part", childCount: 0 }],
+      undoLabel: "Set properties on Baseplate",
+      applied: Object.keys(params.properties),
+      rejected: {},
+      changes: [
+        {
+          kind: "properties",
+          target: { handle: "@h1", path: params.target, name: "Baseplate", className: "Part", childCount: 0 },
+          parentPath: "game.Workspace",
+          summary: "Set Anchored",
+          revertable: true,
+          properties: [{ name: "Anchored", before: false, after: true }],
+        },
+      ],
+    }));
+  }
+
+  it("keeps the before-and-after out of the agent's result", async () => {
+    plugin = editingPlugin(await connectPlugin());
+    plugin.start();
+
+    const result = (await server.execute("dm.set_properties", {
+      target: "game.Workspace.Baseplate",
+      properties: { Anchored: true },
+    })) as any;
+
+    expect(result.applied).toEqual(["Anchored"]);
+    expect(result.changes).toBeUndefined();
+  });
+
+  it("records it against the conversation that asked, and lists it back", async () => {
+    plugin = editingPlugin(await connectPlugin());
+    plugin.start();
+
+    await server.execute(
+      "dm.set_properties",
+      { target: "game.Workspace.Baseplate", properties: { Anchored: true } },
+      { chat: "thread-a" },
+    );
+
+    const mine = (await server.execute("changes.list", { chat: "thread-a" })) as any;
+    expect(mine.records).toHaveLength(1);
+    expect(mine.records[0].summary).toBe("Set Anchored");
+    expect(mine.records[0].op).toBe("dm.set_properties");
+    expect(mine.records[0].properties[0]).toMatchObject({ name: "Anchored", before: false, after: true });
+
+    const someoneElse = (await server.execute("changes.list", { chat: "thread-b" })) as any;
+    expect(someoneElse.records).toHaveLength(0);
+  });
+
+  it("hands the record to Studio to put back, and marks it reverted", async () => {
+    let applied: any = null;
+
+    plugin = editingPlugin(await connectPlugin()).on("changes.apply", (params) => {
+      applied = params;
+      return { outcomes: params.records.map((record: any) => ({ id: record.id, status: "reverted" })) };
+    });
+    plugin.start();
+
+    await server.execute(
+      "dm.set_properties",
+      { target: "game.Workspace.Baseplate", properties: { Anchored: true } },
+      { chat: "thread-revert" },
+    );
+
+    const before = (await server.execute("changes.list", { chat: "thread-revert" })) as any;
+    const id = before.records[0].id;
+
+    const result = (await server.execute("changes.revert", { ids: [id] })) as any;
+    expect(result.reverted).toBe(1);
+    expect(applied.records[0].id).toBe(id);
+    // The old value travels to Studio as the Nil-safe wire form, so a `false`
+    // that was there before is still a `false` when it arrives.
+    expect(applied.records[0].properties[0].before).toBe(false);
+
+    const after = (await server.execute("changes.list", { chat: "thread-revert" })) as any;
+    expect(after.records[0].revertedAt).toBeTypeOf("number");
+
+    // Asking twice is not an error, and it does not go back to Studio again.
+    applied = null;
+    const again = (await server.execute("changes.revert", { ids: [id] })) as any;
+    expect(again.outcomes[0]).toMatchObject({ status: "reverted", reason: "Already put back." });
+    expect(applied).toBeNull();
+  });
+
+  it("reports a conflict rather than counting it as put back", async () => {
+    plugin = editingPlugin(await connectPlugin()).on("changes.apply", (params) => ({
+      outcomes: params.records.map((record: any) => ({
+        id: record.id,
+        status: "conflict",
+        reason: "Anchored has been changed since.",
+      })),
+    }));
+    plugin.start();
+
+    await server.execute(
+      "dm.set_properties",
+      { target: "game.Workspace.Baseplate", properties: { Anchored: true } },
+      { chat: "thread-conflict" },
+    );
+
+    const listed = (await server.execute("changes.list", { chat: "thread-conflict" })) as any;
+    const result = (await server.execute("changes.revert", { ids: [listed.records[0].id] })) as any;
+
+    expect(result.reverted).toBe(0);
+    expect(result.outcomes[0].status).toBe("conflict");
+
+    const after = (await server.execute("changes.list", { chat: "thread-conflict" })) as any;
+    expect(after.records[0].revertedAt).toBeUndefined();
+  });
+
+  it("refuses ids it has never seen rather than pretending", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    await expect(server.execute("changes.revert", { ids: ["ch_nope_0"] })).rejects.toMatchObject({
+      code: "TARGET_NOT_FOUND",
+    });
+  });
+
+  it("journals nothing for an operation that failed", async () => {
+    plugin = (await connectPlugin()).on("dm.set_properties", () => {
+      throw new Error("Roblox said no");
+    });
+    plugin.start();
+
+    await expect(
+      server.execute(
+        "dm.set_properties",
+        { target: "game.Workspace.Baseplate", properties: { Anchored: true } },
+        { chat: "thread-failed" },
+      ),
+    ).rejects.toBeTruthy();
+
+    const listed = (await server.execute("changes.list", { chat: "thread-failed" })) as any;
+    expect(listed.records).toHaveLength(0);
+  });
+});
+
 describe("settings", () => {
   it("persists permissions across store instances", () => {
     const store = new SettingsStore();

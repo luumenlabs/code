@@ -52,9 +52,22 @@ function writeAttachments(attachments: Attachment[]): string[] {
 /* eslint-disable @typescript-eslint/no-explicit-any -- Codex's event shape is
    whatever the installed CLI sends; these readers exist to survive that. */
 
-/** The id both halves of a call agree on, whichever field carries it. */
-function callId(item: Record<string, any>): string {
-  return String(item.id ?? item.call_id ?? item.callId ?? item.tool_call_id ?? nextId("tool"));
+/**
+ * A tool call's id, made unique across the conversation.
+ *
+ * Codex's own id is only unique within one turn: the modern stream numbers
+ * items `item_0`, `item_1`, and starts again from zero on the next `codex
+ * exec`. The transcript stores rows by id and replaces what it already has, so
+ * the second turn's first tool call landed on the first turn's first tool call
+ * — a shell command showing an MCP call's output, which is a lie about what the
+ * agent did rather than a cosmetic glitch.
+ *
+ * The turn number is the scope Codex leaves out. Begin and end events inside
+ * one turn still agree, which is the property the pairing depends on.
+ */
+function callId(turn: string, item: Record<string, any>): string {
+  const own = item.id ?? item.call_id ?? item.callId ?? item.tool_call_id;
+  return own === undefined ? nextId("tool") : `t${turn}_${String(own)}`;
 }
 
 /**
@@ -113,6 +126,16 @@ export class CodexAdapter implements AgentAdapter {
   private started = false;
   private hasConversation = false;
   private stderr = "";
+  /**
+   * Scopes Codex's per-turn item ids to this conversation.
+   *
+   * The counter alone is not enough: a thread reopened after a restart starts
+   * counting at one again, and its transcript already holds rows from the first
+   * time it ran. The launch stamp is what keeps the second session's first turn
+   * from landing on the first session's.
+   */
+  private readonly run = Date.now().toString(36);
+  private turn = 0;
 
   get running(): boolean {
     return this.started;
@@ -171,9 +194,17 @@ export class CodexAdapter implements AgentAdapter {
        * against, and which the user can see and revoke mid-conversation. What
        * is given up is protection against a shell command the agent was told
        * not to run, in a directory with nothing in it.
+       *
+       * Set as a config override rather than with `-s`, which is the same
+       * setting by a name only some of these commands know. `codex exec` takes
+       * `-s`; `codex exec resume` does not, and rejects the whole invocation
+       * with "unexpected argument '-s' found". That failed every turn after the
+       * first, which reads as the agent giving up mid-task rather than as a
+       * command line that was never valid. `-c` is accepted by both, and is
+       * checked here against `--strict-config`.
        */
-      "-s",
-      "danger-full-access",
+      "-c",
+      `sandbox_mode=${toml("danger-full-access")}`,
       "-c",
       `approval_policy=${toml("never")}`,
       "-c",
@@ -206,6 +237,7 @@ export class CodexAdapter implements AgentAdapter {
       : ["exec", "--json", "--skip-git-repo-check", ...images, ...overrides, "-"];
 
     this.stderr = "";
+    this.turn += 1;
     options.onEvent({ type: "state", state: "thinking" });
 
     const child = spawnAgent(options.command, args, options.cwd);
@@ -287,8 +319,12 @@ export class CodexAdapter implements AgentAdapter {
     const envelope = String(event.type ?? "");
     const finished = envelope === "item.completed" || envelope === "item.failed";
 
-    if (kind === "session.created" || kind === "session_configured") {
-      const sessionId = String(item.session_id ?? item.sessionId ?? "");
+    // `thread.started` is what a current Codex sends, and it carries the id
+    // under `thread_id`. Without it `resumeId` stayed null and every follow-up
+    // resumed with `--last` — whichever conversation Codex ran most recently,
+    // which with several chats open is routinely a different one.
+    if (kind === "session.created" || kind === "session_configured" || kind === "thread.started") {
+      const sessionId = String(item.session_id ?? item.sessionId ?? item.thread_id ?? item.threadId ?? "");
       if (sessionId) this.resumeId = sessionId;
       emit({ type: "session", sessionId, model: item.model ?? null });
       return;
@@ -307,21 +343,21 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     if (kind === "command_execution" || kind === "exec_command_begin" || kind === "local_shell_call") {
-      const id = callId(item);
+      const id = callId(`${this.run}_${this.turn}`, item);
       emit({ type: "tool-use", id, name: "shell", input: item.command ?? item.parsed_cmd ?? {} });
       if (finished) emit({ type: "tool-result", id, isError: failed(item), text: output(item) });
       return;
     }
 
     if (kind === "mcp_tool_call" || kind === "mcp_tool_call_begin") {
-      const id = callId(item);
+      const id = callId(`${this.run}_${this.turn}`, item);
       emit({ type: "tool-use", id, name: mcpToolName(item), input: toolInput(item) });
       if (finished) emit({ type: "tool-result", id, isError: failed(item), text: output(item) });
       return;
     }
 
     if (kind === "mcp_tool_call_end" || kind === "exec_command_end" || kind === "command_execution_output") {
-      emit({ type: "tool-result", id: callId(item), isError: failed(item), text: output(item) });
+      emit({ type: "tool-result", id: callId(`${this.run}_${this.turn}`, item), isError: failed(item), text: output(item) });
       return;
     }
 

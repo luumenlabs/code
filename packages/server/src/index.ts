@@ -9,6 +9,7 @@ import { LuuCodeError } from "@luumen/code-protocol";
 import type { CapabilityReport, Op, SessionStatus, StudioRealm } from "@luumen/code-protocol";
 import { SettingsStore } from "./config/settings.js";
 import { generateToken, writeClientAuth } from "./core/auth.js";
+import { ChangeJournal } from "./core/changes.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { EventBus } from "./core/events.js";
 import { OutputStore } from "./core/output.js";
@@ -60,6 +61,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
   const settings = options.settings ?? new SettingsStore();
   const bus = new EventBus();
   const output = new OutputStore();
+  const changes = new ChangeJournal();
   const nativeInput = createNativeInput();
 
   let screenshotProvider: ScreenshotProvider | null = options.screenshotProvider ?? platformScreenshotProvider();
@@ -88,6 +90,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     settings,
     bus,
     output,
+    changes,
     runControl,
     nativeInput,
     getScreenshotProvider: () => screenshotProvider,
@@ -143,6 +146,11 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     disconnectSession: (sessionId) => {
       sessions.disconnect(sessionId);
       output.drop(sessionId);
+
+      // The window's history goes with it. Every record names instances in a
+      // DataModel that is no longer reachable, and the plugin's copies of the
+      // deleted ones went with the connection.
+      if (changes.dropSession(sessionId)) bus.emit({ type: "changes.dropped", session: sessionId });
     },
     setScreenshotProvider: (provider) => {
       screenshotProvider = provider ?? platformScreenshotProvider();

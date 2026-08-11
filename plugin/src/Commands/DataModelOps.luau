@@ -10,6 +10,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Selection = game:GetService("Selection")
 
+local Changes = require(script.Parent.Parent.Changes)
 local Errors = require(script.Parent.Parent.Errors)
 local Handles = require(script.Parent.Parent.Handles)
 local History = require(script.Parent.Parent.History)
@@ -340,6 +341,17 @@ function DataModelOps.setProperties(params: any): any
 	local applied = {}
 	local rejected = {}
 
+	-- Read every name the caller asked for, before any of them are written. A
+	-- write ordered after another on the same instance can change what the
+	-- earlier one would have read back, so "before" has to mean before the whole
+	-- operation, not before each assignment.
+	local requested = {}
+	for name in pairs(params.properties) do
+		table.insert(requested, name)
+	end
+
+	local before, unreadable = Changes.readValues(instance, requested)
+
 	local _, undoLabel = History.record(string.format("Set properties on %s", instance.Name), function()
 		for name, raw in pairs(params.properties) do
 			local decodedOk, decoded = pcall(decode, raw)
@@ -366,11 +378,14 @@ function DataModelOps.setProperties(params: any): any
 		Errors.throw("NOT_ALLOWED_BY_ROBLOX", string.format("No properties could be set on %s", Path.of(instance)), { rejected = rejected })
 	end
 
+	local record = Changes.properties(instance, before, unreadable, applied)
+
 	return {
 		instances = { Handles.describe(instance) },
 		undoLabel = undoLabel,
 		applied = applied,
 		rejected = rejected,
+		changes = record and { record } or {},
 	}
 end
 
@@ -425,7 +440,7 @@ function DataModelOps.create(params: any): any
 		return instance
 	end)
 
-	return { instances = { Handles.describe(created) }, undoLabel = undoLabel }
+	return { instances = { Handles.describe(created) }, undoLabel = undoLabel, changes = { Changes.create(created) } }
 end
 
 function DataModelOps.delete(params: any): any
@@ -437,22 +452,42 @@ function DataModelOps.delete(params: any): any
 	-- Describe before destroying: afterwards the paths are gone.
 	local described = Handles.describeMany(instances)
 
-	local _, undoLabel = History.record(string.format("Delete %d instance(s)", #instances), function()
-		for _, instance in ipairs(instances) do
-			local ok, err = pcall(function()
-				instance:Destroy()
-			end)
-			if not ok then
-				error(Errors.fromRobloxError(tostring(err)), 0)
+	-- And take the copies before too, for the same reason. One record per
+	-- instance rather than one for the batch: the user deleting five things and
+	-- wanting four of them back is the ordinary case, not an exotic one.
+	local records = {}
+	for _, instance in ipairs(instances) do
+		table.insert(records, Changes.delete(instance))
+	end
+
+	local ok, undoLabel = pcall(function()
+		local _, label = History.record(string.format("Delete %d instance(s)", #instances), function()
+			for _, instance in ipairs(instances) do
+				local destroyed, err = pcall(function()
+					instance:Destroy()
+				end)
+				if not destroyed then
+					error(Errors.fromRobloxError(tostring(err)), 0)
+				end
 			end
-		end
+		end)
+		return label
 	end)
 
-	return { instances = described, undoLabel = undoLabel, deleted = #instances }
+	if not ok then
+		-- The delete was rolled back, so the copies are of instances that are
+		-- still there. Holding them would spend the session's budget for
+		-- restorable deletes on deletes that never happened.
+		Changes.discard(records)
+		error(undoLabel, 0)
+	end
+
+	return { instances = described, undoLabel = undoLabel, deleted = #instances, changes = records }
 end
 
 function DataModelOps.rename(params: any): any
 	local instance = Handles.resolve(params.target)
+	local previous = instance.Name
 
 	local _, undoLabel = History.record(string.format("Rename %s", instance.Name), function()
 		local ok, err = pcall(function()
@@ -463,7 +498,13 @@ function DataModelOps.rename(params: any): any
 		end
 	end)
 
-	return { instances = { Handles.describe(instance) }, undoLabel = undoLabel }
+	local record = Changes.rename(instance, previous)
+
+	return {
+		instances = { Handles.describe(instance) },
+		undoLabel = undoLabel,
+		changes = record and { record } or {},
+	}
 end
 
 function DataModelOps.reparent(params: any): any
@@ -478,6 +519,9 @@ function DataModelOps.reparent(params: any): any
 		)
 	end
 
+	local previousParent = instance.Parent
+	local previousPath = previousParent and Path.of(previousParent) or nil
+
 	local _, undoLabel = History.record(string.format("Move %s", instance.Name), function()
 		local ok, err = pcall(function()
 			instance.Parent = parent
@@ -487,7 +531,13 @@ function DataModelOps.reparent(params: any): any
 		end
 	end)
 
-	return { instances = { Handles.describe(instance) }, undoLabel = undoLabel }
+	local record = previousPath and Changes.reparent(instance, previousPath) or nil
+
+	return {
+		instances = { Handles.describe(instance) },
+		undoLabel = undoLabel,
+		changes = record and { record } or {},
+	}
 end
 
 function DataModelOps.clone(params: any): any
@@ -516,12 +566,19 @@ function DataModelOps.clone(params: any): any
 		return cloned
 	end)
 
-	return { instances = { Handles.describe(copy) }, undoLabel = undoLabel }
+	return { instances = { Handles.describe(copy) }, undoLabel = undoLabel, changes = { Changes.create(copy) } }
 end
 
 function DataModelOps.setAttributes(params: any): any
 	local instance = Handles.resolve(params.target)
 	local applied = {}
+
+	local requested = {}
+	for name in pairs(params.attributes) do
+		table.insert(requested, name)
+	end
+
+	local before = Changes.readAttributes(instance, requested)
 
 	local _, undoLabel = History.record(string.format("Set attributes on %s", instance.Name), function()
 		for name, raw in pairs(params.attributes) do
@@ -541,25 +598,52 @@ function DataModelOps.setAttributes(params: any): any
 		end
 	end)
 
-	return { instances = { Handles.describe(instance) }, undoLabel = undoLabel, applied = applied }
+	local record = Changes.attributes(instance, before, applied)
+
+	return {
+		instances = { Handles.describe(instance) },
+		undoLabel = undoLabel,
+		applied = applied,
+		changes = record and { record } or {},
+	}
 end
 
 function DataModelOps.setTags(params: any): any
 	local instance = Handles.resolve(params.target)
 
+	-- Only tags the call actually moved. Adding a tag the instance already
+	-- carried changed nothing, and offering to remove it on revert would take
+	-- away something the agent never put there.
+	local existing = {}
+	for _, tag in ipairs(tagsOf(instance)) do
+		existing[tag] = true
+	end
+
+	local added = {}
+	local removed = {}
+
 	local _, undoLabel = History.record(string.format("Set tags on %s", instance.Name), function()
 		for _, tag in ipairs(params.add or {}) do
 			CollectionService:AddTag(instance, tag)
+			if not existing[tag] then
+				table.insert(added, tag)
+			end
 		end
 		for _, tag in ipairs(params.remove or {}) do
 			CollectionService:RemoveTag(instance, tag)
+			if existing[tag] then
+				table.insert(removed, tag)
+			end
 		end
 	end)
+
+	local record = Changes.tags(instance, added, removed)
 
 	return {
 		instances = { Handles.describe(instance) },
 		undoLabel = undoLabel,
 		tags = tagsOf(instance),
+		changes = record and { record } or {},
 	}
 end
 

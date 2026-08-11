@@ -19,11 +19,14 @@ const CATEGORIES: Record<string, Category> = {
   input: "input",
   view: "visual",
   session: "inspect",
+  changes: "edit",
 };
 
 const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "script.set", "script.patch", "script.create"];
 
 export function categoryFor(op: Op): Category {
+  // Reading the journal is a read, whatever its namespace suggests.
+  if (op === "changes.list") return "inspect";
   if (MUTATING_PREFIXES.some((prefix) => op.startsWith(prefix))) return "edit";
   if (op === "dm.selection.set") return "edit";
   if (op === "view.screenshot") return "visual";
@@ -124,6 +127,14 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     case "view.screenshot":
       return "Capturing a screenshot";
 
+    case "changes.list":
+      return "Reading the change history";
+    case "changes.revert":
+    case "changes.apply": {
+      const count = ((params.ids ?? params.records) as unknown[] | undefined)?.length ?? 0;
+      return count === 1 ? "Putting a change back" : `Putting ${count} changes back`;
+    }
+
     case "session.status":
       return "Checking the Studio connection";
     case "session.capabilities":
@@ -183,6 +194,16 @@ export function detailFor(op: Op, result: unknown): string | null {
       return data.clicked?.path ? `clicked ${data.clicked.path}` : null;
     case "view.screenshot":
       return `${data.width}x${data.height}`;
+    case "changes.revert": {
+      const outcomes = (data.outcomes as Array<{ status: string }>) ?? [];
+      const reverted = data.reverted ?? 0;
+      const refused = outcomes.filter((entry) => entry.status !== "reverted").length;
+      // A revert that put half of what was asked back is not a revert that
+      // worked, and the count in front of the reason is the only honest summary.
+      const parts = [`${reverted} put back`];
+      if (refused > 0) parts.push(`${refused} refused`);
+      return parts.join(", ");
+    }
     default:
       return null;
   }

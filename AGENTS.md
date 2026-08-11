@@ -15,6 +15,9 @@ Everything runs on `127.0.0.1`. Nothing leaves the machine.
 | `packages/protocol` | Shared types. `commands.ts` is the single source of truth for every Roblox operation: params schema, permission group, capability, summary. |
 | `packages/server` | The local server (default `127.0.0.1:33770`): Studio bridge, permissions, dispatcher, and the MCP interface. Also the `luu-code` / `luu-code-mcp` CLIs. |
 | `packages/app` | Electron. `src/main` (agent sessions, threads, settings, updater, plugin installer), `src/renderer` (React + Tailwind + Radix), `src/shared` (the IPC contract and types both sides use). |
+
+`packages/protocol/src/changes.ts` and `plugin/src/Changes.luau` are the two ends
+of the change journal; see [The change journal](#the-change-journal).
 | `plugin/` | The Luau Studio plugin. Its own Luumen project driven by `luu`, toolchain pinned in `rokit.toml`. Needs none of the Node toolchain. |
 
 The two halves are independent: you can work on the plugin without Node, and on
@@ -84,6 +87,50 @@ Operations are defined once and flow outward.
 5. Add an MCP tool in `packages/server/src/mcp/tools.ts`. Write the description
    for an agent that has never seen this project.
 6. Add a test.
+
+**If it mutates, it also has to say what it changed.** Return a `changes` array
+of drafts built by `plugin/src/Changes.luau` — see below. An operation that
+edits the place without one is invisible to review and cannot be taken back.
+
+## The change journal
+
+The user can read what was done to the DataModel and put any of it back. There
+is no working tree to diff, so this is a record of individual mutations rather
+than a file history.
+
+`plugin/src/Changes.luau` builds a draft per mutation, holding both sides of the
+write, and takes a copy of anything destroyed so a delete can be undone. Drafts
+ride back on the command result. `packages/server/src/core/changes.ts` strips
+them off before the result reaches the agent, stamps them with the chat and the
+activity they came from, and keeps them per Studio window. The app reads them
+through `changes.list` and puts them back through `changes.revert`, which hands
+the records to `changes.apply` in Studio.
+
+Four things about it are load-bearing:
+
+- **The records never reach the agent.** `takeChanges` removes them in the
+  dispatcher. The old source of a script the agent just rewrote is the largest
+  thing this protocol can carry, and returning it would double the cost of every
+  write to tell the model something it already knows.
+- **`after` is recorded as carefully as `before`.** Nothing stops the user
+  editing the same instance a second later. A revert compares what is in the
+  place now against what the change left behind and refuses anything that has
+  moved on since, unless the user asks again with `force`. That refusal is the
+  feature, not an obstacle to work around.
+- **Revertible means revertible.** A property Roblox would not read, an instance
+  with `Archivable` off, a script too large to keep a copy of — each is recorded
+  with `revertable: false` and a reason the panel shows instead of a button.
+  Bounds are applied when the copy is taken, never by evicting one later: a row
+  that says it can be put back has to stay true.
+- **It is in memory, and per window.** Records only mean anything next to the
+  live DataModel they describe. Disconnecting a window drops its history, and an
+  edit/run transition releases the held copies, because an edit-time instance
+  must not be restored into a running world.
+
+Reverting is not `Ctrl+Z`. Studio's undo stack is linear and shared with the
+user's own edits; "take back that one thing the agent did an hour ago" is not a
+question a stack can answer. Both exist: every mutation still runs inside a
+`ChangeHistoryService` recording.
 
 ## House style
 
@@ -160,3 +207,13 @@ These are all real, and all cost time when hit blind.
   `LUU_CODE_HOME` for an isolated run.
 - **`plugin/` has no `.rbxm` until you build one.** A fresh clone cannot install a
   plugin from the app until `luu run bundle` has run.
+- **A plugin module cannot be named after a property of `Script`.** Every module
+  is reached as `script.Parent.<Name>`, `script.Parent` is a `LuaSourceContainer`,
+  and Roblox resolves properties before children — so a module called `Source`
+  is never found. The index hands back the parent script's own text and `require`
+  fails on a string, quoting the whole of `init.server.luau` back at you and
+  naming neither file. `ScriptSource.luau` is called that for this reason.
+  Nothing catches it: stylua, selene, and luau-lsp all pass, because to them the
+  property access is perfectly valid. The same trap is waiting for `Name`,
+  `Parent`, `Archivable`, `ClassName`, `Enabled`, `Capabilities`, and
+  `RunContext`.

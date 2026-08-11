@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ChangesProvider } from "@/components/Changes";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { PairingDialog } from "@/components/PairingDialog";
@@ -56,62 +57,66 @@ export function App(): React.JSX.Element {
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
-      <div className="flex h-full flex-col">
-        <TitleBar
-          harness={harness}
-          dockOpen={dockOpen}
-          dockVisible={dockOpen && !settingsOpen}
-          onToggleDock={() => setDockOpen((open) => !open)}
-        />
-
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar
+      {/* The transcript's edit rows carry their own diffs, and they sit four
+          components deep inside folds that have no use for the harness. */}
+      <ChangesProvider harness={harness}>
+        <div className="flex h-full flex-col">
+          <TitleBar
             harness={harness}
-            onSearch={() => setPaletteOpen(true)}
-            settingsOpen={settingsOpen}
-            onToggleSettings={() => setSettingsOpen((open) => !open)}
-            onExitSettings={() => setSettingsOpen(false)}
-            onOpenUpdates={() => {
-              setSettingsSection("updates");
-              setSettingsOpen(true);
-            }}
+            dockOpen={dockOpen}
+            dockVisible={dockOpen && !settingsOpen}
+            onToggleDock={() => setDockOpen((open) => !open)}
           />
 
-          {settingsOpen ? (
-            <SettingsView
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <Sidebar
               harness={harness}
-              section={settingsSection}
-              onSectionChange={setSettingsSection}
-              onClose={() => setSettingsOpen(false)}
+              onSearch={() => setPaletteOpen(true)}
+              settingsOpen={settingsOpen}
+              onToggleSettings={() => setSettingsOpen((open) => !open)}
+              onExitSettings={() => setSettingsOpen(false)}
+              onOpenUpdates={() => {
+                setSettingsSection("updates");
+                setSettingsOpen(true);
+              }}
             />
-          ) : (
-            <>
-              <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <Transcript
-                  items={harness.timeline}
-                  onExample={setDraft}
-                  showThinking={harness.settings.showThinking}
-                  placeName={place?.place.name ?? null}
-                  busy={harness.busy}
-                  state={harness.snapshot?.session.state}
-                />
-                <Composer harness={harness} value={draft} onValueChange={setDraft} />
-              </main>
 
-              {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
-            </>
-          )}
+            {settingsOpen ? (
+              <SettingsView
+                harness={harness}
+                section={settingsSection}
+                onSectionChange={setSettingsSection}
+                onClose={() => setSettingsOpen(false)}
+              />
+            ) : (
+              <>
+                <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <Transcript
+                    items={harness.timeline}
+                    onExample={setDraft}
+                    showThinking={harness.settings.showThinking}
+                    placeName={place?.place.name ?? null}
+                    busy={harness.busy}
+                    state={harness.snapshot?.session.state}
+                  />
+                  <Composer harness={harness} value={draft} onValueChange={setDraft} />
+                </main>
+
+                {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
+              </>
+            )}
+          </div>
         </div>
-      </div>
 
-      <CommandPalette
-        harness={harness}
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onExitSettings={() => setSettingsOpen(false)}
-      />
-      <PairingDialog request={harness.pendingPairing} />
+        <CommandPalette
+          harness={harness}
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onExitSettings={() => setSettingsOpen(false)}
+        />
+        <PairingDialog request={harness.pendingPairing} />
+      </ChangesProvider>
     </TooltipProvider>
   );
 }
