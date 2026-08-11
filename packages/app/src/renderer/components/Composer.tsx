@@ -15,10 +15,13 @@ export function Composer({
   harness,
   value,
   onValueChange,
+  onOpenPermissions,
 }: {
   harness: Harness;
   value: string;
   onValueChange: (value: string) => void;
+  /** Opens Settings on the permissions section, from the access chip. */
+  onOpenPermissions: () => void;
 }): React.JSX.Element {
   const textarea = React.useRef<HTMLTextAreaElement>(null);
   const filePicker = React.useRef<HTMLInputElement>(null);
@@ -160,6 +163,7 @@ export function Composer({
               <AccessChip
                 permissions={snapshot.capabilities.permissions}
                 disabledTools={snapshot.capabilities.disabledTools}
+                onOpenAdvanced={onOpenPermissions}
               />
             )}
 

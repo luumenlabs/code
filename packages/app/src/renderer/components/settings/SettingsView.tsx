@@ -66,12 +66,12 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ElementType }> =
 ];
 
 const PERMISSION_COPY: Record<PermissionGroup, { label: string; detail: string }> = {
-  inspect: { label: "Look around", detail: "Read your instances, scripts, and what the game is doing" },
-  edit: { label: "Change the place", detail: "Create, edit, and delete instances and scripts" },
-  playtest: { label: "Playtest", detail: "Start and stop the game, and run its tests" },
-  exec: { label: "Run Luau", detail: "Run code inside your Studio session" },
+  inspect: { label: "Look around", detail: "Read instances, scripts, and runtime state" },
+  edit: { label: "Change the place", detail: "Create, edit, and delete" },
+  playtest: { label: "Playtest", detail: "Start, stop, and run tests" },
+  exec: { label: "Run Luau", detail: "Execute code in your session" },
   input: { label: "Play the game", detail: "Click and type in the running game" },
-  screenshot: { label: "See your place", detail: "Screenshots, and pointing the Studio camera at things" },
+  screenshot: { label: "See your place", detail: "Screenshots and camera" },
 };
 
 export function SettingsView({
@@ -341,17 +341,8 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
 }
 
 /**
- * Two levels of control, one for browsing and one for precision.
- *
- * The group switch is what almost everyone will use, and it stays the primary
- * row for that reason. Underneath it, each tool can be turned off on its own —
- * "change the place" is a single switch over creating a part and destroying a
- * subtree, and someone happy for an agent to write scripts but not delete
- * instances previously had to turn the whole group off to say so.
- *
- * The tools are folded away by default. Six rows is a page someone can read; the
- * fifty underneath are a reference to go looking in, and showing them all at
- * once would bury the control that actually matters.
+ * The group switch is what most people will use; the tools under it are folded
+ * away because six rows is a page you can read and fifty is a reference.
  */
 function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
   const report = harness.snapshot?.capabilities;
@@ -363,10 +354,7 @@ function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
   };
 
   return (
-    <Panel
-      title="Permissions"
-      description="What the agent is allowed to do to your place. The groups are also on the chip beside the send button; open one to turn off a single tool without losing the rest."
-    >
+    <Panel title="Permissions" description="What the agent may do to your place. Open a group to turn off a single tool.">
       {PERMISSION_GROUPS.map((group) => {
         const groupOn = policy.permissions[group] !== false;
         const tally = groupTally(policy, group);
@@ -386,9 +374,8 @@ function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
                     <span className="text-[13.5px] font-medium">{PERMISSION_COPY[group].label}</span>
-                    {/* Counted against the group switch too, so a group that is
-                        off reads "0 of 9" rather than listing tools as on that
-                        cannot run. */}
+                    {/* Counted against the group switch too, so one that is off
+                        reads 0 of 9 rather than listing tools that cannot run. */}
                     <span className="text-[11.5px] text-muted-foreground tabular-nums">
                       {tally.allowed} of {tally.total}
                     </span>
@@ -424,9 +411,8 @@ function ToolList({
   const tools = toolsInGroup(group);
 
   return (
-    // Dimmed rather than hidden when the group is off: the switches still show
-    // what the user chose underneath, so turning the group back on does not
-    // look like it forgot.
+    // Dimmed rather than hidden when the group is off, so the switches still
+    // show what was chosen underneath.
     <div className={cn("mb-3 ml-5 rounded-md border", !groupOn && "opacity-45")}>
       {tools.map((op) => {
         const essential = toolControl(op) === "essential";
@@ -440,7 +426,7 @@ function ToolList({
             </div>
 
             {essential ? (
-              <Hint label="Always on. This is how an agent finds out what is wrong — without it every later failure is unexplainable.">
+              <Hint label="Always on — this is how an agent reports what is wrong.">
                 <Lock className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
               </Hint>
             ) : (

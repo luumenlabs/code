@@ -193,7 +193,15 @@ export function App(): React.JSX.Element {
                       busy={harness.busy}
                       state={harness.snapshot?.session.state}
                     />
-                    <Composer harness={harness} value={draft} onValueChange={setDraft} />
+                    <Composer
+                      harness={harness}
+                      value={draft}
+                      onValueChange={setDraft}
+                      onOpenPermissions={() => {
+                        setSettingsSection("permissions");
+                        setSettingsOpen(true);
+                      }}
+                    />
                   </main>
                 )}
 
