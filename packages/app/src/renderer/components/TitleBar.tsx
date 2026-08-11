@@ -16,11 +16,24 @@ import type { Harness } from "@/state";
 
 export function TitleBar({
   harness,
+  sidebarWidth,
+  dockWidth,
   dockOpen,
   dockVisible,
   onToggleDock,
 }: {
   harness: Harness;
+  /**
+   * The widths the panels below actually got.
+   *
+   * The title bar carries a strip of each panel's colour up to the top of the
+   * window, so the panel reads as a column rather than a block floating under a
+   * bar. That only works if the strips are the same width as the panels — these
+   * were fixed at the old CSS variables, so dragging a panel left its strip
+   * behind and put a visible step in the divider.
+   */
+  sidebarWidth: number;
+  dockWidth: number;
   dockOpen: boolean;
   /**
    * Whether the dock is actually on screen, which is not the same as open:
@@ -75,8 +88,9 @@ export function TitleBar({
      */
     <header className="drag-region flex h-topbar shrink-0 items-stretch bg-background">
       <div
+        style={{ width: sidebarWidth }}
         className={cn(
-          "flex w-sidebar shrink-0 items-center gap-3 border-r border-sidebar-border bg-sidebar",
+          "flex shrink-0 items-center gap-3 border-r border-sidebar-border bg-sidebar",
           // Room for the traffic lights, which macOS draws over this corner.
           platform === "darwin" ? "pl-[86px]" : "pl-3",
         )}
@@ -133,7 +147,10 @@ export function TitleBar({
         column of it.
       */}
       {dockVisible && (
-        <div className="flex w-dock shrink-0 items-center justify-end border-l border-sidebar-border bg-sidebar">
+        <div
+          style={{ width: dockWidth }}
+          className="flex shrink-0 items-center justify-end border-l border-sidebar-border bg-sidebar"
+        >
           {pinned}
         </div>
       )}

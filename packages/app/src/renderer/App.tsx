@@ -10,7 +10,9 @@ import type { Section } from "@/components/settings/SettingsView";
 import { Sidebar } from "@/components/Sidebar";
 import { TitleBar } from "@/components/TitleBar";
 import { Transcript } from "@/components/Transcript";
+import { Resizer } from "@/components/ui/resizer";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PANEL_BOUNDS, clampPanel, fitPanels } from "../shared/settings.js";
 import { useHarness } from "@/state";
 
 export function App(): React.JSX.Element {
@@ -41,6 +43,50 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [harness]);
 
+  /**
+   * Panel widths, live while dragging and stored once it stops.
+   *
+   * Local state drives the layout so a drag is smooth; the settings write only
+   * happens on release, because a settings file rewritten sixty times a second
+   * is a settings file that eventually loses.
+   */
+  const stored = harness.settings.layout;
+  const [sidebarWidth, setSidebarWidth] = React.useState(stored.sidebarWidth);
+  const [dockWidth, setDockWidth] = React.useState(stored.dockWidth);
+  const dragging = React.useRef(false);
+
+  // Settings arrive after the first render, and can change from another window.
+  // Ignored mid-drag, so an echo of a value we just wrote cannot fight the
+  // pointer.
+  React.useEffect(() => {
+    if (dragging.current) return;
+    setSidebarWidth(stored.sidebarWidth);
+    setDockWidth(stored.dockWidth);
+  }, [stored.sidebarWidth, stored.dockWidth]);
+
+  /**
+   * The row the three panes live in, measured.
+   *
+   * A stored width is what the user asked for on whatever window they asked it
+   * on; what fits is a question only this window can answer, and it changes
+   * every time the window is resized.
+   */
+  const row = React.useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = React.useState(0);
+
+  React.useLayoutEffect(() => {
+    const element = row.current;
+    if (!element) return;
+
+    setAvailable(element.clientWidth);
+    const observer = new ResizeObserver((entries) => setAvailable(entries[0]?.contentRect.width ?? 0));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const showDock = dockOpen && !settingsOpen;
+  const fitted = fitPanels({ available, sidebar: sidebarWidth, dock: showDock ? dockWidth : 0 });
+
   const sessions = harness.snapshot?.status.sessions ?? [];
   const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
 
@@ -63,14 +109,17 @@ export function App(): React.JSX.Element {
         <div className="flex h-full flex-col">
           <TitleBar
             harness={harness}
+            sidebarWidth={fitted.sidebar}
+            dockWidth={fitted.dock}
             dockOpen={dockOpen}
-            dockVisible={dockOpen && !settingsOpen}
+            dockVisible={showDock}
             onToggleDock={() => setDockOpen((open) => !open)}
           />
 
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div ref={row} className="flex min-h-0 flex-1 overflow-hidden">
             <Sidebar
               harness={harness}
+              width={fitted.sidebar}
               onSearch={() => setPaletteOpen(true)}
               settingsOpen={settingsOpen}
               onToggleSettings={() => setSettingsOpen((open) => !open)}
@@ -78,6 +127,22 @@ export function App(): React.JSX.Element {
               onOpenUpdates={() => {
                 setSettingsSection("updates");
                 setSettingsOpen(true);
+              }}
+            />
+
+            <Resizer
+              side="left"
+              label="Resize the sidebar"
+              width={fitted.sidebar}
+              min={PANEL_BOUNDS.sidebar.min}
+              max={PANEL_BOUNDS.sidebar.max}
+              onChange={(next) => {
+                dragging.current = true;
+                setSidebarWidth(next);
+              }}
+              onCommit={(next) => {
+                dragging.current = false;
+                harness.updateSettings({ layout: { ...stored, sidebarWidth: clampPanel(next, PANEL_BOUNDS.sidebar) } });
               }}
             />
 
@@ -102,7 +167,26 @@ export function App(): React.JSX.Element {
                   <Composer harness={harness} value={draft} onValueChange={setDraft} />
                 </main>
 
-                {dockOpen && <RightDock harness={harness} tab={dockTab} onTabChange={setDockTab} />}
+                {dockOpen && (
+                <>
+                  <Resizer
+                    side="right"
+                    label="Resize the panel"
+                    width={fitted.dock}
+                    min={PANEL_BOUNDS.dock.min}
+                    max={PANEL_BOUNDS.dock.max}
+                    onChange={(next) => {
+                      dragging.current = true;
+                      setDockWidth(next);
+                    }}
+                    onCommit={(next) => {
+                      dragging.current = false;
+                      harness.updateSettings({ layout: { ...stored, dockWidth: clampPanel(next, PANEL_BOUNDS.dock) } });
+                    }}
+                  />
+                  <RightDock harness={harness} width={fitted.dock} tab={dockTab} onTabChange={setDockTab} />
+                </>
+              )}
               </>
             )}
           </div>

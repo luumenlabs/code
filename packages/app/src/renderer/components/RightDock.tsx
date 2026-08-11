@@ -61,10 +61,13 @@ const TONE: Record<OutputEntry["type"], string> = {
  */
 export function RightDock({
   harness,
+  width,
   tab,
   onTabChange,
 }: {
   harness: Harness;
+  /** Driven by the drag handle beside it; the border lives on that. */
+  width: number;
   tab: DockTab;
   onTabChange: (tab: DockTab) => void;
 }): React.JSX.Element | null {
@@ -75,7 +78,7 @@ export function RightDock({
   const standing = harness.changes.filter(isPending).length;
 
   return (
-    <aside className="flex h-full min-h-0 w-dock shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar">
+    <aside style={{ width }} className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar">
       <div className="min-h-0 flex-1">
         {tab === "studio" ? (
           <StudioTab harness={harness} />

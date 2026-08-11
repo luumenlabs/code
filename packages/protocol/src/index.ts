@@ -1,7 +1,6 @@
 export * from "./capabilities.js";
 export * from "./changes.js";
 export * from "./commands.js";
-export * from "./diff.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./session.js";

@@ -42,6 +42,7 @@ import { updateWaiting } from "../../shared/update.js";
 
 export function Sidebar({
   harness,
+  width,
   onSearch,
   settingsOpen,
   onToggleSettings,
@@ -49,6 +50,8 @@ export function Sidebar({
   onOpenUpdates,
 }: {
   harness: Harness;
+  /** Driven by the drag handle beside it; the border lives on that. */
+  width: number;
   onSearch: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
@@ -78,7 +81,10 @@ export function Sidebar({
   };
 
   return (
-    <aside className="flex h-full min-h-0 w-sidebar shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+    <aside
+      style={{ width }}
+      className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar"
+    >
       <div className="flex flex-col gap-1.5 p-2">
         {/* A conversation is filed against a place, so there is nowhere to put
             one until Studio is connected. */}

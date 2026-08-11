@@ -59,6 +59,90 @@ export interface AppSettings {
   showThinking: boolean;
   /** Jump to the Output tab the first time a runtime error appears. */
   followRuntimeErrors: boolean;
+  /**
+   * How wide the user has dragged each panel.
+   *
+   * Here rather than in component state because a panel width is a decision
+   * about the window, not about a session: dragging the dock out to read a diff
+   * and finding it narrow again on the next launch is the panel forgetting
+   * something the user told it.
+   */
+  layout: LayoutSettings;
+}
+
+export interface LayoutSettings {
+  sidebarWidth: number;
+  dockWidth: number;
+}
+
+/** What a panel can be dragged between, in pixels. */
+export const PANEL_BOUNDS = {
+  sidebar: { min: 200, max: 520 },
+  dock: { min: 260, max: 900 },
+} as const;
+
+export function clampPanel(width: number, bounds: { min: number; max: number }): number {
+  if (!Number.isFinite(width)) return bounds.min;
+  return Math.round(Math.min(bounds.max, Math.max(bounds.min, width)));
+}
+
+/** The narrowest the conversation is allowed to get before the panels give way. */
+export const MIN_TRANSCRIPT = 420;
+
+/**
+ * The widths the panels actually get, given the window they are in.
+ *
+ * Stored widths are the user's intent, not a promise the layout can keep: drag
+ * the dock out on a wide monitor, then open the app in a small window, and the
+ * two panels together are wider than the window. Left alone the conversation
+ * between them collapses to nothing and the sidebar is pushed off the screen.
+ *
+ * So the stored value is a maximum, honoured when there is room. When there is
+ * not, the dock gives first — it is the one people drag wide, and the sidebar
+ * at its minimum is still a usable list. Only when both are at their minimum
+ * and it still does not fit does the transcript start losing width, which at
+ * that point is the only thing left to give.
+ */
+export function fitPanels(input: {
+  /** Width of the row holding all three. Zero before it has been measured. */
+  available: number;
+  sidebar: number;
+  /** Zero when the dock is closed. */
+  dock: number;
+}): { sidebar: number; dock: number } {
+  const { available } = input;
+  let sidebar = input.sidebar;
+  let dock = input.dock;
+
+  // Not measured yet: use what was asked for rather than guessing, so the first
+  // paint is not a layout that immediately jumps.
+  if (available <= 0) return { sidebar, dock };
+
+  let overflow = sidebar + dock + MIN_TRANSCRIPT - available;
+  if (overflow <= 0) return { sidebar, dock };
+
+  const dockGive = Math.min(overflow, Math.max(0, dock - PANEL_BOUNDS.dock.min));
+  dock -= dockGive;
+  overflow -= dockGive;
+
+  const sidebarGive = Math.min(overflow, Math.max(0, sidebar - PANEL_BOUNDS.sidebar.min));
+  sidebar -= sidebarGive;
+  overflow -= sidebarGive;
+
+  if (overflow <= 0) return { sidebar: Math.round(sidebar), dock: Math.round(dock) };
+
+  // Below every minimum at once. Both panels shrink together rather than one
+  // vanishing, and the floor is a strip wide enough to still be grabbable —
+  // a zero-width sidebar reads as a bug, not as a small window.
+  const floor = 120;
+  const room = Math.max(0, available - MIN_TRANSCRIPT);
+  const total = sidebar + dock;
+  const scale = total > 0 ? Math.max(0, room) / total : 0;
+
+  return {
+    sidebar: Math.round(Math.max(sidebar > 0 ? floor : 0, sidebar * scale)),
+    dock: Math.round(Math.max(dock > 0 ? floor : 0, dock * scale)),
+  };
 }
 
 /** Small, fast models — a title is not worth a frontier model's time. */
@@ -88,6 +172,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   favourites: [],
   showThinking: true,
   followRuntimeErrors: true,
+  // The values the CSS variables carried before either panel could be dragged.
+  layout: { sidebarWidth: 276, dockWidth: 340 },
 };
 
 /**
@@ -112,6 +198,12 @@ export function withDefaults(stored: unknown): AppSettings {
     favourites: readFavourites(stored),
     showThinking: value.showThinking ?? DEFAULT_SETTINGS.showThinking,
     followRuntimeErrors: value.followRuntimeErrors ?? DEFAULT_SETTINGS.followRuntimeErrors,
+    layout: {
+      // Clamped on the way in as well as on the way out: a stored width from a
+      // much larger monitor should not open a panel wider than this window.
+      sidebarWidth: clampPanel(value.layout?.sidebarWidth ?? DEFAULT_SETTINGS.layout.sidebarWidth, PANEL_BOUNDS.sidebar),
+      dockWidth: clampPanel(value.layout?.dockWidth ?? DEFAULT_SETTINGS.layout.dockWidth, PANEL_BOUNDS.dock),
+    },
   };
 }
 

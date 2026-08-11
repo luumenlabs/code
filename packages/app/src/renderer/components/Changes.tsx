@@ -15,20 +15,24 @@ import * as React from "react";
 import {
   ChevronRight,
   CircleAlert,
+  Columns2,
   FilePlus2,
   FileCode2,
   Loader2,
+  Maximize2,
   Move,
   Pencil,
+  Rows2,
   Tag,
   Trash2,
   Undo2,
 } from "lucide-react";
 import type { ChangeRecord, RevertOutcome } from "@luumen/code-protocol";
 import { groupChanges, isPending } from "@luumen/code-protocol";
-import { buildPatch } from "@/components/patch";
-import type { Patch } from "@/components/patch";
+import { ChangeDiff } from "@/components/ChangeDiff";
+import { hasDocument } from "@/components/changeDocument";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
@@ -253,10 +257,10 @@ function ChangeRow({
   const Icon = KIND_ICON[record.kind];
   const reverted = !isPending(record);
   const busy = harness.reverting.includes(record.id);
-  // Built once per record and shared by the count, the chevron, and the body.
-  // A long script diff is not something to rebuild on every render of a list.
-  const patch = usePatch(record);
-  const detail = patch.lines.length > 0;
+  const [expanded, setExpanded] = React.useState(false);
+  // Cheap: whether there is a document, not what the diff of it looks like.
+  // The diffing itself happens in ChangeDiff, and only once the row is open.
+  const detail = React.useMemo(() => hasDocument(record), [record]);
 
   const body = (
     <div className="flex items-start gap-2 px-2.5 py-1.5">
@@ -275,7 +279,6 @@ function ChangeRow({
           >
             {record.summary}
           </span>
-          <PatchCount patch={patch} />
         </div>
 
         {showPath && (
@@ -298,7 +301,7 @@ function ChangeRow({
           <CollapsibleTrigger className="w-full text-left transition-colors hover:bg-accent/40">{body}</CollapsibleTrigger>
           <CollapsibleContent>
             <div className="px-2.5 pb-2 pl-[30px]">
-              <ChangeDetail patch={patch} />
+              <ChangeDetail record={record} onExpand={() => setExpanded(true)} />
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -307,6 +310,8 @@ function ChangeRow({
       )}
 
       <RowFooter record={record} harness={harness} outcome={outcome} onRevert={onRevert} />
+
+      <ExpandedDiff record={record} open={expanded} onOpenChange={setExpanded} />
     </div>
   );
 }
@@ -385,73 +390,80 @@ function RowFooter({
   );
 }
 
-/** "+12 −3" beside the summary, so a row says its size without being opened. */
-function PatchCount({ patch }: { patch: Patch }): React.JSX.Element | null {
-  if (patch.added === 0 && patch.removed === 0) return null;
+/**
+ * The diff over the conversation, with room to read it.
+ *
+ * Split is the default here and only here: two columns need width, and the
+ * width is the whole reason this exists. The dock keeps the unified view, which
+ * is the one that survives a narrow column.
+ */
+function ExpandedDiff({
+  record,
+  open,
+  onOpenChange,
+}: {
+  record: ChangeRecord;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}): React.JSX.Element {
+  const [split, setSplit] = React.useState(true);
 
   return (
-    <span className="shrink-0 font-mono text-[11px] tabular-nums">
-      {patch.added > 0 && <span className="text-[var(--success)]">+{patch.added}</span>}
-      {patch.added > 0 && patch.removed > 0 && " "}
-      {patch.removed > 0 && <span className="text-destructive">−{patch.removed}</span>}
-    </span>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[86vh] w-[min(1400px,92vw)] max-w-none flex-col gap-0 overflow-hidden p-0">
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-[14px]">{record.summary}</DialogTitle>
+            <code className="selectable block truncate font-mono text-[11.5px] text-muted-foreground">
+              {record.target.path}
+            </code>
+          </div>
+
+          <Hint label={split ? "Unified" : "Side by side"}>
+            <Button variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => setSplit((value) => !value)}>
+              {split ? <Rows2 /> : <Columns2 />}
+            </Button>
+          </Hint>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {/* Mounted only while open, so a large script is not diffed and
+              highlighted for every row in a list nobody has opened. */}
+          {open && <ChangeDiff record={record} split={split} className="border-0" />}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function usePatch(record: ChangeRecord): Patch {
-  // Keyed on the record rather than its parts: a record is replaced wholesale
-  // when it is reverted and never mutated, so identity is the right dependency.
-  return React.useMemo(() => buildPatch(record), [record]);
-}
-
 /**
- * The patch itself.
+ * A change's own diff, plus the way out to a bigger one.
  *
- * One row per line, a fixed gutter, and no wrapping — a diff that reflows is a
- * diff you cannot read down the left edge. Long lines scroll horizontally, which
- * is what every other diff in the world does.
+ * The dock is narrow by design, and a script diff read through a 340px column
+ * is a diff you scroll rather than read. The expand button opens the same
+ * record over the conversation, where there is room for two columns.
  */
-function ChangeDetail({ patch }: { patch: Patch }): React.JSX.Element | null {
-  if (patch.lines.length === 0) {
-    return <p className="text-[11.5px] text-muted-foreground">{patch.note ?? "Nothing to show."}</p>;
-  }
-
+function ChangeDetail({
+  record,
+  onExpand,
+}: {
+  record: ChangeRecord;
+  onExpand: () => void;
+}): React.JSX.Element {
   return (
-    <div className="overflow-hidden rounded-md border bg-muted/30">
-      {patch.note && (
-        <p className="border-b bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground">{patch.note}</p>
-      )}
-
-      <div className="max-h-[340px] overflow-auto">
-        {patch.lines.map((line, index) => (
-          <div
-            key={index}
-            className={cn(
-              "flex gap-2 px-2 font-mono text-[11px] leading-[1.55] whitespace-pre",
-              line.op === "add" && "bg-[color-mix(in_oklch,var(--success)_16%,transparent)]",
-              line.op === "remove" && "bg-destructive/12",
-              line.op === "meta" && "bg-muted/50 text-muted-foreground",
-            )}
-          >
-            <span className="w-8 shrink-0 text-right text-muted-foreground/50 tabular-nums select-none">
-              {line.number ?? ""}
-            </span>
-            <span
-              className={cn(
-                "w-2 shrink-0 select-none",
-                line.op === "add" && "text-[var(--success)]",
-                line.op === "remove" && "text-destructive",
-              )}
-            >
-              {line.op === "add" ? "+" : line.op === "remove" ? "−" : " "}
-            </span>
-            <span className="selectable min-w-0">
-              {"  ".repeat(line.depth)}
-              {line.text || " "}
-            </span>
-          </div>
-        ))}
+    <div className="flex flex-col gap-1.5">
+      <div className="max-h-[340px] overflow-auto rounded-md">
+        <ChangeDiff record={record} />
       </div>
+
+      <button
+        type="button"
+        onClick={onExpand}
+        className="flex items-center gap-1 self-start text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Maximize2 className="size-3" />
+        Open
+      </button>
     </div>
   );
 }
