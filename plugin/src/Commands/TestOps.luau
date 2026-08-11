@@ -2,16 +2,10 @@
 --[[
 	Running the place's own TestService suite.
 
-	Results are taken from the service's signals rather than scraped out of the
-	output buffer. A failure that arrives as a structured event carries the
-	script and the line that raised it; the same failure read back as text is a
-	line that happens to contain the word "fail", indistinguishable from a print
-	that mentions one, and with the source thrown away.
-
-	The signals are connected before the run starts and disconnected after,
-	because they are service-wide: leaving them attached would collect results
-	from a suite the user ran themselves an hour later and report them as this
-	call's.
+	Results come from the service's signals rather than the output buffer, so a
+	failure keeps its script and line. The signals are service-wide, so they are
+	connected around this run only — otherwise a suite the user starts later
+	would report into this call.
 ]]
 
 local RunService = game:GetService("RunService")

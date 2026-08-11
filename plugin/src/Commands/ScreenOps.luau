@@ -1,22 +1,12 @@
 --!nonstrict
 --[[
-	The on-screen interface, as structure rather than pixels.
+	The on-screen interface as structure, with rectangles in the same viewport
+	pixels input.mouse takes.
 
-	This is what a UI task actually needs. A screenshot answers "does this look
-	right" and nothing else: an agent reading one cannot tell a label from a
-	button, cannot see that a frame is present but transparent, and has to infer
-	coordinates from a scaled image. All of it is already in the DataModel, so it
-	is read out directly — with rectangles in the same viewport pixels
-	`input.mouse` takes, so a position found here can be clicked without
-	converting anything.
-
-	The one thing rectangles cannot tell you is whether a click would land. An
-	element can be perfectly positioned, perfectly visible, and completely
-	unreachable behind a transparent frame someone left at a high ZIndex, and
-	that failure is close to undiagnosable from a picture. So clickability is
-	asked of Roblox through GetGuiObjectsAtPosition, which is the engine's own
-	hit test in its own render order, rather than being worked out from
-	rectangles and ZIndex here.
+	Clickability comes from GetGuiObjectsAtPosition — the engine's own hit test
+	in its own render order — not from comparing rectangles and ZIndex. An
+	element covered by a transparent frame is otherwise indistinguishable from
+	one that works.
 ]]
 
 local GuiService = game:GetService("GuiService")
@@ -33,12 +23,9 @@ local RunState = require(script.Parent.Parent.RunState)
 local ScreenOps = {}
 
 --[[
-	Where to read from when the caller does not say.
-
-	During a playtest that is the player's own GUI, which is what is actually on
-	screen. In edit mode there is no PlayerGui at all, and StarterGui is the
-	template it will be copied from — not the same thing, but the only honest
-	answer, and the result names which one it read so nobody has to guess.
+	Where to read from when the caller does not say: PlayerGui during a playtest,
+	StarterGui in edit mode. Those are not the same thing, so the result names
+	which one it read.
 ]]
 local function defaultRoot(): Instance
 	local localPlayer = Players.LocalPlayer
@@ -79,12 +66,8 @@ local function textOf(instance: Instance): string?
 end
 
 --[[
-	Visible in the sense the user means: this element and every ancestor up to
-	the ScreenGui agree it should be drawn.
-
-	An element's own `Visible` is almost never the reason something is missing —
-	a hidden parent is — so checking only the element would report most of the
-	interface as on screen while none of it was.
+	Visible in the sense the user means: this element and every ancestor up to the
+	ScreenGui agree. A hidden parent is almost always the real reason.
 ]]
 local function effectivelyVisible(instance: GuiObject): boolean
 	local current: Instance? = instance
@@ -106,11 +89,8 @@ local function effectivelyVisible(instance: GuiObject): boolean
 end
 
 --[[
-	Where the element is, in the coordinates a click uses.
-
-	AbsolutePosition on a ScreenGui that respects the top bar is measured inside
-	the inset, and mouse events are not, so the inset is added back or every
-	rectangle sits high by the height of the Roblox bar.
+	Where the element is, in the coordinates a click uses. AbsolutePosition is
+	measured inside the GUI inset and mouse events are not, so it is added back.
 ]]
 local function rectOf(instance: GuiObject, inset: Vector2): any
 	local position = instance.AbsolutePosition
@@ -137,12 +117,9 @@ local function rectOf(instance: GuiObject, inset: Vector2): any
 end
 
 --[[
-	Asks the engine what is on top at a point.
-
-	Only PlayerGui offers this, and only from a client, so in edit mode there is
-	no answer to give. Returning nil rather than a guess is deliberate: an agent
-	told "clickable: true" by a rectangle comparison would trust it exactly as
-	much as the real thing, and be wrong in precisely the cases that matter.
+	Asks the engine what is on top at a point. Only PlayerGui offers this, so nil
+	in edit mode — a guess from rectangles would be trusted as much as the real
+	answer and wrong in exactly the cases that matter.
 ]]
 local function hitTester(): ((number, number) -> { Instance })?
 	local localPlayer = Players.LocalPlayer

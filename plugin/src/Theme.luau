@@ -1,17 +1,12 @@
 --!nonstrict
 --[[
-	The app's surface, ported to Roblox.
+	The app's tokens, ported to Roblox.
 
-	Every value here is one of the CSS custom properties in
-	packages/app/src/renderer/styles.css, converted from oklch to sRGB. Keeping
-	them written out rather than approximated by eye is what stops the two halves
-	drifting: the panel and the app sit side by side on one screen, and a
-	background that is nearly the same reads as a mistake rather than as a
-	family. When a token changes there, convert it and change it here.
+	Every value is a custom property from packages/app/src/renderer/styles.css,
+	converted from oklch to sRGB. Change one there, convert it here.
 
-	Roblox has no letter-spacing, no colour-mix, and no alpha compositing on
-	text, so the translucent tokens are pre-composited over the background. That
-	is why `border` is a flat grey rather than white at 9%.
+	Roblox has no colour-mix, so the translucent tokens are pre-composited over
+	the background — which is why `border` is a flat grey and not white at 9%.
 ]]
 
 local Theme = {}
@@ -46,12 +41,8 @@ Theme.color = {
 }
 
 --[[
-	Puts `gap` between every character of `content`.
-
-	Roblox has no letter-spacing, and two things in this panel need it: the
-	small-caps section headings, and the six-digit pairing code. Written out
-	rather than reached for through string.split with an empty separator, which
-	is not a documented way to ask for the characters of a string.
+	Puts `gap` between every character. Roblox has no letter-spacing, and the
+	section headings and the pairing code both need it.
 ]]
 function Theme.spaced(content: string, gap: string): string
 	local pieces = table.create(#content)
@@ -64,13 +55,9 @@ function Theme.spaced(content: string, gap: string): string
 end
 
 --[[
-	BuilderSans stands in for DM Sans.
-
-	Roblox will not load a font this plugin does not own, and BuilderSans is the
-	closest thing Studio ships: the same geometric-humanist sans, and the face
-	Studio's own interface is set in, so the panel reads as part of the window it
-	is docked in. Built through pcall because a font that fails to resolve must
-	cost the panel its typeface and nothing else.
+	BuilderSans stands in for DM Sans: Roblox will not load a font the plugin
+	does not own. Behind a pcall so a font that fails to resolve costs the
+	typeface and nothing else.
 ]]
 local function family(name: string, weight: Enum.FontWeight?): Font
 	local ok, font = pcall(function()
@@ -170,11 +157,8 @@ function Theme.text(parent: Instance, content: string, options: TextOptions?): T
 end
 
 --[[
-	A small-caps section heading, the app's `UNAVAILABLE RIGHT NOW`.
-
-	The app letterspaces these and Roblox cannot, so the spacing is put in by
-	hand. Without it the run of capitals sets far too tightly to read as a label
-	rather than as shouting.
+	A small-caps section heading. The app letterspaces these; Roblox cannot, so
+	the spacing is put in by hand.
 ]]
 function Theme.sectionLabel(parent: Instance, content: string, order: number): TextLabel
 	return Theme.text(parent, Theme.spaced(string.upper(content), THIN_SPACE), {
@@ -186,11 +170,8 @@ function Theme.sectionLabel(parent: Instance, content: string, order: number): T
 end
 
 --[[
-	Vertical breathing room between groups.
-
-	One UIListLayout has one gap, and this panel needs two: rows sit close
-	together and the groups they form sit apart. An empty frame is how that is
-	said in a list layout.
+	One UIListLayout has one gap and this panel needs two, so groups are separated
+	by an empty frame.
 ]]
 function Theme.spacer(parent: Instance, height: number, order: number): Frame
 	local instance = Instance.new("Frame")
@@ -217,15 +198,10 @@ function Theme.card(parent: Instance, order: number): Frame
 end
 
 --[[
-	A label on the left and its value on the right, on one line.
+	A label left, its value right. Two labels rather than one with padding, so the
+	left truncates and the value keeps its place when the panel is dragged narrow.
 
-	Two labels rather than one with padding, because the value has to stay
-	readable when the panel is dragged narrow: the left one truncates and the
-	right one keeps its place.
-
-	Returns the value label and the row itself, so a caller can both fill it in
-	and hide the whole thing — a row whose value is a dash is worse than no row
-	when the answer is simply "this place has no universe".
+	Returns the value and the row, so a caller can fill it in or hide it entirely.
 ]]
 function Theme.row(parent: Instance, name: string, order: number): (TextLabel, Frame)
 	local holder = Instance.new("Frame")
@@ -256,12 +232,9 @@ export type ButtonOptions = {
 }
 
 --[[
-	The app's two button shapes.
-
-	`primary` is the filled brand blue, `outline` the bordered one the app's
-	Screenshot button uses. Hover lightens through MouseEnter rather than
-	AutoButtonColor, which darkens — on a surface this close to black that reads
-	as a control going disabled under the cursor.
+	The app's two button shapes. Hover lightens through MouseEnter rather than
+	AutoButtonColor, which darkens — on a near-black surface that reads as a
+	control going disabled under the cursor.
 ]]
 local VARIANTS = {
 	outline = {
@@ -279,13 +252,9 @@ local VARIANTS = {
 }
 
 --[[
-	Returns the button and a function that restyles it.
-
-	The variant is not fixed at build time because which button matters changes
-	with the connection: Reconnect is the one thing to do when Studio has lost
-	the server, and nothing worth emphasising once it is back. The hover handlers
-	read the current variant rather than capturing one, so switching cannot leave
-	a button that lights up in last state's colour.
+	Returns the button and a function that restyles it, since which button matters
+	changes with the connection. The hover handlers read the current variant
+	rather than capturing one, so switching cannot leave a stale hover colour.
 ]]
 function Theme.button(parent: Instance, content: string, options: ButtonOptions?): (TextButton, (string) -> ())
 	local settings = options or {}

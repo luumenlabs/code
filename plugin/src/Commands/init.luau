@@ -98,15 +98,9 @@ local HANDLERS: { [string]: (any) -> any } = {
 --[[
 	Applies a sequence of edits under one undo waypoint.
 
-	The steps call the ordinary handlers, so a batched create is exactly a
-	create — the same validation, the same change draft, the same result shape.
-	Their own attempts to open a recording decline harmlessly, because Studio
-	allows only one at a time and the outer one is already open; that is what
-	collapses a hundred edits into a single Ctrl+Z rather than a hundred.
-
-	Drafts are gathered from every step and returned together. The journal still
-	files them one per mutation: the user reviews and reverts changes, and a
-	batch is a transport detail they never asked about.
+	The steps call the ordinary handlers, so a batched create is exactly a create.
+	Their own recordings decline harmlessly — Studio allows one at a time and the
+	outer one is open — which is what makes a hundred edits a single Ctrl+Z.
 ]]
 local function runBatch(params: any): any
 	local operations = params.operations or {}
@@ -282,12 +276,8 @@ function Commands.prune()
 end
 
 --[[
-	Dropped when the DataModel is replaced, along with the handles.
-
-	A mark adorns an instance in the world it was made in. Carried across an
-	edit/run transition it points at nothing, and a camera position remembered
-	for restore would put the user's viewport somewhere that made sense in a
-	place that no longer exists.
+	Dropped when the DataModel is replaced. A mark adorns an instance in the world
+	it was made in, and a remembered camera describes one that no longer exists.
 ]]
 function Commands.release()
 	ViewOps.release()

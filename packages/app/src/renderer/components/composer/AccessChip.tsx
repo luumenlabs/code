@@ -41,6 +41,7 @@ export function AccessChip({
   disabledTools: string[];
   onOpenAdvanced: () => void;
 }): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
   const policy: ToolPolicy = { permissions, disabledTools: disabledTools.filter(isOp) };
 
   const tallies = PERMISSION_GROUPS.map((group) => ({ group, ...groupTally(policy, group) }));
@@ -54,7 +55,7 @@ export function AccessChip({
   const tone = full ? "text-[var(--warning)]" : "text-muted-foreground";
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
           "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors outline-none",
@@ -70,8 +71,13 @@ export function AccessChip({
       <PopoverContent align="start" side="top" className="w-[290px] p-0">
         <div className="flex items-center justify-between gap-2 border-b py-1.5 pl-3 pr-1.5">
           <span className="text-[13px] font-medium">Agent access</span>
+          {/* Closed by hand: Settings replaces the view behind it, so the
+              popover would be left floating over a page it does not belong to. */}
           <button
-            onClick={onOpenAdvanced}
+            onClick={() => {
+              setOpen(false);
+              onOpenAdvanced();
+            }}
             className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <SlidersHorizontal className="size-3" />

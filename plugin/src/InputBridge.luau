@@ -2,22 +2,13 @@
 --[[
 	Synthetic input into the running experience. Spec sections 18 and 51.
 
-	`UserInputService:CreateVirtualInput()` is the path that works. The object it
-	returns feeds the engine's real input pipeline, so a key reaches
-	UserInputService.InputBegan and the default control modules — W walks the
-	character at its actual WalkSpeed, with the controls intact and no Humanoid
-	hijack — and a mouse button hit-tests against the GUI exactly as a user's
-	click would. It is confined to the experience: the user's own mouse and
-	keyboard are never touched, and Studio does not have to be the frontmost
-	window.
+	`UserInputService:CreateVirtualInput()` feeds the engine's real input
+	pipeline and never touches the user's own mouse or keyboard.
 
-	This module used to use VirtualInputManager, which looks like the obvious
-	choice and cannot work. Every one of its Send* methods is RobloxScriptSecurity
-	and a plugin does not have that capability, so each call raised — and
-	`isAvailable` only checked that the *service* could be fetched, which it
-	always can. The result was a session that advertised input.virtual, accepted
-	every key and click, and delivered none of them. Availability here is
-	therefore probed by constructing the object, not by naming the API.
+	Not VirtualInputManager: its Send* methods are RobloxScriptSecurity and raise
+	from a plugin. The old check only asked whether the service could be fetched,
+	which always succeeds, so the session advertised input.virtual and delivered
+	nothing. Availability is probed by constructing the object.
 ]]
 
 local GuiService = game:GetService("GuiService")
@@ -36,11 +27,8 @@ local MOUSE_BUTTONS = {
 }
 
 --[[
-	One VirtualInput for the life of this plugin VM.
-
-	It has to be reused: `press` and `release` arrive as separate calls, and a
-	key held down by one input source cannot be released by another, so a fresh
-	object per call would leave W stuck down forever.
+	One VirtualInput for the life of this plugin VM. `press` and `release` arrive
+	as separate calls, and a key held by one source cannot be released by another.
 ]]
 local cached: any = nil
 local probed = false
@@ -140,13 +128,9 @@ function InputBridge.key(name: string, action: string, durationMs: number): any
 end
 
 --[[
-	Types into whatever currently has focus.
-
-	SendTextInput hands the engine the characters directly, so this no longer has
-	to map each one onto a key and a shift state — which meant anything outside a
-	US keyboard layout came back as "could not be typed". The one thing it cannot
-	do is type where nothing is focused, and that is worth saying plainly rather
-	than reporting a successful delivery into nowhere.
+	Types into whatever has focus. SendTextInput takes the characters directly, so
+	no key-and-shift mapping and no US-layout limit. It cannot type with nothing
+	focused, which is reported rather than delivered into nowhere.
 ]]
 function InputBridge.text(text: string): any
 	requireDeliverable()
@@ -217,12 +201,9 @@ local function sendMouseButton(position: Vector2, button: string, isDown: boolea
 end
 
 --[[
-	Positions the pointer before pressing.
-
-	SendMouseButton takes the position with it, so the press would land correctly
-	either way — but the engine's hover state, and every UI that reacts to it,
-	follows the pointer rather than the click. Moving first is what makes a
-	button that only responds when hovered behave the way it does for a user.
+	Positions the pointer before pressing. SendMouseButton carries the position,
+	so the press lands either way — but hover state follows the pointer, and a
+	control that only responds when hovered needs it.
 ]]
 function InputBridge.clickAt(x: number, y: number, button: string)
 	local position = Vector2.new(x, y)
@@ -304,12 +285,8 @@ function InputBridge.mouse(params: any): any
 end
 
 --[[
-	Probed once, by building the thing.
-
-	The old version asked whether a service existed, which is a question with the
-	same answer whether or not input works. Constructing the VirtualInput is the
-	only check that distinguishes them, and the object is kept because it is the
-	one this session will go on using.
+	Probed once, by constructing the object — asking whether the service exists
+	has the same answer whether or not input works. The object is kept.
 ]]
 function InputBridge.isAvailable(): boolean
 	if cached ~= nil then

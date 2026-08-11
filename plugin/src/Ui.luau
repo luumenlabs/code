@@ -6,11 +6,8 @@
 	is Studio connected, which code is being paired, and how do I recover.
 	Everything else belongs in the app.
 
-	It is built to look like the app because it is usually on screen beside it —
-	the app in one window, this docked into Studio in the other. Two surfaces
-	that are nearly the same read as a mistake, so the tokens come from
-	Theme.luau, which is a straight port of the app's stylesheet rather than an
-	impression of it.
+	Tokens come from Theme.luau, a port of the app's stylesheet, because the two
+	are usually on screen side by side.
 ]]
 
 local Client = require(script.Parent.Client)

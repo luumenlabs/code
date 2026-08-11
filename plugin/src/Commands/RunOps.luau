@@ -1,33 +1,13 @@
 --!nonstrict
 --[[
-	Playtest control. Spec section 13.
+	Playtest control, through StudioTestService. Spec section 13.
 
-	Everything here goes through StudioTestService, which is Studio's own,
-	documented way for a plugin to start and end a test session:
+	Two facts about those APIs shape this module and the server's RunControl:
 
-		ExecutePlayModeAsync(args)              a playtest with a character
-		ExecuteRunModeAsync(args)               the place as a server, no player
-		ExecuteMultiplayerTestAsync(n, args)    a server and n clients
-		EndTest(value)                          ends any of them
-		AddPlayers(n) / LeaveTest() / CanLeaveTest() / GetTestArgs()
-
-	This module previously faked F5 through VirtualInputManager, which is
-	RobloxScriptSecurity and therefore could never work from a plugin; the
-	failure was swallowed and the local server pressed F5 against the Studio
-	window through the operating system instead. That took over the user's
-	keyboard and focus for something Studio was willing to do properly all
-	along.
-
-	Two facts about these APIs shape the whole design, here and in the server's
-	RunControl:
-
-	  * The Execute* calls yield for the entire life of the session. Whatever
-	    thread calls one is parked until the test ends, so the call is spawned
-	    and the run state is what reports the outcome.
-	  * They can only be called from the edit DataModel, and EndTest only from
-	    the running one. Those are different plugin peers on different
-	    connections, so which peer a request reaches is not a detail the caller
-	    can be left to get right — the server routes each one by realm.
+	  * The Execute* calls yield for the whole life of the session, so they are
+	    spawned and the run state reports the outcome.
+	  * Execute* only works in the edit DataModel and EndTest only in the running
+	    one. Those are different peers, so the server routes each request by realm.
 ]]
 
 local HttpService = game:GetService("HttpService")
@@ -58,12 +38,9 @@ local function testService(): any
 end
 
 --[[
-	Tracks the session this peer started.
-
-	`running` alone cannot answer "did the start take?", because the edit peer
-	sees the run state of its own DataModel, which never starts running. This is
-	the edit peer's record of having asked, and the server watches the run state
-	arriving from the *other* peer for the answer.
+	The edit peer's record of having asked. Its own DataModel never starts
+	running, so `running` alone cannot answer "did the start take?" — the server
+	watches the run state arriving from the other peer for that.
 ]]
 local pending = {
 	active = false,
@@ -72,12 +49,9 @@ local pending = {
 }
 
 --[[
-	Multiplayer session bookkeeping, held by the edit peer.
-
-	ExecuteMultiplayerTestAsync yields until the whole test is over and then
-	returns whatever EndTest was given, so the only place that value can be
-	observed is the thread that called it. Nothing else can be asked about the
-	session after the fact, which is why the phase is recorded as it moves.
+	Multiplayer bookkeeping, held by the edit peer. ExecuteMultiplayerTestAsync
+	yields until the test is over and returns what EndTest was given, so only the
+	calling thread ever sees it — hence recording the phase as it moves.
 ]]
 local multiplayer = {
 	phase = "idle",
@@ -125,12 +99,8 @@ function RunOps.state(): any
 end
 
 --[[
-	Starts a playtest from the edit DataModel.
-
-	Returns as soon as the request is issued, because the call that does the work
-	does not return until the test is over. `pending` is left behind so a second
-	start cannot be issued into the same transition, and so that a refusal Studio
-	raises a moment later is not lost.
+	Starts a playtest from the edit DataModel, returning as soon as the request is
+	issued — the call that does the work does not return until the test is over.
 ]]
 function RunOps.start(params: any): any
 	if RunService:IsRunning() then
@@ -199,13 +169,8 @@ function RunOps.start(params: any): any
 end
 
 --[[
-	Ends the running session, from inside it.
-
-	EndTest exists only in the running DataModel — the edit peer has no way to
-	reach the session it started, because the thread that started it is parked
-	inside the Execute* call. The server sends this to the running peer for
-	exactly that reason, so arriving here in edit mode means the routing was
-	wrong and saying so is more useful than silently succeeding.
+	Ends the running session, from inside it. EndTest exists only in the running
+	DataModel, which is why the server routes this to the running peer.
 ]]
 function RunOps.stop(): any
 	if not RunService:IsRunning() then
@@ -421,11 +386,8 @@ function RunOps.multiplayer(params: any): any
 end
 
 --[[
-	What this peer can actually do, probed rather than assumed.
-
-	Play and Run are one capability now: both are StudioTestService methods, so
-	a build that has one has the other, and the old split existed only because
-	Play went through a different mechanism that did not work.
+	Play and Run are one capability: both are StudioTestService methods, so a
+	build with one has the other.
 ]]
 function RunOps.capabilities(): (boolean, boolean)
 	local ok, service = pcall(function()

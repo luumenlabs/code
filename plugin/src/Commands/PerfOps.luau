@@ -1,17 +1,10 @@
 --!nonstrict
 --[[
-	What the engine is doing, measured rather than guessed.
+	Frame time, draw calls, and memory, from Stats.
 
-	"Is it laggy, and why" is a question this product had no way to answer at
-	all: the output buffer says nothing about frame time and a screenshot cannot
-	show a stutter. Stats can, and it is readable from a plugin in any DataModel.
-
-	Two decisions worth keeping. Every reading reports its worst frame as well as
-	its mean, because a game that hitches once a second still has a good average
-	and the hitch is the entire complaint. And anything Studio declines to report
-	is named in `unavailable` rather than coming back as zero — a zero draw call
-	count is a claim about the renderer, and "this build does not expose it" is a
-	different thing to say.
+	Every reading carries its worst frame as well as its mean, because a game
+	that hitches once a second still has a good average. Anything Studio declines
+	to report is named in `unavailable` rather than returned as zero.
 ]]
 
 local RunService = game:GetService("RunService")
@@ -23,11 +16,8 @@ local RunState = require(script.Parent.Parent.RunState)
 local PerfOps = {}
 
 --[[
-	One property of Stats, sampled or reported as missing.
-
-	Wrapped because the set Stats exposes moves between Studio versions and
-	between the client and the server — a server DataModel has no renderer, so
-	asking it for draw calls is a legitimate question with no answer.
+	One property of Stats, or nil. The set Stats exposes varies by Studio version
+	and by peer — a server DataModel has no renderer to report draw calls for.
 ]]
 local function readNumber(name: string): number?
 	local ok, value = pcall(function()
@@ -161,13 +151,8 @@ function PerfOps.sample(params: any): any
 end
 
 --[[
-	A census of the place.
-
-	The counts alone would send an agent hunting through the tree to find out
-	which part of it is responsible, so the heaviest containers come back with
-	them. "Heaviest" is descendant count rather than memory: memory is not
-	attributable to a subtree from here, and the number of instances under a
-	container is what someone can actually act on.
+	A census, with the heaviest containers alongside so the counts are actionable.
+	"Heaviest" is descendant count: memory is not attributable to a subtree here.
 ]]
 function PerfOps.count(params: any): any
 	local scope = params.scope and Handles.resolve(params.scope) or game

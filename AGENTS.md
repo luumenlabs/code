@@ -105,32 +105,26 @@ change which game it stands for without reconnecting.
 
 ## Playtesting, input, and capture
 
-All three go through a structured Studio API, and each replaced something that
-either drove the user's desktop or silently did nothing. Do not reintroduce
-either kind.
+All three go through a structured Studio API. Nothing here may drive the user's
+desktop.
 
-**Playtests are `StudioTestService`.** `ExecutePlayModeAsync`,
-`ExecuteRunModeAsync`, `ExecuteMultiplayerTestAsync`, and `EndTest` are the whole
-surface. Two properties of them shape everything above:
+**Playtests are `StudioTestService`.** Two properties shape everything above it:
 
-- The `Execute*` calls **yield for the entire life of the session**. The thread
-  that starts a playtest is parked until it ends, so `RunOps` spawns the call and
-  the run state is what reports the outcome.
-- **Starting and stopping are different peers.** Only the edit DataModel can
-  start a session; only the running one can end it. `RunControl` picks the peer
-  per operation through `SessionRegistry.findPeer`, which is also why
-  `sessions.send` takes a `peer`. A request aimed at a named peer never rebinds
-  the chat, because a playtest's connection is transient and following a chat
-  into one would strand it the moment the playtest ended.
+- The `Execute*` calls **yield for the whole life of the session**, so `RunOps`
+  spawns them and the run state reports the outcome.
+- **Starting and stopping are different peers** — only edit can start, only a
+  running one can end. `RunControl` picks the peer through
+  `SessionRegistry.findPeer`, which is why `sessions.send` takes a `peer`. A
+  request aimed at a named peer never rebinds the chat: a playtest's connection
+  is transient and would strand it when the playtest ends.
 
-**Input is `UserInputService:CreateVirtualInput()`.** It feeds the engine's real
-input pipeline, so the character walks with the game's own controls and clicks
-hit-test against the GUI. Capability is probed by *constructing* the object.
+**Input is `UserInputService:CreateVirtualInput()`.** Capability is probed by
+*constructing* the object.
 
-**Capture is `CaptureService` plus `EditableImage`**, read in the plugin and
-encoded to PNG by `core/png.ts`, because Luau has no deflate. The desktop paths
-in `native/screenshot.ts` remain for `source: "window"` and `"screen"` only, and
-nothing falls back to them silently — the two pictures are not the same picture.
+**Capture is `CaptureService` plus `EditableImage`**, encoded to PNG by
+`core/png.ts` because Luau has no deflate. The desktop paths in
+`native/screenshot.ts` answer `source: "window"` and `"screen"` only, and nothing
+falls back to them silently.
 
 ## Adding an operation
 
@@ -149,37 +143,26 @@ Operations are defined once and flow outward.
    never seen this project. A named op with no description fails a test.
 7. Add a test.
 
-The permission group you give it in step 1 is also where it appears in the
-user's controls, so pick the group by what the operation lets an agent *do*
-rather than by which file it lives in.
+The permission group in step 1 is also where the operation appears in the user's
+controls, so pick it by what the operation lets an agent *do*.
 
 ## Permissions
 
-Two levels, and they compose one way only.
+Six groups, with every operation under them switchable on its own.
+`packages/protocol/src/policy.ts` holds the logic;
+`Dispatcher.checkPermission` is the only place it is enforced. Four rules:
 
-The six groups in `PERMISSION_GROUPS` are the coarse control and the one most
-people will ever touch. Under each, every operation can be turned off on its own
-— groups alone were not enough, because "change the place" is a single switch
-over creating a part and destroying a subtree.
-
-`packages/protocol/src/policy.ts` is the whole of the logic, and
-`Dispatcher.checkPermission` is the only place it is enforced. Four things there
-are load-bearing:
-
-- **A group that is off turns off everything inside it**, and no per-tool switch
-  overrides that. A restriction the user set is the ceiling, not a default.
-- **Only the exceptions are stored.** An operation nobody has touched is on, so a
-  release that adds a tool needs no migration and cannot arrive disabled.
-  Unknown ids in the settings file are kept rather than dropped, because they are
-  usually a tool from a build the user has rolled back from.
-- **`ESSENTIAL_OPS` stay on.** `session.status` and `session.capabilities` are how
-  an agent finds out what is wrong; turning them off does not restrict it, it
-  stops it explaining itself — including about the restrictions.
+- **A group that is off turns off everything inside it.** No per-tool switch
+  overrides that.
+- **Only the exceptions are stored**, so a new tool needs no migration and cannot
+  arrive disabled. Unknown ids are kept rather than dropped — usually a tool from
+  a build the user rolled back from.
+- **`ESSENTIAL_OPS` stay on.** They are how an agent reports what is wrong.
 - **A disabled tool is hidden from the MCP list, not offered and refused.** The
   server declares `tools.listChanged` and fires it from the `capabilities` bus
-  event, which is why permission changes go through `LuuCodeServer.setPermission`
-  and `setToolAllowed` rather than straight to the settings store: every MCP child
-  is a separate process holding a list it fetched when it connected.
+  event, which is why changes go through `LuuCodeServer.setPermission` and
+  `setToolAllowed` rather than the settings store: every MCP child is a separate
+  process holding a list it fetched at connect time.
 
 **If it mutates, it also has to say what it changed.** Return a `changes` array
 of drafts built by `plugin/src/Changes.luau` — see below. An operation that

@@ -2,25 +2,12 @@
 --[[
 	Viewport capture, from inside the engine. Spec sections 17 and 36.
 
-	CaptureService renders what the experience is showing and nothing else — no
-	ribbon, no Explorer, no window that happens to be in front — and it keeps
-	working during a playtest, which is when a screenshot is worth taking at all.
-	Both were impossible from the desktop capture this replaces.
-
 	Two conditions have to hold, and both are reported by name rather than as a
-	timeout:
+	timeout: the window has to be drawing, since CaptureScreenshot never calls
+	its callback otherwise, and reading the pixels back needs the place's
+	Mesh/Image API permission.
 
-	  * The window has to be drawing. CaptureScreenshot takes a callback and
-	    simply never calls it when the window is minimized, so without the render
-	    check this would spend its whole budget waiting for a frame that is not
-	    coming.
-	  * Reading the pixels back needs the place's Mesh/Image API permission,
-	    because it goes through EditableImage. That is a Game Settings switch the
-	    user has to throw, so the error says which one.
-
-	Pixels leave here as raw RGBA. Encoding a PNG needs deflate, which Luau has
-	no access to, and the server has zlib — so the split is where the tools are,
-	not where the data starts.
+	Pixels leave as raw RGBA. PNG needs deflate, which Luau has no access to.
 ]]
 
 local AssetService = game:GetService("AssetService")
@@ -80,9 +67,8 @@ end
 --[[
 	Promotes the capture into an EditableImage and reads it back.
 
-	The scale is applied by drawing the source into a smaller image rather than
-	by sending every pixel and shrinking on the far side: a 1440p viewport is
-	over 8MB of RGBA, and it travels as base64 inside a JSON body.
+	Scaled here rather than on the far side: a 1440p viewport is over 8MB of RGBA
+	travelling as base64 inside a JSON body.
 ]]
 local function readPixels(contentId: string, maxWidth: number): (buffer, number, number)
 	local ok, source = pcall(function()
@@ -177,11 +163,8 @@ end
 local PAD = string.byte("=")
 
 --[[
-	Base64 straight out of one buffer into another.
-
-	The obvious version concatenates strings four characters at a time, which for
-	a megapixel image is four million intermediate strings; this is the same
-	transform with one allocation.
+	Base64 buffer to buffer, in one allocation. Concatenating four characters at
+	a time is four million intermediate strings for a megapixel image.
 ]]
 local function encodeBase64(input: buffer): string
 	local length = buffer.len(input)
@@ -237,11 +220,9 @@ function Capture.screenshot(params: any): any
 end
 
 --[[
-	Whether a capture could succeed here, without taking one.
-
-	Only the cheap half is probed: whether this peer has a render loop at all.
-	The Mesh/Image permission cannot be tested without actually capturing, so it
-	is left to fail with its own message, which names the setting to change.
+	Only the cheap half is probed — whether this peer renders at all. The
+	Mesh/Image permission cannot be tested without capturing, so it fails later
+	with a message naming the setting.
 ]]
 function Capture.isAvailable(): boolean
 	local ok, service = pcall(function()

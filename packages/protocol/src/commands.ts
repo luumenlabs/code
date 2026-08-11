@@ -144,13 +144,8 @@ export const BATCHABLE_OPS = [
 export type BatchableOp = (typeof BATCHABLE_OPS)[number];
 
 /**
- * Many edits, one round trip, one undo waypoint.
- *
- * Building a hundred parts one operation at a time is a hundred requests, a
- * hundred rows in the transcript, and a hundred entries in the user's undo
- * stack for what was one instruction. Each step is still journalled
- * individually, because reviewing and reverting work at the level of the change
- * rather than the batch.
+ * Many edits, one round trip, one undo waypoint. Each step is still journalled
+ * individually, because revert works at the level of the change.
  */
 const batchParams = z.object({
   operations: z
@@ -218,15 +213,7 @@ const scriptCreateParams = z.object({
   properties: rbxPropertyMapSchema.optional(),
 });
 
-/**
- * Search across every script's source at once.
- *
- * There is no filesystem to grep here — the source of truth is the DataModel,
- * and reading it a script at a time to find one call site costs a round trip
- * and a context window per file. This is the operation that makes an unfamiliar
- * place navigable: one request, one pass over the descendants, only the lines
- * that matched.
- */
+/** One pass over every script's source. There is no filesystem here to grep. */
 const scriptGrepParams = z.object({
   pattern: z.string().min(1).describe("Text to find. Literal by default."),
   regex: z
@@ -249,21 +236,10 @@ const scriptGrepParams = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Playtesting is driven entirely through `StudioTestService`.
- *
- * Studio exposes `ExecutePlayModeAsync`, `ExecuteRunModeAsync`,
- * `ExecuteMultiplayerTestAsync` and `EndTest` to plugins, which is a complete,
- * structured way to start and stop a session. Nothing here touches the user's
- * keyboard, focuses a window, or synthesises a shortcut: an agent that can take
- * over the desktop to press Play is one that can press anything else too, and a
- * shortcut is invisible to the user until their typing lands somewhere it
- * should not have.
- *
- * The two halves run in different DataModels and that is not an implementation
- * detail. `ExecutePlayModeAsync` yields for the entire life of the playtest, so
- * only the *edit* peer can start one; `EndTest` only exists in the *running*
- * peer. Every operation below is routed to the peer that can actually perform
- * it rather than to whichever connection happened to be selected.
+ * Playtesting is `StudioTestService` throughout — nothing here touches the
+ * user's keyboard or window. The halves run in different DataModels: only the
+ * edit peer can start a session, only a running one can end it, so each
+ * operation is routed to the peer that can perform it.
  */
 const runStateParams = z.object({});
 
@@ -292,11 +268,7 @@ const runWaitReadyParams = z.object({
   requireCharacter: z.boolean().default(true),
 });
 
-/**
- * One operation rather than five, because these are the transitions of a single
- * state machine and an agent reading a tool list is better served by one entry
- * that explains the lifecycle than by five that each explain a third of it.
- */
+/** One operation rather than five: these are the transitions of one state machine. */
 const runMultiplayerParams = z
   .object({
     action: z
@@ -331,13 +303,8 @@ const outputClearParams = z.object({});
 const execParams = z.object({
   source: z.string().min(1).describe("Luau to execute. The last expression or return value is sent back, along with anything it printed."),
   /**
-   * Which DataModel the code runs in.
-   *
-   * During a playtest there are two or three live connections and they see
-   * different worlds — a server-side table is not readable from the client, and
-   * PlayerGui does not exist on the server. Leaving this to "whichever
-   * connection is selected" made half of all runtime probes answer about the
-   * wrong world, and the answer looked plausible either way.
+   * Which DataModel the code runs in. During a playtest the peers see different
+   * worlds, and a probe run in the wrong one answers plausibly and wrongly.
    */
   realm: z
     .enum(["auto", "edit", "server", "client"])
@@ -353,19 +320,10 @@ const execParams = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Input is delivered by `UserInputService:CreateVirtualInput()`.
- *
- * That object feeds the engine's real input pipeline: a key reaches
- * `UserInputService.InputBegan` and the default control modules, so W walks the
- * character at its actual WalkSpeed with the controls intact, and a mouse
- * button hit-tests against the GUI exactly as a user's click would. It is also
- * confined to the experience — the user's own mouse and keyboard are never
- * touched, and Studio does not need to be the frontmost window.
- *
- * `VirtualInputManager` is the obvious-looking alternative and it is a trap:
- * every one of its Send* methods is RobloxScriptSecurity, so from a plugin they
- * cannot work. We used it, reported the capability as available, and delivered
- * nothing.
+ * Input goes through `UserInputService:CreateVirtualInput()`, which feeds the
+ * engine's real pipeline and never touches the user's own mouse or keyboard.
+ * Not `VirtualInputManager`: its Send* methods are RobloxScriptSecurity and
+ * cannot work from a plugin.
  */
 const inputKeyParams = z.object({
   key: z.string().min(1).describe('Enum.KeyCode name, for example "W", "Space", "E", "LeftShift".'),
@@ -411,20 +369,6 @@ const inputGuiClickParams = z
 const viewportInfoParams = z.object({});
 
 /**
- * Two capture paths, and the default is the one inside the engine.
- *
- * `CaptureService:CaptureScreenshot` gives the rendered viewport and nothing
- * else — no ribbon, no Explorer, no other application that happens to be on top
- * — and it works while a playtest is running, which is when a screenshot is
- * worth taking. It needs the window to be drawing frames, and reading the
- * pixels back needs the place's Mesh/Image API permission, so both failures are
- * reported by name with `window` offered as the way round them.
- *
- * The desktop paths are kept because those two conditions are real. They
- * capture pixels that are already on screen and can never see an occluded or
- * minimised window.
- */
-/**
  * The on-screen interface as structure. Rectangles are in the same viewport
  * pixels `input.mouse` takes, and clickability is Roblox's own hit test through
  * `GetGuiObjectsAtPosition` rather than a guess from rectangles and ZIndex.
@@ -457,12 +401,8 @@ const focusParams = z.object({
 });
 
 /**
- * Marks instances in the viewport, so a screenshot explains itself.
- *
- * The adornments live in CoreGui with the target as their Adornee, so nothing
- * is added to the place, nothing is saved with it, and nothing has to be
- * journalled or reverted. They are the agent pointing at something, not editing
- * it.
+ * Adornments live in CoreGui with the target as Adornee, so nothing is added to
+ * the place and nothing needs journalling.
  */
 const highlightParams = z.object({
   targets: z.array(targetSchema).max(50).default([]).describe("What to mark. An empty list clears every mark."),
@@ -477,6 +417,10 @@ const highlightParams = z.object({
     .describe("Remove the marks automatically after this long. 0 leaves them until cleared."),
 });
 
+/**
+ * The viewport path needs a window that is drawing and the place's Mesh/Image
+ * API permission; both failures name `window` as the way round.
+ */
 const screenshotParams = z.object({
   source: z
     .enum(["viewport", "window", "screen"])
@@ -492,13 +436,8 @@ const screenshotParams = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * What the engine is actually doing, over a window of time.
- *
- * "Is this laggy, and why" is a question agents are asked constantly and have
- * so far had no way to answer — output says nothing about frame time, and a
- * screenshot cannot show a stutter. One instant reading is noise, so this
- * averages over a span and reports the worst frame alongside the mean, because
- * a game that hitches once a second has a good average.
+ * Averaged over a span, with the worst frame reported alongside the mean: a
+ * game that hitches once a second still has a good average.
  */
 const perfSampleParams = z.object({
   durationMs: z.number().int().min(200).max(30000).default(3000).describe("How long to watch for."),
@@ -510,21 +449,13 @@ const perfSampleParams = z.object({
 
 const perfCountParams = z.object({
   scope: targetSchema.optional().describe('Subtree to count. Defaults to the whole DataModel.'),
-  /**
-   * A census is only useful next to the thing it indicts, so the heaviest
-   * subtrees come back with it rather than a total the agent then has to go
-   * hunting through the tree to explain.
-   */
   topClasses: limit(50, 12).describe("How many classes to list, largest first."),
   topSubtrees: limit(50, 8).describe("How many of the heaviest containers to name."),
 });
 
 /**
- * Runs the place's own TestService suite.
- *
- * Results are collected from the service's signals rather than scraped out of
- * the output buffer, so a failure comes back as a failure with its script and
- * line rather than as a line of text that happens to contain the word.
+ * Collected from TestService's signals rather than the output buffer, so a
+ * failure keeps its script and line.
  */
 const testRunParams = z.object({
   timeoutMs: z.number().int().min(1000).max(600000).default(120000),
@@ -1011,16 +942,9 @@ export const COMMANDS = {
 export type Op = keyof typeof COMMANDS;
 
 /**
- * What each operation is called when an agent reaches it.
- *
- * Names are deliberately hand-written rather than derived from op ids: an agent
- * reads them as a menu, and "studio_edit_script" says more than "script_patch".
- *
- * They live here, beside the operations, and the exhaustive `satisfies` is the
- * point of the file — the MCP list, the permission controls, and the settings
- * the user has saved all key on these, and a name that existed in one of those
- * places and not another is a tool that silently cannot be turned off. `null`
- * means the operation is machinery rather than something an agent calls.
+ * What each operation is called when an agent reaches it. `null` means
+ * machinery rather than a tool. The `satisfies` is exhaustive on purpose: the
+ * MCP list, the permission controls, and saved settings all key on these names.
  */
 export const TOOL_NAMES = {
   "session.status": "studio_status",
@@ -1152,11 +1076,7 @@ export interface ViewportInfo {
     cameraType: string;
   } | null;
   realm: StudioRealm;
-  /**
-   * False when the Studio window is minimised or otherwise not drawing. Input
-   * and screenshots both need frames, so this is the first thing to check when
-   * either appears to do nothing.
-   */
+  /** False when the window is not drawing. Input and capture both need frames. */
   rendering: boolean;
 }
 
@@ -1192,11 +1112,8 @@ export interface GrepFile {
 }
 
 /**
- * One step of a batch, in the order it was requested.
- *
- * A step that never ran because an earlier one failed is reported as `skipped`
- * rather than omitted: the agent asked for a sequence, and knowing where the
- * sequence stopped is the whole point.
+ * One step of a batch, in request order. A step that never ran is reported as
+ * `skipped` rather than omitted, so the caller can see where it stopped.
  */
 export interface BatchStep {
   index: number;
@@ -1212,13 +1129,7 @@ export interface PlayerRef {
   displayName: string;
 }
 
-/**
- * One element of the on-screen interface.
- *
- * The rectangle is in the same viewport pixels `input.mouse` takes and
- * `view.screenshot` returns, so a position read here can be clicked without
- * conversion. That is the whole point of the operation.
- */
+/** One element. The rectangle is in the pixels `input.mouse` takes. */
 export interface ScreenNode {
   handle: string;
   path: string;
@@ -1233,10 +1144,8 @@ export interface ScreenNode {
   zIndex: number;
   visible: boolean;
   /**
-   * True when a click at the element's centre reaches it, asked of Roblox
-   * rather than worked out from rectangles. False here with `visible` true is
-   * the signature of something covered by an invisible frame — the failure that
-   * is otherwise almost impossible to diagnose from a screenshot.
+   * True when a click at the centre reaches it. False with `visible` true means
+   * something is covering it — see `obscuredBy`.
    */
   clickable: boolean;
   /** What the engine reports on top at this element's centre, when it is not this one. */
@@ -1380,11 +1289,7 @@ export interface CommandResults {
     /** Total matches found, which exceeds the sum of what is returned when a limit cut it short. */
     matchCount: number;
     scriptsSearched: number;
-    /**
-     * Scripts whose source Studio refused to hand over, and which were skipped.
-     * One locked module should not hide every other match, but an empty result
-     * with a count here means something different from an empty result without.
-     */
+    /** Scripts whose source Studio refused, skipped rather than failing the search. */
     unreadable: number;
     truncated: boolean;
   };
@@ -1420,10 +1325,8 @@ export interface CommandResults {
     guiInset: { x: number; y: number };
     realm: StudioRealm;
     /**
-     * False when this DataModel offers no hit testing, which is every context
-     * without a LocalPlayer — edit mode included. `clickable` is then false on
-     * every node because it is unknown, not because nothing can be clicked, and
-     * an agent needs to be able to tell those apart.
+     * False without a LocalPlayer, edit mode included. `clickable` is then false
+     * because it is unknown, not because nothing can be clicked.
      */
     hitTested: boolean;
     truncated: boolean;

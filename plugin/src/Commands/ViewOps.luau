@@ -2,17 +2,9 @@
 --[[
 	The viewport: where the camera points, and what is marked in it.
 
-	Both exist to make screenshots worth taking. Without them a capture shows
-	wherever the user last happened to be looking, with nothing in it identified
-	— so the picture cannot answer the question it was taken to answer, and the
-	agent describing it has to hope the user is looking at the same thing.
-
-	Neither touches the place. The camera is a property of the session, not of
-	the DataModel, and the adornments are parented into CoreGui with the target
-	as their Adornee — so nothing here is saved with the place, nothing needs a
-	change record, and nothing survives Studio closing. That is the whole reason
-	it is done this way rather than by parenting a Highlight to the instance,
-	which would be an edit to the user's place for the sake of a screenshot.
+	Neither touches the place. The camera belongs to the session, and adornments
+	go in CoreGui with the target as Adornee — so nothing is saved with the place
+	and nothing needs a change record.
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -28,12 +20,8 @@ local CONTAINER_NAME = "LuuCodeViewMarks"
 local DEFAULT_COLOR = Color3.fromRGB(43, 127, 255)
 
 --[[
-	Where the camera was before the agent moved it.
-
-	The camera belongs to the user. Remembering the first position taken over,
-	and not overwriting it on later moves, is what makes restore mean "put it
-	back where I had it" rather than "back one step" — an agent that framed
-	three things in a row should still be able to undo all of it at once.
+	Where the camera was before the agent moved it. Only the first position taken
+	over is kept, so restore means "back where I had it", not "back one step".
 ]]
 local userCamera: CFrame? = nil
 
@@ -64,11 +52,8 @@ local function cameraState(): any
 end
 
 --[[
-	The box an instance occupies, whatever kind of instance it is.
-
-	A Model knows its own bounds; a single part is its own box; anything else —
-	a Folder, a service, a script's parent — has to be measured from the parts
-	underneath it, because those are the only things with a position at all.
+	The box an instance occupies. A Model knows its own; a part is its own;
+	anything else is measured from the parts underneath it.
 ]]
 local function boundsOf(instance: Instance): (CFrame, Vector3)
 	if instance:IsA("Model") then
@@ -118,11 +103,8 @@ local function boundsOf(instance: Instance): (CFrame, Vector3)
 end
 
 --[[
-	Unit directions to look *from*, per angle.
-
-	"iso" is the three-quarter view Studio itself opens on, and it is the default
-	because a flat elevation of a building is a rectangle: the angle that shows
-	depth is the one that shows whether something is actually wrong.
+	Unit directions to look *from*. "iso" is the default because a flat elevation
+	shows no depth.
 ]]
 local DIRECTIONS = {
 	front = Vector3.new(0, 0, 1),

@@ -1,19 +1,11 @@
 --!nonstrict
 --[[
-	Is this Studio window actually drawing?
+	Is this Studio window drawing?
 
-	A minimized or fully occluded Studio window suspends the render loop and,
-	with it, input processing — while scripts keep running normally. That
-	combination is the reason two whole families of operation used to fail
-	silently: virtual input returned success having delivered nothing, and
-	CaptureService's callback simply never fired, so a screenshot spent its
-	entire timeout waiting for a frame that was not coming.
-
-	Heartbeat is no use as a signal here, because it keeps firing at its usual
-	rate throughout. RenderStepped is the one that stops, so the freshness of the
-	last rendered frame is what this reports. A gap of a full second is far
-	outside anything an ordinary frame hitch produces and well inside the point
-	at which input stops arriving.
+	A minimized window suspends rendering and input while scripts keep running,
+	so input silently does nothing and CaptureService never fires its callback.
+	Heartbeat keeps firing throughout and is no use as a signal; RenderStepped
+	stops, so frame freshness is what this reports.
 ]]
 
 local RunService = game:GetService("RunService")
