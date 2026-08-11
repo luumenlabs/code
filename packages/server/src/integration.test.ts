@@ -55,7 +55,7 @@ class FakePlugin {
     /** The window. Generated fresh per plugin runtime, never persisted. */
     private readonly windowId = `auto-window-${(FakePlugin.nextWindow += 1)}`,
     private readonly placeId = 123,
-    private readonly placeName = "Test Place",
+    private placeName = "Test Place",
   ) {
     FakePlugin.all.push(this);
   }
@@ -68,6 +68,24 @@ class FakePlugin {
       unsaved: false,
       identity: `place:${this.placeId}`,
     };
+  }
+
+  /**
+   * Re-describes the open place mid-session, the way the real plugin does once
+   * Roblox has answered with the published name.
+   */
+  redescribe(name: string, identity?: string): Promise<{ status: number; body: any }> {
+    this.placeName = name;
+    return this.post("/studio/sync", {
+      sessionId: this.sessionId,
+      endpointId: this.endpointId,
+      token: this.token,
+      wait: false,
+      results: [],
+      events: [],
+      run: this.runState(),
+      place: { ...this.place(), ...(identity ? { identity } : {}) },
+    });
   }
 
   on(op: string, handler: (params: any) => unknown): this {
@@ -604,6 +622,27 @@ describe("status", () => {
     expect(session?.place.name).toBe("Test Place");
     expect(session?.endpoints.map((endpoint) => endpoint.realm)).toContain("edit");
     expect(status.activeSessionId).toBeTruthy();
+  });
+
+  it("takes a better name for the place it is already connected to", async () => {
+    plugin = await connectPlugin();
+
+    await plugin.redescribe("Gun System");
+
+    const session = server.status().sessions.find((entry) => entry.id === plugin.sessionId);
+    expect(session?.place.name).toBe("Gun System");
+  });
+
+  it("refuses a place that claims to be a different game", async () => {
+    plugin = await connectPlugin();
+
+    // Same session, different identity. Accepting this would relabel every
+    // chat bound to the window and file its changes against the wrong place.
+    await plugin.redescribe("Somewhere Else", "place:999");
+
+    const session = server.status().sessions.find((entry) => entry.id === plugin.sessionId);
+    expect(session?.place.name).toBe("Test Place");
+    expect(session?.place.identity).toBe("place:123");
   });
 });
 

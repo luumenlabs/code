@@ -171,6 +171,32 @@ export class ThreadStore {
     return project;
   }
 
+  /**
+   * Takes a better name for a place already on file, and only that.
+   *
+   * The plugin resolves the published place name a moment after connecting, so
+   * a heading written when the first chat was filed can be a name Roblox has
+   * since corrected. Unlike `project`, this creates nothing: a place the user
+   * has never had a conversation about should not gain a heading in the
+   * sidebar just for being open in Studio.
+   *
+   * Returns whether anything moved, so the caller only pushes the index when
+   * there is something to push — this runs on every session status change.
+   */
+  describe(place: PlaceRef): boolean {
+    const identity = place.identity ?? null;
+    // The Unknown bucket holds more than one place, so no single place gets to
+    // rename it.
+    if (!identity) return false;
+
+    const project = this.projects.find((entry) => projectIdentity(entry) === identity);
+    if (!project || project.name === place.name) return false;
+
+    project.name = place.name;
+    this.markIndexDirty();
+    return true;
+  }
+
   create(place: PlaceRef, agent: AgentId | null, modelSelection: Thread["modelSelection"]): Thread {
     const project = this.project(place);
     const now = Date.now();

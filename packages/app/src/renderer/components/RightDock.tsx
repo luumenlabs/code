@@ -155,6 +155,20 @@ function StudioTab({ harness }: { harness: Harness }): React.JSX.Element {
   );
 }
 
+/**
+ * What the app knows this place by, as opposed to what it calls it.
+ *
+ * The same rule the sidebar groups on: a place id if Roblox has issued one, a
+ * universe id if the place belongs to one but has never been published, and
+ * nothing at all otherwise. Names are never part of it — two places called
+ * Baseplate are two places.
+ */
+function identityOf(place: StudioSession["place"]): string | null {
+  if (place.identity) return place.identity;
+  if (place.placeId > 0) return `place:${place.placeId}`;
+  return null;
+}
+
 function StudioDetails({
   session,
   sessions,
@@ -164,11 +178,19 @@ function StudioDetails({
   sessions: StudioSession[];
   harness: Harness;
 }): React.JSX.Element {
+  const place = session.place;
+  const identity = identityOf(place);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-medium">{session.place.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[14px] font-medium">{place.name}</span>
+            {/* Not a warning, a fact — and the one that explains why this name
+                may not be the name on the Studio tab. */}
+            {place.unsaved && <Badge variant="outline">unpublished</Badge>}
+          </div>
           <div className="mt-0.5 text-[12px] text-muted-foreground">
             Studio {session.studioVersion} · plugin {session.pluginVersion}
           </div>
@@ -216,11 +238,38 @@ function StudioDetails({
         )}
       </Field>
 
+      {/* The ids, because the name is the one thing about a place that is not
+          reliable and not unique — and "which game am I actually pointed at"
+          is a question a name has never answered. */}
+      <Field label="Place">
+        {place.placeId > 0 ? (
+          <CopyableId value={String(place.placeId)} />
+        ) : (
+          <span className="text-[12.5px] text-muted-foreground">Never published</span>
+        )}
+      </Field>
+
+      {place.gameId > 0 && (
+        <Field label="Universe">
+          <CopyableId value={String(place.gameId)} />
+        </Field>
+      )}
+
+      {place.creatorId !== undefined && place.creatorId > 0 && (
+        <Field label="Owner">
+          <span className="truncate text-[12.5px] text-muted-foreground">
+            {place.creatorType ?? "User"} {place.creatorId}
+          </span>
+        </Field>
+      )}
+
       <Field label="Connections">
         <span className="truncate text-[12.5px] capitalize">
           {session.endpoints.map((endpoint) => endpoint.realm).join(" · ") || "None"}
         </span>
       </Field>
+
+      <PlaceNotes place={place} identity={identity} />
 
       <div className="flex gap-1.5">
         <Button
@@ -238,6 +287,87 @@ function StudioDetails({
           </Button>
         </Hint>
       </div>
+    </div>
+  );
+}
+
+/**
+ * An id, and the one thing anyone ever does with one.
+ *
+ * Selectable would be enough on a wide panel. In a 340px column the number is
+ * usually against the right edge with a button beside it, and dragging a
+ * selection across it is a worse way to get ten digits than pressing a button.
+ */
+function CopyableId({ value }: { value: string }): React.JSX.Element {
+  const [copied, setCopied] = React.useState(false);
+
+  const copy = async (): Promise<void> => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      title={`Copy ${value}`}
+      className="group flex min-w-0 items-center gap-1.5 rounded font-mono text-[12px] tabular-nums transition-colors hover:text-foreground"
+    >
+      <span className="truncate">{value}</span>
+      {copied ? (
+        <Check className="size-3 shrink-0 text-[var(--success)]" />
+      ) : (
+        <Copy className="size-3 shrink-0 text-muted-foreground/45 group-hover:text-muted-foreground" />
+      )}
+    </button>
+  );
+}
+
+/**
+ * Why the name might not be the name, and when that costs something.
+ *
+ * Both notes exist because of the same gap: Studio's tab shows the file a
+ * place was opened from, and no plugin API exposes it. `game.Name` is the
+ * DataModel's own name, which Studio never updates — a place made with
+ * File → New stays "Place1" however the file is later called. The published
+ * name fixes it for a published place and there is nothing to fix it with for
+ * a local one, so the panel says so rather than letting the user assume the
+ * app is confused about which place it is in.
+ *
+ * The second note is the one that matters. Chats are filed against the place's
+ * id, never its name, so two places called the same thing never merge — but a
+ * place with no id has nothing to be told apart by, and those genuinely do
+ * share one heading.
+ */
+function PlaceNotes({
+  place,
+  identity,
+}: {
+  place: StudioSession["place"];
+  identity: string | null;
+}): React.JSX.Element | null {
+  const localName = place.nameSource === "datamodel" && place.placeId === 0;
+  if (!localName && identity) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md bg-muted/40 px-2 py-1.5">
+      {localName && (
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
+          This is the place's own name. Studio's tab shows the file it was opened from, which a plugin cannot read —
+          publish the place, or set <code className="font-mono text-foreground/80">game.Name</code>, to change it here.
+        </p>
+      )}
+
+      {!identity && (
+        <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--warning)]">
+          <TriangleAlert className="mt-0.5 size-3 shrink-0" />
+          <span>
+            Roblox has no id for this place, so Luu Code cannot tell it apart from any other unpublished one. Its chats
+            are filed under Unknown, alongside theirs.
+          </span>
+        </p>
+      )}
     </div>
   );
 }

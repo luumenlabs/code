@@ -19,6 +19,7 @@
 ]]
 
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Commands = require(script.Parent.Commands)
 local Constants = require(script.Parent.Constants)
@@ -110,19 +111,129 @@ local function placeIdentity(): string?
 	return nil
 end
 
+--[[
+	The name Roblox has on file for this place, once we have asked for it.
+
+	`game.Name` is the DataModel's name and Studio keeps it in step with
+	nothing. A place made with File → New is called "Place1", and saving it to
+	Gun System.rbxl renames the file and the tab, not the DataModel — so the
+	name Luu Code showed was whatever the place happened to be called the day it
+	was created. The published name is the fix, and only a published place has
+	one; Studio exposes no API for the file a local place was opened from, so
+	there is nothing better to offer that case than being clear about it.
+]]
+local publishedName: string? = nil
+
+--[[
+	Asks Roblox what the place id is called.
+
+	Two spellings because this plugin runs on Studio builds either side of the
+	rename, and the older one is the deprecated method rather than nothing at
+	all. Both are wrapped: the call reaches Roblox, so it fails when Studio is
+	offline, signed out, or looking at an id that no longer resolves — none of
+	which is worth a message, because the local name is already on screen.
+]]
+local function fetchPublishedName(): string?
+	if game.PlaceId == 0 then
+		return nil
+	end
+
+	local ok, info = pcall(function()
+		return (MarketplaceService :: any):GetProductInfoAsync(game.PlaceId, Enum.InfoType.Asset)
+	end)
+
+	if not ok then
+		ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
+		end)
+	end
+
+	if not ok or type(info) ~= "table" then
+		return nil
+	end
+
+	local name = info.Name
+	if type(name) == "string" and #name > 0 then
+		return name
+	end
+
+	return nil
+end
+
+--[[
+	"Enum.CreatorType.Group" → "Group".
+
+	Through tostring rather than `.Name` because selene's Roblox standard
+	library does not model the enum item behind `game.CreatorType`, and a
+	string this shape is what crosses the wire either way.
+]]
+local function creatorType(): string
+	local value = tostring(game.CreatorType)
+	return string.match(value, "([^.]+)$") or value
+end
+
 local function placeInfo(): any
-	local name = game.Name
-	if name == nil or name == "" then
-		name = "Untitled Place"
+	local name = publishedName
+	local source = "published"
+
+	if name == nil then
+		source = "datamodel"
+		name = game.Name
+		if name == nil or name == "" then
+			name = "Untitled Place"
+		end
 	end
 
 	return {
 		placeId = game.PlaceId,
 		gameId = game.GameId,
 		name = name,
+		nameSource = source,
 		unsaved = game.PlaceId == 0,
 		identity = placeIdentity(),
+		creatorId = game.CreatorId,
+		creatorType = creatorType(),
+		placeVersion = game.PlaceVersion,
 	}
+end
+
+--[[
+	Resolves the published name in the background, then tells everyone.
+
+	Off the handshake path on purpose: this is a Roblox round trip, and a name
+	is not worth making a connection wait for one. The session comes up under
+	`game.Name` and corrects itself a moment later — through the pusher, which
+	already exists to carry a run-state change, rather than by reconnecting to
+	change one string.
+
+	Three attempts, because Studio's network is often not ready in the first
+	seconds after a plugin loads, and then it stops: a place whose id does not
+	resolve will not start resolving, and a retry loop against Roblox is not
+	something to leave running for the life of a session.
+]]
+local function resolvePlaceName()
+	if game.PlaceId == 0 then
+		return
+	end
+
+	task.spawn(function()
+		for attempt = 1, 3 do
+			local name = fetchPublishedName()
+
+			if name ~= nil then
+				if name ~= publishedName then
+					publishedName = name
+					state.place = placeInfo()
+					statePending = true
+					wake:Fire()
+					notify()
+				end
+				return
+			end
+
+			task.wait(attempt * 2)
+		end
+	end)
 end
 
 local function readStudioVersion(): string
@@ -355,6 +466,9 @@ local function sync(wait: boolean): boolean
 		events = events,
 		run = RunState.current(),
 		capabilities = Commands.capabilities(),
+		-- Carries the published name once it lands. The server ignores a place
+		-- that describes a different game, so this can only ever refine.
+		place = state.place,
 	})
 
 	if not response.ok then
@@ -476,6 +590,11 @@ function Client.start(hostPlugin: Plugin)
 		wake:Fire()
 		notify()
 	end)
+
+	-- Started alongside the connection rather than inside it: the answer is the
+	-- same whether or not Luu Code is running, and having it in flight already
+	-- means the first handshake often carries the right name.
+	resolvePlaceName()
 
 	task.spawn(loop)
 

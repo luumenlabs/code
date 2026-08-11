@@ -459,6 +459,30 @@ async function bootstrap(): Promise<void> {
         requireThreads().setMeta(active.id, { placeName: event.session.place.name });
       }
     }
+
+    /**
+     * A place can be renamed under us.
+     *
+     * The plugin reports `game.Name` first and the published name once Roblox
+     * has answered, and the user can rename the experience on the website
+     * between two sessions. The heading in the sidebar is the same game either
+     * way — it is keyed on identity, not on what it is called — so it should
+     * follow rather than keep whatever it was told first.
+     */
+    if (event.type === "status") {
+      const store = requireThreads();
+      const renamed = event.status.sessions
+        .map((session) =>
+          store.describe({
+            identity: session.place.identity ?? null,
+            placeId: session.place.placeId,
+            name: session.place.name,
+          }),
+        )
+        .some(Boolean);
+
+      if (renamed) broadcast("threads", store.index());
+    }
   });
 
   agents = new AgentManager({

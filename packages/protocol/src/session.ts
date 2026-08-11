@@ -43,9 +43,11 @@ export const EDIT_RUN_STATE: RunState = {
 };
 
 export interface PlaceInfo {
+  /** Roblox place id. 0 for a place that has never been published. */
   placeId: number;
+  /** The universe the place belongs to. 0 when it belongs to none. */
   gameId: number;
-  /** Place name as shown in Studio, or the file name for unpublished places. */
+  /** What to call this place. See `nameSource` for where it came from. */
   name: string;
   /** True when the place has never been saved or published. */
   unsaved: boolean;
@@ -59,6 +61,25 @@ export interface PlaceInfo {
    * conversations together. Also absent from plugins older than this field.
    */
   identity?: string;
+  /**
+   * Where `name` came from, because the two are not equally trustworthy.
+   *
+   * `published` is the name Roblox has on file for the place id, resolved
+   * after the handshake. `datamodel` is `game.Name`, which is the only thing
+   * available for a place that has never been published — and which Studio
+   * does not keep in step with anything. A place made with File → New is
+   * called "Place1" forever, whatever the file it was saved to is called, and
+   * the tab title Studio shows is the file name, which no plugin API exposes.
+   *
+   * Absent from plugins older than this field.
+   */
+  nameSource?: "published" | "datamodel";
+  /** The user or group that owns the experience. 0 when unpublished. */
+  creatorId?: number;
+  /** "User" or "Group", from `Enum.CreatorType`. */
+  creatorType?: string;
+  /** How many times the place has been published. */
+  placeVersion?: number;
 }
 
 export type ConnectionStatus = "disconnected" | "pairing" | "connected" | "stale";

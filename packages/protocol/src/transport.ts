@@ -120,6 +120,15 @@ export interface StudioSyncRequest {
   run: RunState;
   /** Capability list, resent whenever it changes. */
   capabilities?: CapabilityId[];
+  /**
+   * The place, redescribed.
+   *
+   * The published name is a Roblox lookup, and a connection is not worth
+   * holding open for one — so the handshake goes out with whatever the plugin
+   * knows locally and the better answer rides the next sync. Only the
+   * description may move; the identity is fixed for the life of a session.
+   */
+  place?: PlaceInfo;
 }
 
 export interface StudioSyncResponse {

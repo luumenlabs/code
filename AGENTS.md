@@ -74,6 +74,26 @@ without asking. The **window id** is the Studio window, generated per plugin
 runtime and never persisted. `SessionRegistry` keys sessions by window and
 credentials by install.
 
+Underneath both is the **place identity**, `placeIdentity()` in
+`plugin/src/Client.luau`: `place:<PlaceId>`, or `game:<GameId>` for a place that
+belongs to a universe but has never been published, or nothing. Everything
+durable keys on it — the stored credential, the sidebar's grouping, the
+successor lookup after a Studio restart. **A name is never part of it.** Two
+places called Baseplate are two places, and a fallback to the name merged their
+histories the one time it existed. A place with no identity is filed under
+Unknown, which is the honest answer rather than a heading claiming they are one
+game.
+
+The **name** is presentation only, and it is not the name on the Studio tab.
+Studio's tab shows the file the place was opened from and exposes it to no
+plugin API; `game.Name` is the DataModel's own name, which Studio never updates,
+so a place made with File → New stays "Place1" whatever it is later saved as.
+The plugin resolves the published name from `MarketplaceService` after the
+handshake — off that path, because a Roblox round trip is not worth delaying a
+connection for — and rides it up on the next sync. `SessionRegistry.applyPlace`
+accepts a redescription only when the identity matches, so a session can never
+change which game it stands for without reconnecting.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.

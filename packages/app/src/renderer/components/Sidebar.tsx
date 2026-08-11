@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { isBusyState, settingsWaiting } from "@/state";
 import type { Harness } from "@/state";
 import { archivedThreads, groupThreads, projectIdentity, relativeTime } from "../../shared/threads.js";
-import type { ThreadSummary } from "../../shared/threads.js";
+import type { Project, ThreadSummary } from "../../shared/threads.js";
 import { updateWaiting } from "../../shared/update.js";
 
 export function Sidebar({
@@ -128,13 +128,7 @@ export function Sidebar({
                 <button
                   onClick={() => toggle(project.id)}
                   className="flex items-center gap-1.5 px-1.5 py-1 text-left text-[12px] font-semibold tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground"
-                  title={
-                    project.placeId > 0
-                      ? `Place ${project.placeId}`
-                      : projectIdentity(project)
-                        ? `Universe ${projectIdentity(project)?.replace("game:", "")}`
-                        : "Unsaved places"
-                  }
+                  title={projectTitle(project)}
                 >
                   <ChevronRight className={cn("size-3 shrink-0 transition-transform", !isCollapsed && "rotate-90")} />
                   <Folder className="size-3 shrink-0" />
@@ -191,6 +185,28 @@ export function Sidebar({
       </div>
     </aside>
   );
+}
+
+/**
+ * What a heading actually stands for.
+ *
+ * Worth spelling out, because the heading is a name and the grouping is not:
+ * chats are filed against the place's id, so two places called Baseplate keep
+ * separate histories and a place renamed on the website keeps its own. The one
+ * case where that fails is a place Roblox has no id for, and the tooltip says
+ * so rather than leaving "Unknown" to be read as a bug.
+ */
+function projectTitle(project: Project): string {
+  if (project.placeId > 0) {
+    return `Place ${project.placeId} — chats are grouped by this id, not by name`;
+  }
+
+  const identity = projectIdentity(project);
+  if (identity) {
+    return `Universe ${identity.replace("game:", "")} — not published as a place yet`;
+  }
+
+  return "Places Roblox has no id for. Luu Code cannot tell them apart, so they share this heading.";
 }
 
 /**

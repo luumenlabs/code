@@ -13,6 +13,7 @@ import type {
   CapabilityId,
   Op,
   PairingRequest,
+  PlaceInfo,
   RunState,
   SessionStatus,
   StudioCommand,
@@ -353,6 +354,7 @@ export class SessionRegistry {
     }
 
     this.applyResults(endpoint, request);
+    this.applyPlace(session, request.place);
     this.applyRunState(session, endpoint, request.run);
     this.applyEvents(session, request);
 
@@ -377,6 +379,30 @@ export class SessionRegistry {
         pending.deferred.reject(LuuCodeError.from(result.error));
       }
     }
+  }
+
+  /**
+   * The same game, described better.
+   *
+   * The plugin resolves the published place name after the handshake, so the
+   * first thing this server is told about a place is often `game.Name` and the
+   * real one arrives on a later sync. Only the description is allowed to move:
+   * a payload naming a different identity is a different game, and a session
+   * that quietly changed which place it stood for would relabel every chat
+   * bound to it and every change filed against it.
+   *
+   * Compared field by field rather than by serialising: the plugin builds this
+   * from a Lua table, whose key order is whatever the hash gave, so two
+   * encodings of one unchanged place are not the same string — and a status
+   * event on every poll is a re-render of the whole window twice a second.
+   */
+  private applyPlace(session: SessionRecord, place: PlaceInfo | undefined): void {
+    if (!place) return;
+    if ((place.identity ?? null) !== (session.place.identity ?? null)) return;
+    if (samePlace(place, session.place)) return;
+
+    session.place = place;
+    this.emitStatus();
   }
 
   private applyRunState(session: SessionRecord, endpoint: EndpointRecord, run: RunState | undefined): void {
@@ -913,6 +939,20 @@ export class SessionRegistry {
  */
 function windowIdOf(request: StudioHelloRequest): string {
   return request.windowId ?? request.installId;
+}
+
+/** Every field a plugin can change about a place it has already identified. */
+function samePlace(left: PlaceInfo, right: PlaceInfo): boolean {
+  return (
+    left.name === right.name &&
+    left.placeId === right.placeId &&
+    left.gameId === right.gameId &&
+    left.unsaved === right.unsaved &&
+    (left.nameSource ?? null) === (right.nameSource ?? null) &&
+    (left.creatorId ?? null) === (right.creatorId ?? null) &&
+    (left.creatorType ?? null) === (right.creatorType ?? null) &&
+    (left.placeVersion ?? null) === (right.placeVersion ?? null)
+  );
 }
 
 function emptyPublicSession(session: SessionRecord): StudioSession {
