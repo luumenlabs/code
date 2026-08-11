@@ -15,13 +15,22 @@ Everything runs on `127.0.0.1`. Nothing leaves the machine.
 | `packages/protocol` | Shared types. `commands.ts` is the single source of truth for every Roblox operation: params schema, permission group, capability, summary. |
 | `packages/server` | The local server (default `127.0.0.1:33770`): Studio bridge, permissions, dispatcher, and the MCP interface. Also the `luu-code` / `luu-code-mcp` CLIs. |
 | `packages/app` | Electron. `src/main` (agent sessions, threads, settings, updater, plugin installer), `src/renderer` (React + Tailwind + Radix), `src/shared` (the IPC contract and types both sides use). |
-
-`packages/protocol/src/changes.ts` and `plugin/src/Changes.luau` are the two ends
-of the change journal; see [The change journal](#the-change-journal).
 | `plugin/` | The Luau Studio plugin. Its own Luumen project driven by `luu`, toolchain pinned in `rokit.toml`. Needs none of the Node toolchain. |
 
 The two halves are independent: you can work on the plugin without Node, and on
 the harness without Studio.
+
+Two pairs of files are the two ends of one thing, and neither half makes sense
+alone:
+
+- `packages/protocol/src/changes.ts` and `plugin/src/Changes.luau` — see
+  [The change journal](#the-change-journal).
+- `packages/app/src/renderer/styles.css` and `plugin/src/Theme.luau`. The plugin
+  panel is docked into Studio while the app sits beside it, so the two are on
+  screen together and have to look like one product. `Theme.luau` is the app's
+  custom properties converted from oklch to sRGB, written out rather than
+  matched by eye. Change a colour in the stylesheet and convert it there too;
+  nearly-the-same reads as a bug in a way that plainly-different does not.
 
 ## Commands
 

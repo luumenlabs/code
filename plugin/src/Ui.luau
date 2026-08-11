@@ -5,63 +5,55 @@
 	Deliberately small. The plugin's job in the UI is to answer three questions:
 	is Studio connected, which code is being paired, and how do I recover.
 	Everything else belongs in the app.
+
+	It is built to look like the app because it is usually on screen beside it —
+	the app in one window, this docked into Studio in the other. Two surfaces
+	that are nearly the same read as a mistake, so the tokens come from
+	Theme.luau, which is a straight port of the app's stylesheet rather than an
+	impression of it.
 ]]
 
 local Client = require(script.Parent.Client)
 local Constants = require(script.Parent.Constants)
+local Theme = require(script.Parent.Theme)
 
 local Ui = {}
 
-local COLORS = {
-	background = Color3.fromRGB(28, 28, 32),
-	panel = Color3.fromRGB(38, 38, 44),
-	text = Color3.fromRGB(235, 235, 240),
-	muted = Color3.fromRGB(150, 150, 160),
-	accent = Color3.fromRGB(120, 170, 255),
-	good = Color3.fromRGB(110, 205, 140),
-	warn = Color3.fromRGB(235, 185, 100),
-	bad = Color3.fromRGB(235, 120, 120),
+local STATUS = {
+	connected = { text = "Connected", color = Theme.color.success },
+	pairing = { text = "Waiting for approval", color = Theme.color.warning },
+	disconnected = { text = "Not connected", color = Theme.color.destructive },
 }
 
-local STATUS_COLORS = {
-	connected = COLORS.good,
-	pairing = COLORS.warn,
-	disconnected = COLORS.bad,
-}
+local function studioVersion(): string
+	local ok, result = pcall(function()
+		return version()
+	end)
 
-local function corner(parent: Instance, radius: number)
-	local instance = Instance.new("UICorner")
-	instance.CornerRadius = UDim.new(0, radius)
-	instance.Parent = parent
+	if not ok then
+		return "unknown"
+	end
+
+	-- "0.733.0.7330989" is four components of build metadata, of which two are
+	-- the version anyone means. The rest costs a line of a very narrow panel to
+	-- say nothing a person reads.
+	local major, minor = string.match(tostring(result), "^(%d+)%.(%d+)")
+	return major and string.format("%s.%s", major, minor) or tostring(result)
 end
 
-local function label(parent: Instance, text: string, size: number, color: Color3): TextLabel
-	local instance = Instance.new("TextLabel")
-	instance.BackgroundTransparency = 1
-	instance.Size = UDim2.new(1, 0, 0, size + 8)
-	instance.Font = Enum.Font.Gotham
-	instance.TextSize = size
-	instance.TextColor3 = color
-	instance.TextXAlignment = Enum.TextXAlignment.Left
-	instance.TextWrapped = true
-	instance.Text = text
-	instance.Parent = parent
-	return instance
-end
+--[[
+	"Group 16932405", the way the app writes it.
 
-local function button(parent: Instance, text: string): TextButton
-	local instance = Instance.new("TextButton")
-	instance.Size = UDim2.new(1, 0, 0, 30)
-	instance.BackgroundColor3 = COLORS.panel
-	instance.BorderSizePixel = 0
-	instance.AutoButtonColor = true
-	instance.Font = Enum.Font.GothamMedium
-	instance.TextSize = 13
-	instance.TextColor3 = COLORS.text
-	instance.Text = text
-	instance.Parent = parent
-	corner(instance, 6)
-	return instance
+	Nothing to show for an unpublished place, which has no owner yet — and a row
+	reading "User 0" would be an answer rather than the absence of one.
+]]
+local function ownerOf(place: any): string?
+	if place == nil or type(place.creatorId) ~= "number" or place.creatorId <= 0 then
+		return nil
+	end
+
+	local kind = type(place.creatorType) == "string" and place.creatorType or "User"
+	return string.format("%s %d", kind, place.creatorId)
 end
 
 function Ui.create(hostPlugin: Plugin)
@@ -69,75 +61,105 @@ function Ui.create(hostPlugin: Plugin)
 	-- needs its own or two installed plugins fight over one docked panel.
 	local widget = hostPlugin:CreateDockWidgetPluginGui(
 		"LuuCodePanel" .. Constants.suffix(),
-		DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 280, 300, 240, 240)
+		DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 300, 420, 260, 300)
 	)
 	widget.Title = Constants.label()
 	widget.Name = "LuuCode" .. Constants.suffix()
 
 	local root = Instance.new("Frame")
 	root.Size = UDim2.fromScale(1, 1)
-	root.BackgroundColor3 = COLORS.background
+	root.BackgroundColor3 = Theme.color.background
 	root.BorderSizePixel = 0
 	root.Parent = widget
 
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 12)
-	padding.PaddingBottom = UDim.new(0, 12)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 12)
-	padding.Parent = root
+	-- Scrolls because the widget can be dragged shorter than its contents, and a
+	-- pairing code the user cannot reach is the one thing this panel must never
+	-- do.
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.fromScale(1, 1)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.CanvasSize = UDim2.new()
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollBarThickness = 4
+	scroll.ScrollBarImageColor3 = Theme.color.foreground
+	scroll.ScrollBarImageTransparency = 0.9
+	scroll.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	scroll.Parent = root
 
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Vertical
-	layout.Padding = UDim.new(0, 8)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = root
+	Theme.padding(scroll, Theme.space.panel, Theme.space.panel)
+	Theme.list(scroll, Theme.space.row)
 
-	local statusLabel = label(root, "Connecting…", 15, COLORS.text)
-	statusLabel.LayoutOrder = 1
+	-- Ordered in tens so a row can be put between two others without renumbering
+	-- the panel.
 
-	local detailLabel = label(root, "", 12, COLORS.muted)
-	detailLabel.LayoutOrder = 2
-	detailLabel.Size = UDim2.new(1, 0, 0, 34)
+	-- Header ------------------------------------------------------------------
 
-	local codeFrame = Instance.new("Frame")
-	codeFrame.LayoutOrder = 3
-	codeFrame.Size = UDim2.new(1, 0, 0, 56)
-	codeFrame.BackgroundColor3 = COLORS.panel
-	codeFrame.BorderSizePixel = 0
-	codeFrame.Visible = false
-	codeFrame.Parent = root
-	corner(codeFrame, 8)
+	local statusDot, statusText = Theme.statusDot(scroll, 10)
 
-	local codeLabel = Instance.new("TextLabel")
-	codeLabel.BackgroundTransparency = 1
-	codeLabel.Size = UDim2.fromScale(1, 1)
-	codeLabel.Font = Enum.Font.RobotoMono
-	codeLabel.TextSize = 26
-	codeLabel.TextColor3 = COLORS.accent
-	codeLabel.Text = ""
-	codeLabel.Parent = codeFrame
+	local placeName = Theme.text(scroll, "", { size = 16, font = Theme.font.semibold, order = 20 })
 
-	local placeLabel = label(root, "", 12, COLORS.muted)
-	placeLabel.LayoutOrder = 4
+	local versions = Theme.text(scroll, "", { size = 11, color = Theme.color.muted, order = 30 })
 
-	local runLabel = label(root, "", 12, COLORS.muted)
-	runLabel.LayoutOrder = 5
+	Theme.spacer(scroll, Theme.space.tight, 35)
 
-	local spacer = Instance.new("Frame")
-	spacer.LayoutOrder = 6
-	spacer.BackgroundTransparency = 1
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.Parent = root
+	-- Pairing -----------------------------------------------------------------
 
-	local reconnectButton = button(root, "Reconnect")
-	reconnectButton.LayoutOrder = 7
+	local pairingCard = Theme.card(scroll, 40)
+	pairingCard.Visible = false
+	Theme.padding(pairingCard, 14, 14)
+	Theme.list(pairingCard, 6)
 
-	local forgetButton = button(root, "Forget this pairing")
-	forgetButton.LayoutOrder = 8
+	Theme.sectionLabel(pairingCard, "Approve in Luu Code", 1)
 
-	local portLabel = label(root, "", 11, COLORS.muted)
-	portLabel.LayoutOrder = 9
+	local codeText = Theme.text(pairingCard, "", {
+		size = 26,
+		color = Theme.color.primary,
+		font = Theme.font.mono,
+		align = Enum.TextXAlignment.Center,
+		order = 2,
+	})
+
+	Theme.text(pairingCard, "Check this code matches the one the app is showing, then approve it there.", {
+		size = 11,
+		color = Theme.color.muted,
+		order = 3,
+	})
+
+	-- A message worth reading -------------------------------------------------
+
+	local messageCard = Theme.card(scroll, 50)
+	messageCard.Visible = false
+	Theme.padding(messageCard, 12, 12)
+	Theme.list(messageCard, 0)
+
+	local messageText = Theme.text(messageCard, "", { size = 11, color = Theme.color.muted })
+
+	-- Details -----------------------------------------------------------------
+	--
+	-- The same four the app's Studio panel lists, in the same order. There is no
+	-- Port row: the footer already says where the server is, and stating it twice
+	-- in a panel this size reads as two different numbers until you check.
+
+	Theme.spacer(scroll, Theme.space.tight, 60)
+
+	local modeValue = Theme.row(scroll, "Mode", 70)
+	local placeValue, placeRow = Theme.row(scroll, "Place", 80)
+	local universeValue, universeRow = Theme.row(scroll, "Universe", 90)
+	local ownerValue, ownerRow = Theme.row(scroll, "Owner", 100)
+
+	-- Actions -----------------------------------------------------------------
+
+	Theme.spacer(scroll, Theme.space.section - Theme.space.row, 110)
+
+	local reconnectButton, styleReconnect = Theme.button(scroll, "Reconnect", { order = 120 })
+	local forgetButton = Theme.button(scroll, "Forget this pairing", { order = 130 })
+
+	-- Footer ------------------------------------------------------------------
+
+	Theme.spacer(scroll, Theme.space.tight, 140)
+
+	local footer = Theme.text(scroll, "", { size = 10, color = Theme.color.muted, order = 150 })
 
 	reconnectButton.Activated:Connect(function()
 		Client.reconnect()
@@ -150,26 +172,62 @@ function Ui.create(hostPlugin: Plugin)
 		Client.reconnect()
 	end)
 
+	-- Neither of these changes for the life of the session, so they are read once
+	-- rather than on every connection state change.
+	versions.Text = string.format("Studio %s · plugin %s", studioVersion(), Constants.PLUGIN_VERSION)
+
 	local function render(state: any)
-		statusLabel.Text = ({
-			connected = "Connected",
-			pairing = "Waiting for approval",
-			disconnected = "Not connected",
-		})[state.status] or state.status
-		statusLabel.TextColor3 = STATUS_COLORS[state.status] or COLORS.text
+		local status = STATUS[state.status] or { text = state.status, color = Theme.color.muted }
 
-		detailLabel.Text = state.message or ""
+		statusDot.BackgroundColor3 = status.color
+		statusText.Text = status.text
+		statusText.TextColor3 = status.color
 
-		codeFrame.Visible = state.pairingCode ~= nil
-		codeLabel.Text = state.pairingCode or ""
+		-- Reconnect is the one thing to do when the server has gone, and nothing
+		-- worth drawing the eye to once it is back.
+		styleReconnect(state.status == "disconnected" and "primary" or "outline")
 
-		placeLabel.Text = state.place and state.place.name or ""
+		local place = state.place
+		placeName.Text = place and place.name or "No place open"
 
-		if state.run ~= nil then
-			runLabel.Text = state.run.running and string.format("Playtesting (%s)", state.run.realm) or "Edit mode"
+		local code = state.pairingCode
+		pairingCard.Visible = code ~= nil
+		-- Six digits set solid read as a number to be parsed; spaced out they
+		-- read as a code to be compared against the one on screen in the app,
+		-- which is the only thing anyone ever does with this.
+		codeText.Text = code and Theme.spaced(code, "  ") or ""
+
+		-- The status word already says "Connected"; repeating it underneath is
+		-- noise in a panel this narrow. A message only earns its card when it
+		-- tells the user something the status does not.
+		local message = state.message
+		messageCard.Visible = type(message) == "string" and #message > 0 and state.status ~= "connected"
+		messageText.Text = message or ""
+
+		local run = state.run
+		if run == nil then
+			modeValue.Text = "—"
+		elseif run.running then
+			modeValue.Text = string.format("Playtest · %s", run.realm)
+		else
+			modeValue.Text = "Edit"
 		end
 
-		portLabel.Text = string.format("Port %d · plugin %s", state.port, Constants.PLUGIN_VERSION)
+		-- An unpublished place has neither id. The rows are hidden rather than
+		-- filled with a zero, which looks like an id and is not one.
+		local hasPlaceId = place ~= nil and type(place.placeId) == "number" and place.placeId > 0
+		placeRow.Visible = hasPlaceId
+		placeValue.Text = hasPlaceId and tostring(place.placeId) or ""
+
+		local hasUniverse = place ~= nil and type(place.gameId) == "number" and place.gameId > 0
+		universeRow.Visible = hasUniverse
+		universeValue.Text = hasUniverse and tostring(place.gameId) or ""
+
+		local owner = ownerOf(place)
+		ownerRow.Visible = owner ~= nil
+		ownerValue.Text = owner or ""
+
+		footer.Text = string.format("Runs on 127.0.0.1:%d. Nothing leaves this machine.", state.port)
 	end
 
 	render(Client.state())
