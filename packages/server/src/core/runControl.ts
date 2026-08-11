@@ -1,25 +1,16 @@
 /**
  * Playtest orchestration. Spec section 13.
  *
- * Two things make this the server's job rather than the plugin's.
+ * The server owns this for two reasons. A transition destroys the DataModel the
+ * request arrived in, so the connection that would report the outcome is gone
+ * before it can — the server survives and watches the run state instead. And the
+ * two halves live in different peers: only the edit DataModel can call
+ * `ExecutePlayModeAsync`, only a running one can call `EndTest`. `findPeer`
+ * decides where each request goes.
  *
- * The first is that a transition destroys the DataModel the request arrived in,
- * so the connection that would report the outcome is usually gone before it
- * can. The server survives, fires the request, watches the run state arriving on
- * whichever connection comes back, and only then answers the agent.
- *
- * The second is that the two halves of a playtest live in different DataModels.
- * `StudioTestService:ExecutePlayModeAsync` can only be called from the edit
- * peer, and it yields for the entire life of the session; `EndTest` exists only
- * in the running peer. Neither can do the other's job, so something that can see
- * every connection has to decide where each request goes. That is what
- * `SessionRegistry.findPeer` is for.
- *
- * Nothing here touches the desktop. This module used to press F5 through the
- * operating system when the in-Studio attempt failed — which was always,
- * because that attempt went through an API a plugin is not allowed to call.
- * Every start took over the user's window and typed into it. Studio has offered
- * a real API for this the whole time.
+ * Nothing here touches the desktop. It used to press F5 through the operating
+ * system, taking over the user's window, because the in-Studio attempt went
+ * through an API a plugin cannot call.
  */
 import { LuuCodeError } from "@luumen/code-protocol";
 import type { PlaytestMode, RunState } from "@luumen/code-protocol";
@@ -63,13 +54,7 @@ const isRunningServer = (peer: PeerRef) => peer.run.running && (peer.realm === "
 export class RunControl {
   constructor(private readonly sessions: SessionRegistry) {}
 
-  /**
-   * The run state as the most authoritative peer sees it.
-   *
-   * A running peer is the one that knows: the edit peer's own DataModel is not
-   * running and never will be, so asking it whether a playtest is up gets a
-   * confident no throughout.
-   */
+  /** A running peer is the one that knows: the edit peer's DataModel never runs. */
   private state(target: SessionTarget): RunState {
     const running = this.sessions.findPeer(target, isRunning);
     if (running) return running.run;
@@ -89,13 +74,9 @@ export class RunControl {
   }
 
   /**
-   * Sends a transition to the peer that can perform it.
-   *
-   * Losing the connection mid-flight is success here, not failure: it means the
-   * DataModel the request was handled in has been replaced, which is exactly
-   * what was asked for. A refusal Studio actually voiced is the only thing worth
-   * reporting, and it is returned rather than thrown so the caller can decide
-   * whether the run state contradicts it.
+   * Losing the connection mid-flight is success, not failure: the DataModel that
+   * handled it has been replaced, which is what was asked for. Only a refusal
+   * Studio actually voiced comes back.
    */
   private async trigger(
     op: "run.start" | "run.stop" | "run.multiplayer",
@@ -203,15 +184,7 @@ export class RunControl {
     return this.start({ mode, waitReady: true, timeoutMs: params.timeoutMs }, target);
   }
 
-  /**
-   * The multiplayer lifecycle, each action routed to the peer that owns it.
-   *
-   * `start` belongs to the edit peer, because that is the only one that can call
-   * `ExecuteMultiplayerTestAsync`. `add_players` and `end` belong to the running
-   * server. `leave_client` belongs to the client being removed. `status` is
-   * answered by the edit peer, which holds the session's phase, unless the
-   * session is up — in which case the running server can also say who joined.
-   */
+  /** Each action goes to the peer that owns it: start to edit, the rest to the runtime. */
   async multiplayer(params: MultiplayerParams, target: SessionTarget = {}): Promise<unknown> {
     const payload: Record<string, unknown> = { action: params.action, timeoutMs: params.timeoutMs };
     if (params.players !== undefined) payload.players = params.players;
@@ -290,12 +263,8 @@ export class RunControl {
   }
 
   /**
-   * Phase from the edit peer, connected players from the running server.
-   *
-   * Neither one has the whole picture. The edit peer is the only place the
-   * session's phase and its eventual return value exist, because the thread that
-   * started the test is parked there; the running server is the only place that
-   * can see who actually joined.
+   * Neither peer has the whole picture: the phase lives where the yielding call
+   * is parked, and only the running server can see who joined.
    */
   private async multiplayerStatus(target: SessionTarget, params: MultiplayerParams): Promise<unknown> {
     const payload = { action: "status", timeoutMs: params.timeoutMs };

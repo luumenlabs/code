@@ -123,25 +123,17 @@ export interface SessionEvents {
  * One live plugin connection, named well enough to send a command straight to
  * it.
  *
- * Playtesting is what needs this. Studio runs the plugin separately in the edit
- * DataModel and in each DataModel a playtest creates, and the two halves of a
- * playtest cannot be performed by the same one: only the edit peer can call
- * `ExecutePlayModeAsync`, and only a running peer can call `EndTest`. Which
- * connection a request goes to is therefore part of the operation, not a
- * routing preference — and it is not always an endpoint of the session the
- * caller is bound to, because a play DataModel handshakes as a connection of
- * its own.
+ * Studio runs the plugin separately in the edit DataModel and in each one a
+ * playtest creates, and only the edit peer can start a playtest while only a
+ * running peer can end one. Which connection a request reaches is part of the
+ * operation, not a routing preference.
  */
 export interface PeerRef {
   sessionId: string;
   endpointId: string;
   realm: StudioRealm;
   run: RunState;
-  /**
-   * When this connection first handshook. It is what gives "client 2" a
-   * meaning — the second client that joined — rather than whichever one a map
-   * happened to yield second.
-   */
+  /** First handshake, which is what gives "client 2" a stable meaning. */
   connectedAt: number;
 }
 
@@ -574,17 +566,12 @@ export class SessionRegistry {
   }
 
   /**
-   * Every live plugin connection for the game the caller is working in.
+   * Every live plugin connection for the game the caller is working in, own
+   * session first.
    *
-   * Scoped by install id rather than by session, because a playtest's DataModel
-   * generates a fresh window id and so handshakes as a session of its own. The
-   * connections still belong to one game and one Studio process, which is what
-   * the install id records — and grouping them is the only way an operation can
-   * ask for "the peer that is running" without the caller knowing how Studio
-   * happened to arrange them.
-   *
-   * The caller's own session comes first, so anything with a preference gets the
-   * connection it was already working in.
+   * Scoped by install id rather than session: a playtest's DataModel generates a
+   * fresh window id and handshakes as a session of its own, but it is the same
+   * game in the same Studio.
    */
   peers(target: SessionTarget = {}): PeerRef[] {
     const session = this.resolveSession(target);

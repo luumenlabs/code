@@ -209,13 +209,8 @@ export class Dispatcher {
   }
 
   /**
-   * The group and the individual tool, in that order.
-   *
-   * They are reported differently because the fix is different. A group that is
-   * off is a decision about a whole category and usually deliberate; a single
-   * tool that is off under a group that is on is a narrower choice, and telling
-   * the agent which one it was is what lets it use another route to the same
-   * end rather than concluding the whole category is unavailable.
+   * Reported differently because the fix is different: a whole category being
+   * off, versus one tool under a category that is otherwise on.
    */
   private checkPermission(op: Op): void {
     const refusal = refuseTool(this.deps.settings.policy, op);
@@ -389,16 +384,10 @@ export class Dispatcher {
   }
 
   /**
-   * Runs a sequence of edits as one request.
-   *
-   * Each step is validated here rather than in Studio, against the same schema
-   * the operation has on its own, so a typo in step forty is reported before
-   * step one has touched the place. The steps then go over as one command, which
-   * is what buys the round trip and the single undo waypoint.
-   *
-   * The journal still gets a record per mutation. Review and revert work at the
-   * level of the change — "put that rename back" — and a batch is a transport
-   * detail the user never asked about.
+   * Every step is validated here against the same schema it has on its own, so a
+   * typo in step forty is caught before step one touches the place. The journal
+   * still gets a record per mutation: a batch is a transport detail, and revert
+   * works at the level of the change.
    */
   private async batch(
     operations: Array<{ op: BatchableOp; params: Record<string, unknown> }>,
@@ -455,14 +444,9 @@ export class Dispatcher {
   }
 
   /**
-   * Captures the viewport from inside Studio, or the desktop, as asked.
-   *
-   * The in-engine path is the default and is not silently swapped for the other
-   * when it fails. They photograph different things — one is what the game is
-   * drawing, the other is a window with a ribbon and an Explorer around it — so
-   * quietly substituting one would answer a question the agent did not ask, and
-   * "is this GUI centred?" is precisely the question that gets a wrong answer
-   * from the wrong picture. A failure names the desktop path instead.
+   * The in-engine path is the default and never silently falls back to the
+   * desktop one: they photograph different things, and "is this GUI centred?"
+   * gets a wrong answer from the wrong picture. A failure names the alternative.
    */
   private async screenshot(
     request: { source: "viewport" | "window" | "screen"; maxWidth: number },

@@ -1,35 +1,18 @@
 /**
- * What the agent is allowed to do, at two levels.
+ * What the agent is allowed to do: six permission groups, and every operation
+ * inside them switchable on its own.
  *
- * The six permission groups are the coarse control and the one most people
- * will ever touch: "may it edit the place", "may it press Play". They are what
- * the chip beside the send button shows, because that is the question worth
- * answering at a glance.
- *
- * Under each group, every operation can also be turned off on its own. Groups
- * alone were not enough: "change the place" is one switch over creating a part
- * and destroying a subtree, and someone who is happy for an agent to write
- * scripts but not delete instances had no way to say so short of turning the
- * whole group off. The two compose one way only — a group that is off turns off
- * everything inside it, and no per-tool switch can override that. A restriction
- * the user set has to be the ceiling, not a default.
- *
- * Only the exceptions are stored. An operation nobody has touched is on, which
- * means a release adding a tool does not need a migration and does not silently
- * arrive disabled.
+ * The two compose one way only. A group that is off turns off everything under
+ * it and no per-tool switch overrides that — a restriction the user set is the
+ * ceiling, not a default.
  */
 import { COMMANDS, TOOL_NAMES } from "./commands.js";
 import type { Op } from "./commands.js";
 import type { PermissionGroup, PermissionSettings } from "./capabilities.js";
 
 /**
- * Operations that stay on however the controls are set.
- *
- * These are how an agent finds out what is wrong. Turning off the ability to
- * ask "is Studio connected" and "what am I allowed to do" does not restrict an
- * agent, it just stops it explaining itself — every later failure becomes
- * unattributable, including the failures caused by the restrictions themselves.
- * They read nothing about the place and change nothing in it.
+ * Never turned off. These are how an agent reports what is wrong, so disabling
+ * them does not restrict it — it makes every later failure unattributable.
  */
 export const ESSENTIAL_OPS: readonly Op[] = ["session.status", "session.capabilities"];
 
@@ -55,7 +38,7 @@ export function toolsInGroup(group: PermissionGroup): Op[] {
 
 export interface ToolPolicy {
   permissions: PermissionSettings;
-  /** Operations the user has explicitly turned off. Everything else is on. */
+  /** Only the exceptions. Everything not listed is on, so a new tool needs no migration. */
   disabledTools: readonly Op[];
 }
 
@@ -68,9 +51,8 @@ export function refuseTool(policy: ToolPolicy, op: Op): ToolRefusal {
   const group = COMMANDS[op].permission;
   if (policy.permissions[group] === false) return { reason: "group", group };
 
-  // Internal operations answer to their group and nothing else. `changes.apply`
-  // is the Studio half of a revert the user asked for through the app; there is
-  // no tool to have turned off, and refusing it would break the review panel.
+  // Internal operations answer to their group and nothing else: `changes.apply`
+  // is the Studio half of a revert, with no tool to have turned off.
   if (toolControl(op) === "internal") return null;
 
   if (policy.disabledTools.includes(op)) return { reason: "tool" };
@@ -82,12 +64,7 @@ export function isToolAllowed(policy: ToolPolicy, op: Op): boolean {
   return refuseTool(policy, op) === null;
 }
 
-/**
- * How many of a group's tools are on, for the count beside the group switch.
- *
- * Counted against the group's own switch as well, so a group that is off reads
- * "0 of 9" rather than listing tools as enabled that cannot run.
- */
+/** Counted against the group switch too, so a group that is off reads 0 of 9. */
 export function groupTally(policy: ToolPolicy, group: PermissionGroup): { allowed: number; total: number } {
   const tools = toolsInGroup(group);
   return {

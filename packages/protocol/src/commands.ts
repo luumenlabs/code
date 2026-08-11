@@ -425,19 +425,9 @@ const viewportInfoParams = z.object({});
  * minimised window.
  */
 /**
- * The on-screen interface, as structure rather than pixels.
- *
- * This is the operation a UI task actually wants. A screenshot answers "does
- * this look right" and nothing else: an agent reading one cannot tell a label
- * from a button, cannot know a frame is there but transparent, and has to infer
- * coordinates from a scaled image. Everything about a Roblox interface that
- * matters is already in the DataModel — position, size, text, order, and what
- * the engine would hit if you clicked — so it is read out directly.
- *
- * Hit-testing is Roblox's own, through `GetGuiObjectsAtPosition`, not a guess
- * from rectangles and ZIndex. That is the difference between "this button is at
- * these coordinates" and "clicking these coordinates reaches this button",
- * which is the only version worth reporting to something about to click.
+ * The on-screen interface as structure. Rectangles are in the same viewport
+ * pixels `input.mouse` takes, and clickability is Roblox's own hit test through
+ * `GetGuiObjectsAtPosition` rather than a guess from rectangles and ZIndex.
  */
 const guiParams = z.object({
   scope: targetSchema
@@ -452,14 +442,7 @@ const guiParams = z.object({
   maxNodes: limit(2000, 400),
 });
 
-/**
- * Points the Studio camera at something.
- *
- * Without it a screenshot shows wherever the user last happened to be looking,
- * which is rarely what the agent is working on — so the picture that comes back
- * cannot answer the question it was taken to answer. The camera is the user's,
- * so where it was is remembered and `view.focus` with restore puts it back.
- */
+/** The camera is the user's, so the position taken over is remembered for restore. */
 const focusParams = z.object({
   target: targetSchema.optional().describe("What to frame. Uses the current Studio selection when omitted."),
   angle: z
