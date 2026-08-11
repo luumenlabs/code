@@ -47,8 +47,12 @@ jobs:
           # `gh release list --json` has no commit field — only `gh release view`
           # does. The checkout above is full-depth, so resolve the tag locally
           # rather than paying a second API round-trip per release.
-          LAST_TAG=$(gh release list --limit 30 --json tagName,isPrerelease \
-            --jq 'map(select(.isPrerelease)) | .[0].tagName // ""')
+          #
+          # Drafts are skipped because a draft has no git tag: `git rev-list`
+          # below would find nothing, LAST would come back empty, and the
+          # "anything new?" question would quietly answer itself with yes.
+          LAST_TAG=$(gh release list --limit 30 --json tagName,isPrerelease,isDraft \
+            --jq 'map(select(.isPrerelease and (.isDraft | not))) | .[0].tagName // ""')
 
           LAST=""
           if [ -n "$LAST_TAG" ]; then
@@ -61,6 +65,40 @@ jobs:
             echo "build=false" >> "$GITHUB_OUTPUT"
             echo "Nothing new since the last nightly ($LAST)."
           fi
+
+      # electron-builder creates the draft itself if one is missing, and it
+      # creates it once per publisher — but it caches publishers behind an
+      # `await`, so two artifacts finishing together each build their own,
+      # each finds no release, and each POSTs one. GitHub allows the duplicate
+      # because a draft carries no git tag, so the run ends with two releases
+      # holding a split set of installers, and whichever one `gh` happens to
+      # publish below is the one the update feed gets.
+      #
+      # Reserving it here closes the race: both publishers find this one.
+      - name: Reserve the draft release
+        if: steps.decide.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          # A re-run keeps the run number, so it asks for a tag that already has
+          # a draft — and GitHub would happily make a second one, which is the
+          # thing this step exists to prevent.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Already reserved: $TAG"
+            exit 0
+          fi
+
+          # --target pins the tag to the commit that gets built. Without it the
+          # tag is cut from whatever main points at when the draft is published,
+          # which is not necessarily this build.
+          gh release create "$TAG" \
+            --draft \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes "Nightly build of ${GITHUB_SHA}."
 
   plugin:
     name: Studio plugin
@@ -159,3 +197,27 @@ jobs:
           # Never --latest: a nightly must not become what the Download button
           # on the README points at.
           gh release edit "$TAG" --draft=false --prerelease
+
+  # The draft is reserved before anything is built, so a run that dies partway
+  # leaves one behind — the litter this workflow used to produce on every run.
+  # Only a draft is removed: once `publish` has run the release is real, and a
+  # published nightly is somebody's installed build.
+  cleanup:
+    name: Clear the reserved draft
+    needs: [decide, plugin, app, publish]
+    # cancelled() as well as failure(): a cancelled run leaves the same draft
+    # behind, and failure() alone does not cover it.
+    if: (failure() || cancelled()) && needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Stands in for a checkout: gh needs to know the repo, and nothing
+          # else in this job needs the files.
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release delete "$TAG" --yes
+          fi

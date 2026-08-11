@@ -17,6 +17,41 @@ permissions:
   contents: write
 
 jobs:
+  # electron-builder creates the draft itself if one is missing, and it creates
+  # it once per publisher — but it caches publishers behind an `await`, so two
+  # artifacts finishing together each build their own, each finds no release,
+  # and each POSTs one. GitHub allows the duplicate because a draft carries no
+  # git tag, so the run ends with two releases holding a split set of
+  # installers, and whichever one `gh` happens to publish below is the one the
+  # update feed gets.
+  #
+  # Reserving it here closes the race: both publishers find this one. A failed
+  # run leaves the draft behind on purpose — cutting a release is a deliberate
+  # act, and the draft is what you look at to see how far it got.
+  draft:
+    name: Reserve the release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Stands in for a checkout: gh needs to know the repo, and the tag is
+          # already pushed, so there is nothing here to read off disk.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Re-running a release asks for a tag that already has a draft — and
+          # GitHub would happily make a second one, which is the thing this job
+          # exists to prevent.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Already reserved: $GITHUB_REF_NAME"
+            exit 0
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "${GITHUB_REF_NAME#v}" \
+            --generate-notes
+
   plugin:
     name: Studio plugin
     runs-on: ubuntu-latest
@@ -55,7 +90,7 @@ jobs:
 
   app:
     name: App (${{ matrix.os }})
-    needs: plugin
+    needs: [draft, plugin]
     runs-on: ${{ matrix.os }}
     strategy:
       # One platform failing should not throw away installers that already
@@ -101,7 +136,7 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [plugin, app]
+    needs: [draft, plugin, app]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,8 +146,8 @@ jobs:
           name: studio-plugin
           path: dist
 
-      # electron-builder leaves a draft; the plugin goes in beside the
-      # installers before anyone can see a half-built release.
+      # The draft reserved above is still a draft; the plugin goes in beside
+      # the installers before anyone can see a half-built release.
       - name: Attach the plugin and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

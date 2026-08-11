@@ -66,9 +66,13 @@ module.exports = {
       provider: "github",
       owner: "luumenlabs",
       repo: "code",
-      // Nightly writes latest-nightly.yml and reads it back, so the two
-      // channels never see each other's builds.
+      // Nightly writes nightly.yml and reads it back, so the two channels
+      // never see each other's builds.
       ...(nightly ? { channel: "nightly" } : {}),
+      // CI reserves the draft before the build starts, so this only ever finds
+      // one. Left in because it also decides what happens locally, and because
+      // electron-builder creating its own is the fallback, not the plan — it
+      // caches publishers behind an await and races itself into two releases.
       releaseType: "draft",
     },
   ],
