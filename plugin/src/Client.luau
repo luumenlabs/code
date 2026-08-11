@@ -589,6 +589,10 @@ function Client.start(hostPlugin: Plugin)
 		statePending = true
 		wake:Fire()
 		notify()
+		-- Marks adorn instances in the DataModel they were made in, and a
+		-- remembered camera position describes a world that no longer exists.
+		-- Dropped here rather than in RunState, which Commands depends on.
+		Commands.release()
 	end)
 
 	-- Started alongside the connection rather than inside it: the answer is the
@@ -617,6 +621,9 @@ function Client.stop()
 	generation += 1
 	wake:Fire()
 	OutputCapture.stop()
+	-- Adornments live in CoreGui, which outlives this plugin. Left behind on
+	-- unload they would sit in the user's viewport with nothing to remove them.
+	Commands.release()
 	setStatus("disconnected", "Disconnected")
 end
 

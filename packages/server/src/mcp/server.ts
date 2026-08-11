@@ -14,6 +14,19 @@ import { MCP_TOOLS, findTool, toolSchema } from "./tools.js";
 
 export interface McpBackend {
   execute(op: string, params: unknown, context: { origin: "mcp" }): Promise<unknown>;
+  /**
+   * Operations the user has turned off.
+   *
+   * A tool that is off is left out of the list rather than offered and refused:
+   * an agent picks from what it is shown, and a menu with entries that always
+   * fail wastes a call and a turn each time. Asked once per list request rather
+   * than per tool, and asked fresh, because the answer changes while an agent
+   * is running. Optional, so a backend that does not model permissions — the
+   * tests do not — advertises everything.
+   */
+  blockedOps?(): Promise<readonly string[]>;
+  /** Fires when that answer changes, so the client knows to ask again. */
+  onToolsChanged?(listener: () => void): () => void;
 }
 
 export const MCP_SERVER_INFO = {
@@ -34,17 +47,34 @@ Working effectively:
 
 export function createMcpServer(backend: McpBackend): Server {
   const server = new Server(MCP_SERVER_INFO, {
-    capabilities: { tools: {} },
+    // listChanged is declared because the user can turn a tool off while an
+    // agent is mid-conversation. Without the notification the client keeps
+    // offering the list it fetched when it connected, and the first the agent
+    // hears of the change is a refusal.
+    capabilities: { tools: { listChanged: true } },
     instructions: INSTRUCTIONS,
   });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: MCP_TOOLS.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: toolSchema(tool.op) as { type: "object" },
-    })),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    // A backend that cannot answer advertises everything. Hiding tools because
+    // a permissions lookup failed would look identical to the user having
+    // turned them off, and an agent would take the shorter menu at face value.
+    const blocked = new Set((await backend.blockedOps?.().catch(() => [])) ?? []);
+
+    return {
+      tools: MCP_TOOLS.filter((tool) => !blocked.has(tool.op)).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: toolSchema(tool.op) as { type: "object" },
+      })),
+    };
+  });
+
+  backend.onToolsChanged?.(() => {
+    // The client may not have finished connecting, and a notification sent
+    // before it has is an unhandled rejection rather than a missed update.
+    void server.sendToolListChanged().catch(() => undefined);
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     const tool = findTool(request.params.name);
@@ -54,6 +84,10 @@ export function createMcpServer(backend: McpBackend): Server {
     }
 
     try {
+      // Not short-circuited on `allowed` here. A client working from a list it
+      // fetched before the user changed something should get the dispatcher's
+      // refusal, which names the tool and says where to turn it back on —
+      // rather than a second, thinner version of the same message from here.
       const result = await backend.execute(tool.op, request.params.arguments ?? {}, { origin: "mcp" });
       return successResult(tool.op, result);
     } catch (error) {

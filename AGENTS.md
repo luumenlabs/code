@@ -138,13 +138,48 @@ Operations are defined once and flow outward.
 
 1. Add it to `COMMANDS` in `packages/protocol/src/commands.ts`.
 2. Add its result type to `CommandResults` in the same file.
-3. Implement it in `plugin/src/Commands/` and register it in `Commands/init.luau` —
+3. Name it in `TOOL_NAMES`, also in that file. The `satisfies Record<Op, ...>` is
+   exhaustive, so this is not optional — an op with no entry fails the build.
+   `null` means machinery rather than a tool an agent calls.
+4. Implement it in `plugin/src/Commands/` and register it in `Commands/init.luau` —
    or handle it server-side in `dispatcher.ts` if it does not belong in Studio.
-4. Give it a title in `packages/server/src/core/activity.ts`, so the user sees
+5. Give it a title in `packages/server/src/core/activity.ts`, so the user sees
    Roblox language.
-5. Add an MCP tool in `packages/server/src/mcp/tools.ts`. Write the description
-   for an agent that has never seen this project.
-6. Add a test.
+6. Describe it in `packages/server/src/mcp/tools.ts`. Write for an agent that has
+   never seen this project. A named op with no description fails a test.
+7. Add a test.
+
+The permission group you give it in step 1 is also where it appears in the
+user's controls, so pick the group by what the operation lets an agent *do*
+rather than by which file it lives in.
+
+## Permissions
+
+Two levels, and they compose one way only.
+
+The six groups in `PERMISSION_GROUPS` are the coarse control and the one most
+people will ever touch. Under each, every operation can be turned off on its own
+— groups alone were not enough, because "change the place" is a single switch
+over creating a part and destroying a subtree.
+
+`packages/protocol/src/policy.ts` is the whole of the logic, and
+`Dispatcher.checkPermission` is the only place it is enforced. Four things there
+are load-bearing:
+
+- **A group that is off turns off everything inside it**, and no per-tool switch
+  overrides that. A restriction the user set is the ceiling, not a default.
+- **Only the exceptions are stored.** An operation nobody has touched is on, so a
+  release that adds a tool needs no migration and cannot arrive disabled.
+  Unknown ids in the settings file are kept rather than dropped, because they are
+  usually a tool from a build the user has rolled back from.
+- **`ESSENTIAL_OPS` stay on.** `session.status` and `session.capabilities` are how
+  an agent finds out what is wrong; turning them off does not restrict it, it
+  stops it explaining itself — including about the restrictions.
+- **A disabled tool is hidden from the MCP list, not offered and refused.** The
+  server declares `tools.listChanged` and fires it from the `capabilities` bus
+  event, which is why permission changes go through `LuuCodeServer.setPermission`
+  and `setToolAllowed` rather than straight to the settings store: every MCP child
+  is a separate process holding a list it fetched when it connected.
 
 **If it mutates, it also has to say what it changed.** Return a `changes` array
 of drafts built by `plugin/src/Changes.luau` — see below. An operation that

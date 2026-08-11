@@ -22,6 +22,9 @@ export const CAPABILITIES = [
   "runtime.exec",
   "input.virtual",
   "view.screenshot",
+  "view.camera",
+  "perf.stats",
+  "test.run",
 ] as const;
 
 export type CapabilityId = (typeof CAPABILITIES)[number];
@@ -60,6 +63,15 @@ export const DEFAULT_PERMISSIONS: PermissionSettings = {
 export interface CapabilityReport {
   capabilities: CapabilityState[];
   permissions: PermissionSettings;
+  /**
+   * Operations turned off one at a time, under groups that are otherwise on.
+   *
+   * Carried alongside the groups rather than folded into them because they mean
+   * different things to a reader: the groups are what the user decided about a
+   * category, and this is where they went further. An agent that finds a tool
+   * missing from its list can look here and see it was a choice.
+   */
+  disabledTools: string[];
   platform: NodeJS.Platform | string;
 }
 

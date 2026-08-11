@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("luuCode", {
   selectSession: (sessionId, chat) => ipcRenderer.invoke("select-session", sessionId, chat),
   disconnectSession: (sessionId) => ipcRenderer.invoke("disconnect-session", sessionId),
   setPermission: (group, allowed) => ipcRenderer.invoke("set-permission", group, allowed),
+  setToolAllowed: (op, allowed) => ipcRenderer.invoke("set-tool-allowed", op, allowed),
 
   updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
   resetSettings: () => ipcRenderer.invoke("reset-settings"),

@@ -12,7 +12,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createLuuCodeServer } from "@luumen/code-server";
 import type { LuuCodeServer } from "@luumen/code-server";
-import type { ChangeRecord, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
+import type { ChangeRecord, Op, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
 import { PluginInstaller } from "./plugin.js";
@@ -847,9 +847,15 @@ function registerIpc(): void {
     requireServer().disconnectSession(sessionId);
   });
 
+  // Both go through the server rather than straight to the settings store, so
+  // the bus event reaches the MCP children too — each is a separate process
+  // holding a tool list it fetched when it connected.
   ipcMain.handle("set-permission", (_event, group: PermissionGroup, allowed: boolean) => {
-    requireServer().settings.setPermission(group, allowed);
-    broadcast("server-event", { type: "capabilities", report: requireServer().capabilities() } satisfies ServerEvent);
+    requireServer().setPermission(group, allowed);
+  });
+
+  ipcMain.handle("set-tool-allowed", (_event, op: Op, allowed: boolean) => {
+    requireServer().setToolAllowed(op, allowed);
   });
 
   // The chat comes along so a button in the dock hits the same Studio window

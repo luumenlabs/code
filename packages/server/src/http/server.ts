@@ -13,7 +13,7 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { DEFAULT_HOST, LuuCodeError, ROUTES } from "@luumen/code-protocol";
+import { DEFAULT_HOST, LuuCodeError, ROUTES, isOp } from "@luumen/code-protocol";
 import type { ServerEvent, StudioHelloRequest, StudioPairRequest, StudioSyncRequest } from "@luumen/code-protocol";
 import { bearerToken, safeEquals } from "../core/auth.js";
 import type { EventBus } from "../core/events.js";
@@ -186,6 +186,28 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
     deps.settings.setPermission(body.group as never, body.allowed);
     deps.bus.emit({ type: "capabilities", report: deps.dispatcher.capabilityReport() });
     sendJson(res, 200, { permissions: deps.settings.permissions });
+    return;
+  }
+
+  if (path === "/tools" && req.method === "POST") {
+    const body = await readJson<{ op: string; allowed: boolean }>(req);
+
+    if (!isOp(body.op)) {
+      sendError(res, new LuuCodeError("INVALID_PARAMS", `Unknown operation "${body.op}".`), 400);
+      return;
+    }
+
+    try {
+      deps.settings.setToolAllowed(body.op, body.allowed);
+    } catch (error) {
+      // Asking to turn off an essential operation is a caller mistake, not a
+      // server failure, and it deserves the reason rather than a 500.
+      sendError(res, new LuuCodeError("INVALID_PARAMS", (error as Error).message), 400);
+      return;
+    }
+
+    deps.bus.emit({ type: "capabilities", report: deps.dispatcher.capabilityReport() });
+    sendJson(res, 200, { disabledTools: deps.settings.disabledTools });
     return;
   }
 

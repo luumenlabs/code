@@ -156,7 +156,12 @@ export function Composer({
 
           <div className="flex items-center gap-0.5 px-2.5 pt-0.5 pb-2.5">
             <ModelChip harness={harness} />
-            {snapshot && <AccessChip permissions={snapshot.capabilities.permissions} />}
+            {snapshot && (
+              <AccessChip
+                permissions={snapshot.capabilities.permissions}
+                disabledTools={snapshot.capabilities.disabledTools}
+              />
+            )}
 
             <span className="flex-1" />
 

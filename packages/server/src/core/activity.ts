@@ -20,6 +20,8 @@ const CATEGORIES: Record<string, Category> = {
   view: "visual",
   session: "inspect",
   changes: "edit",
+  perf: "inspect",
+  test: "runtime",
 };
 
 const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create"];
@@ -143,6 +145,23 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
 
     case "view.viewport_info":
       return "Reading the viewport and camera";
+    case "view.gui":
+      return "Reading the on-screen interface";
+    case "view.focus":
+      return params.restore ? "Putting the camera back" : `Framing ${targetName(params)}`;
+    case "view.highlight": {
+      const count = ((params.targets as unknown[]) ?? []).length;
+      return count === 0 ? "Clearing viewport marks" : count === 1 ? "Marking an instance" : `Marking ${count} instances`;
+    }
+
+    case "perf.sample":
+      return "Measuring performance";
+    case "perf.count":
+      return "Counting what is in the place";
+
+    case "test.run":
+      return "Running the tests";
+
     case "view.screenshot":
       return params.source === "viewport" || params.source === undefined ? "Capturing the viewport" : "Capturing the Studio window";
 
@@ -230,6 +249,31 @@ export function detailFor(op: Op, result: unknown): string | null {
       return data.clicked?.path ? `clicked ${data.clicked.path}` : null;
     case "view.screenshot":
       return data.source === "viewport" ? `${data.width}x${data.height} of the ${data.realm} viewport` : `${data.width}x${data.height}`;
+    case "view.gui": {
+      const nodes = ((data.nodes as unknown[]) ?? []).length;
+      const blocked = ((data.nodes as Array<{ visible: boolean; clickable: boolean }>) ?? []).filter(
+        (node) => node.visible && !node.clickable,
+      ).length;
+      // The covered count is the finding, not a footnote: it is the reason to
+      // have asked, and it is invisible in a screenshot.
+      return `${nodes} element${nodes === 1 ? "" : "s"}${data.hitTested && blocked > 0 ? `, ${blocked} covered` : ""}`;
+    }
+    case "view.focus":
+      return data.framed?.path ? `looking at ${data.framed.path}` : "camera restored";
+    case "view.highlight": {
+      const marked = ((data.marked as unknown[]) ?? []).length;
+      return marked > 0 ? `${marked} marked` : `${data.cleared} cleared`;
+    }
+    case "perf.sample":
+      return `${Math.round(data.fps)} fps, worst frame ${(data.frameTime?.worst * 1000).toFixed(1)}ms`;
+    case "perf.count":
+      return `${data.total} instances, ${data.parts} parts, ${data.scripts} scripts`;
+    case "test.run": {
+      const parts = [`${data.passed} passed`];
+      if (data.failed > 0) parts.push(`${data.failed} failed`);
+      if (data.timedOut) parts.push("timed out");
+      return parts.join(", ");
+    }
     case "changes.revert": {
       const outcomes = (data.outcomes as Array<{ status: string }>) ?? [];
       const reverted = data.reverted ?? 0;

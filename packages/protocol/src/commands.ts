@@ -424,6 +424,76 @@ const viewportInfoParams = z.object({});
  * capture pixels that are already on screen and can never see an occluded or
  * minimised window.
  */
+/**
+ * The on-screen interface, as structure rather than pixels.
+ *
+ * This is the operation a UI task actually wants. A screenshot answers "does
+ * this look right" and nothing else: an agent reading one cannot tell a label
+ * from a button, cannot know a frame is there but transparent, and has to infer
+ * coordinates from a scaled image. Everything about a Roblox interface that
+ * matters is already in the DataModel — position, size, text, order, and what
+ * the engine would hit if you clicked — so it is read out directly.
+ *
+ * Hit-testing is Roblox's own, through `GetGuiObjectsAtPosition`, not a guess
+ * from rectangles and ZIndex. That is the difference between "this button is at
+ * these coordinates" and "clicking these coordinates reaches this button",
+ * which is the only version worth reporting to something about to click.
+ */
+const guiParams = z.object({
+  scope: targetSchema
+    .optional()
+    .describe("Root to read from. Defaults to the player's own GUI during a playtest, and StarterGui in edit mode."),
+  visibleOnly: z
+    .boolean()
+    .default(true)
+    .describe("Skip anything the user cannot see. Turn off to find out why something is not showing."),
+  interactiveOnly: z.boolean().default(false).describe("Only elements that can actually be clicked."),
+  maxDepth: z.number().int().min(1).max(20).default(12),
+  maxNodes: limit(2000, 400),
+});
+
+/**
+ * Points the Studio camera at something.
+ *
+ * Without it a screenshot shows wherever the user last happened to be looking,
+ * which is rarely what the agent is working on — so the picture that comes back
+ * cannot answer the question it was taken to answer. The camera is the user's,
+ * so where it was is remembered and `view.focus` with restore puts it back.
+ */
+const focusParams = z.object({
+  target: targetSchema.optional().describe("What to frame. Uses the current Studio selection when omitted."),
+  angle: z
+    .enum(["front", "back", "left", "right", "top", "iso"])
+    .default("iso")
+    .describe('Which side to look from. "iso" is the three-quarter view that shows depth.'),
+  padding: z.number().min(1).max(5).default(1.4).describe("How much room to leave around the subject. 1 is tight to the bounding box."),
+  restore: z
+    .boolean()
+    .default(false)
+    .describe("Put the camera back where the user had it instead of moving it. Ignores target and angle."),
+});
+
+/**
+ * Marks instances in the viewport, so a screenshot explains itself.
+ *
+ * The adornments live in CoreGui with the target as their Adornee, so nothing
+ * is added to the place, nothing is saved with it, and nothing has to be
+ * journalled or reverted. They are the agent pointing at something, not editing
+ * it.
+ */
+const highlightParams = z.object({
+  targets: z.array(targetSchema).max(50).default([]).describe("What to mark. An empty list clears every mark."),
+  color: z.string().optional().describe('Hex colour such as "#2b7fff". Defaults to the Luu Code blue.'),
+  label: z.string().max(120).optional().describe("Shown beside the first target."),
+  clearAfterMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(600000)
+    .default(0)
+    .describe("Remove the marks automatically after this long. 0 leaves them until cleared."),
+});
+
 const screenshotParams = z.object({
   source: z
     .enum(["viewport", "window", "screen"])
@@ -432,6 +502,49 @@ const screenshotParams = z.object({
       '"viewport" captures what the experience is rendering, from inside Studio. "window" captures the whole Roblox Studio window from the desktop. "screen" captures the primary display.',
     ),
   maxWidth: z.number().int().min(160).max(4096).default(1280).describe("The image is scaled down to this width before it is sent."),
+});
+
+// ---------------------------------------------------------------------------
+// Performance and tests
+// ---------------------------------------------------------------------------
+
+/**
+ * What the engine is actually doing, over a window of time.
+ *
+ * "Is this laggy, and why" is a question agents are asked constantly and have
+ * so far had no way to answer — output says nothing about frame time, and a
+ * screenshot cannot show a stutter. One instant reading is noise, so this
+ * averages over a span and reports the worst frame alongside the mean, because
+ * a game that hitches once a second has a good average.
+ */
+const perfSampleParams = z.object({
+  durationMs: z.number().int().min(200).max(30000).default(3000).describe("How long to watch for."),
+  includeMemory: z
+    .boolean()
+    .default(true)
+    .describe("Break memory down by category. Slightly slower, and the only way to see which system is holding it."),
+});
+
+const perfCountParams = z.object({
+  scope: targetSchema.optional().describe('Subtree to count. Defaults to the whole DataModel.'),
+  /**
+   * A census is only useful next to the thing it indicts, so the heaviest
+   * subtrees come back with it rather than a total the agent then has to go
+   * hunting through the tree to explain.
+   */
+  topClasses: limit(50, 12).describe("How many classes to list, largest first."),
+  topSubtrees: limit(50, 8).describe("How many of the heaviest containers to name."),
+});
+
+/**
+ * Runs the place's own TestService suite.
+ *
+ * Results are collected from the service's signals rather than scraped out of
+ * the output buffer, so a failure comes back as a failure with its script and
+ * line rather than as a line of text that happens to contain the word.
+ */
+const testRunParams = z.object({
+  timeoutMs: z.number().int().min(1000).max(600000).default(120000),
 });
 
 // ---------------------------------------------------------------------------
@@ -822,6 +935,14 @@ export const COMMANDS = {
     mutates: false,
     summary: "Read viewport size, GUI inset, and camera state, for mapping coordinates.",
   },
+  "view.gui": {
+    params: guiParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "inspect.datamodel",
+    mutates: false,
+    summary: "Read the on-screen interface as structure: every element's rectangle, text, and whether a click would reach it.",
+  },
   "view.screenshot": {
     params: screenshotParams,
     executor: "server",
@@ -829,6 +950,50 @@ export const COMMANDS = {
     capability: "view.screenshot",
     mutates: false,
     summary: "Capture the Roblox Studio window as an image.",
+  },
+  // The camera and the adornments are the user's viewport, not their place:
+  // nothing here is journalled, because there is nothing to put back.
+  "view.focus": {
+    params: focusParams,
+    executor: "studio",
+    permission: "screenshot",
+    capability: "view.camera",
+    mutates: false,
+    summary: "Point the Studio camera at an instance so a screenshot shows it.",
+  },
+  "view.highlight": {
+    params: highlightParams,
+    executor: "studio",
+    permission: "screenshot",
+    capability: "view.camera",
+    mutates: false,
+    summary: "Mark instances in the viewport, or clear the marks.",
+  },
+
+  "perf.sample": {
+    params: perfSampleParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "perf.stats",
+    mutates: false,
+    summary: "Watch frame time, draw calls, and memory over a span and report the mean and the worst frame.",
+  },
+  "perf.count": {
+    params: perfCountParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "inspect.datamodel",
+    mutates: false,
+    summary: "Count what is in the place by class, and name the heaviest containers.",
+  },
+
+  "test.run": {
+    params: testRunParams,
+    executor: "studio",
+    permission: "playtest",
+    capability: "test.run",
+    mutates: true,
+    summary: "Run the place's TestService suite and report each result.",
   },
 
   "changes.list": {
@@ -861,6 +1026,92 @@ export const COMMANDS = {
 } as const satisfies Record<string, CommandSpec>;
 
 export type Op = keyof typeof COMMANDS;
+
+/**
+ * What each operation is called when an agent reaches it.
+ *
+ * Names are deliberately hand-written rather than derived from op ids: an agent
+ * reads them as a menu, and "studio_edit_script" says more than "script_patch".
+ *
+ * They live here, beside the operations, and the exhaustive `satisfies` is the
+ * point of the file — the MCP list, the permission controls, and the settings
+ * the user has saved all key on these, and a name that existed in one of those
+ * places and not another is a tool that silently cannot be turned off. `null`
+ * means the operation is machinery rather than something an agent calls.
+ */
+export const TOOL_NAMES = {
+  "session.status": "studio_status",
+  "session.capabilities": "studio_capabilities",
+  "session.select": "studio_select_session",
+
+  "dm.services": "studio_services",
+  "dm.get": "studio_inspect",
+  "dm.children": "studio_children",
+  "dm.tree": "studio_tree",
+  "dm.search": "studio_search",
+  "dm.properties": "studio_get_properties",
+  "dm.selection.get": "studio_get_selection",
+  "dm.selection.set": "studio_set_selection",
+  "dm.set_properties": "studio_set_properties",
+  "dm.create": "studio_create_instance",
+  "dm.delete": "studio_delete_instance",
+  "dm.rename": "studio_rename_instance",
+  "dm.reparent": "studio_move_instance",
+  "dm.clone": "studio_clone_instance",
+  "dm.attributes.set": "studio_set_attributes",
+  "dm.tags.set": "studio_set_tags",
+  "dm.batch": "studio_batch_edit",
+
+  "script.list": "studio_list_scripts",
+  "script.get": "studio_read_script",
+  "script.grep": "studio_grep_scripts",
+  "script.set": "studio_write_script",
+  "script.patch": "studio_edit_script",
+  "script.create": "studio_create_script",
+
+  "run.state": "studio_run_state",
+  "run.start": "studio_start_playtest",
+  "run.stop": "studio_stop_playtest",
+  "run.restart": "studio_restart_playtest",
+  "run.wait_ready": "studio_wait_ready",
+  "run.multiplayer": "studio_multiplayer_test",
+
+  "output.get": "studio_output",
+  "output.mark": "studio_mark_output",
+  "output.clear": "studio_clear_output",
+
+  "runtime.exec": "studio_exec",
+
+  "input.key": "studio_press_key",
+  "input.text": "studio_type_text",
+  "input.mouse": "studio_mouse",
+  "input.gui_click": "studio_click_gui",
+
+  "view.viewport_info": "studio_viewport",
+  "view.gui": "studio_screen",
+  "view.screenshot": "studio_screenshot",
+  "view.focus": "studio_focus",
+  "view.highlight": "studio_highlight",
+
+  "perf.sample": "studio_measure",
+  "perf.count": "studio_census",
+
+  "test.run": "studio_run_tests",
+
+  // Read and written by the app's own review panel. An agent has the change
+  // journal stripped out of its results by design, so none of this is a tool it
+  // could use.
+  "changes.list": null,
+  "changes.revert": null,
+  "changes.apply": null,
+} as const satisfies Record<Op, string | null>;
+
+/** Every operation an agent can reach, in the order they are declared. */
+export const AGENT_OPS = (Object.keys(COMMANDS) as Op[]).filter((op) => TOOL_NAMES[op] !== null);
+
+export function toolNameFor(op: Op): string | null {
+  return TOOL_NAMES[op];
+}
 
 export type CommandParams<O extends Op> = z.infer<(typeof COMMANDS)[O]["params"]>;
 
@@ -976,6 +1227,80 @@ export interface PlayerRef {
   name: string;
   userId: number;
   displayName: string;
+}
+
+/**
+ * One element of the on-screen interface.
+ *
+ * The rectangle is in the same viewport pixels `input.mouse` takes and
+ * `view.screenshot` returns, so a position read here can be clicked without
+ * conversion. That is the whole point of the operation.
+ */
+export interface ScreenNode {
+  handle: string;
+  path: string;
+  name: string;
+  className: string;
+  depth: number;
+  /** Viewport pixels: x and y are the top-left corner. */
+  rect: { x: number; y: number; width: number; height: number };
+  /** Text the element displays, when it has any. */
+  text: string | null;
+  /** Effective draw order among siblings. Higher is nearer the front. */
+  zIndex: number;
+  visible: boolean;
+  /**
+   * True when a click at the element's centre reaches it, asked of Roblox
+   * rather than worked out from rectangles. False here with `visible` true is
+   * the signature of something covered by an invisible frame — the failure that
+   * is otherwise almost impossible to diagnose from a screenshot.
+   */
+  clickable: boolean;
+  /** What the engine reports on top at this element's centre, when it is not this one. */
+  obscuredBy: string | null;
+}
+
+export interface CameraState {
+  position: [number, number, number];
+  lookVector: [number, number, number];
+  fieldOfView: number;
+}
+
+export interface PerfReading {
+  /** Mean over the sample. */
+  mean: number;
+  /** The single worst frame, which is what a stutter actually is. */
+  worst: number;
+}
+
+export interface PerfSample {
+  durationMs: number;
+  frames: number;
+  realm: StudioRealm;
+  running: boolean;
+  /** Milliseconds per frame, and what the mean works out to in frames per second. */
+  frameTime: PerfReading;
+  fps: number;
+  renderCpuMs: PerfReading;
+  renderGpuMs: PerfReading;
+  physicsStepMs: PerfReading;
+  drawCalls: PerfReading;
+  triangles: PerfReading;
+  instanceCount: number;
+  movingParts: number;
+  /** Total megabytes, and the categories holding the most. */
+  memoryMb: number;
+  memoryByCategory: Array<{ category: string; megabytes: number }>;
+  /** Anything Studio would not report, named rather than silently zero. */
+  unavailable: string[];
+}
+
+export interface TestOutcome {
+  status: "passed" | "failed" | "warned" | "message";
+  message: string;
+  /** The script that reported it, when TestService named one. */
+  source: string | null;
+  line: number | null;
 }
 
 export interface MultiplayerState {
@@ -1104,7 +1429,52 @@ export interface CommandResults {
   "input.mouse": { delivered: true; position: { x: number; y: number }; realm: StudioRealm };
   "input.gui_click": GuiClickResult;
   "view.viewport_info": ViewportInfo;
+  "view.gui": {
+    nodes: ScreenNode[];
+    /** Where the tree was read from, since the default differs between edit and a playtest. */
+    root: InstanceRef | null;
+    viewportSize: { x: number; y: number };
+    guiInset: { x: number; y: number };
+    realm: StudioRealm;
+    /**
+     * False when this DataModel offers no hit testing, which is every context
+     * without a LocalPlayer — edit mode included. `clickable` is then false on
+     * every node because it is unknown, not because nothing can be clicked, and
+     * an agent needs to be able to tell those apart.
+     */
+    hitTested: boolean;
+    truncated: boolean;
+  };
   "view.screenshot": ScreenshotResult;
+  "view.focus": {
+    camera: CameraState;
+    /** What was framed, or null when the camera was put back. */
+    framed: InstanceRef | null;
+    /** True while a previous position is remembered and can be restored. */
+    canRestore: boolean;
+  };
+  "view.highlight": { marked: InstanceRef[]; cleared: number };
+
+  "perf.sample": PerfSample;
+  "perf.count": {
+    total: number;
+    scope: InstanceRef | null;
+    byClass: Array<{ className: string; count: number }>;
+    heaviest: Array<{ instance: InstanceRef; descendants: number }>;
+    parts: number;
+    scripts: number;
+    truncated: boolean;
+  };
+
+  "test.run": {
+    outcomes: TestOutcome[];
+    passed: number;
+    failed: number;
+    warned: number;
+    /** True when the suite was still running when the deadline passed. */
+    timedOut: boolean;
+    elapsedMs: number;
+  };
 
   "changes.list": { records: ChangeRecord[]; total: number; truncated: boolean };
   "changes.revert": { outcomes: RevertOutcome[]; reverted: number };

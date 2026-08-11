@@ -7,7 +7,7 @@
  * code. Spec sections 21 and 25.
  */
 import { randomUUID } from "node:crypto";
-import { BATCHABLE_OPS, COMMANDS, LuuCodeError, isOp, isSilent } from "@luumen/code-protocol";
+import { BATCHABLE_OPS, COMMANDS, LuuCodeError, isOp, isSilent, refuseTool, toolNameFor } from "@luumen/code-protocol";
 import type {
   ActivityEvent,
   BatchStep,
@@ -208,15 +208,30 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * The group and the individual tool, in that order.
+   *
+   * They are reported differently because the fix is different. A group that is
+   * off is a decision about a whole category and usually deliberate; a single
+   * tool that is off under a group that is on is a narrower choice, and telling
+   * the agent which one it was is what lets it use another route to the same
+   * end rather than concluding the whole category is unavailable.
+   */
   private checkPermission(op: Op): void {
-    const group = COMMANDS[op].permission;
+    const refusal = refuseTool(this.deps.settings.policy, op);
+    if (!refusal) return;
 
-    if (!this.deps.settings.isAllowed(group)) {
-      throw new LuuCodeError("PERMISSION_DENIED", `The "${group}" permission is turned off in Luu Code.`, {
-        details: { permission: group },
+    if (refusal.reason === "group") {
+      throw new LuuCodeError("PERMISSION_DENIED", `The "${refusal.group}" permission is turned off in Luu Code.`, {
+        details: { permission: refusal.group, op },
         hint: "Enable it in the Luu Code permissions panel if this operation is intended.",
       });
     }
+
+    throw new LuuCodeError("PERMISSION_DENIED", `The ${toolNameFor(op) ?? op} tool is turned off in Luu Code.`, {
+      details: { op, tool: toolNameFor(op), permission: COMMANDS[op].permission },
+      hint: "Other tools in this group are still available. Turn it back on under Settings → Permissions.",
+    });
   }
 
   private checkCapability(op: Op, capability: CapabilityId | null, context: ExecuteContext): void {

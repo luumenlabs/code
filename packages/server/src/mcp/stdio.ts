@@ -60,13 +60,27 @@ async function resolveBackend(): Promise<ResolvedBackend> {
 
   if (existing && (await existing.isAlive())) {
     // Sharing the running server means the harness and this agent see the same
-    // Studio session, the same output buffer, and the same permissions.
+    // Studio session, the same output buffer, and the same permissions. The
+    // permissions are the reason this reaches back over HTTP for the tool list
+    // rather than caching one: the user is toggling them in the app, in another
+    // process, while this agent is mid-conversation.
+    let unsubscribe: (() => void) | null = null;
+
     return {
       mode: "attached to the running Luu Code server",
       backend: {
         execute: (op, params) => existing.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
+        blockedOps: async () => (await existing.snapshot()).capabilities.disabledTools,
+        onToolsChanged: (listener) => {
+          unsubscribe = existing.events((event) => {
+            if (event.type === "capabilities") listener();
+          });
+          return unsubscribe;
+        },
       },
-      dispose: async () => undefined,
+      dispose: async () => {
+        unsubscribe?.();
+      },
     };
   }
 
@@ -83,6 +97,11 @@ async function resolveBackend(): Promise<ResolvedBackend> {
     mode: `started its own server on port ${owned.port}`,
     backend: {
       execute: (op, params) => owned.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
+      blockedOps: async () => owned.capabilities().disabledTools,
+      onToolsChanged: (listener) =>
+        owned.bus.subscribe((event) => {
+          if (event.type === "capabilities") listener();
+        }),
     },
     dispose: () => owned.close(),
   };

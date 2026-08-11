@@ -6,7 +6,7 @@
  * and any external MCP client all talk to this process. Spec sections 5.2 and 28.
  */
 import { LuuCodeError } from "@luumen/code-protocol";
-import type { CapabilityReport, Op, SessionStatus, StudioRealm } from "@luumen/code-protocol";
+import type { CapabilityReport, Op, PermissionGroup, SessionStatus, StudioRealm } from "@luumen/code-protocol";
 import { SettingsStore } from "./config/settings.js";
 import { generateToken, writeClientAuth } from "./core/auth.js";
 import { ChangeJournal } from "./core/changes.js";
@@ -55,6 +55,17 @@ export interface LuuCodeServer {
   rejectPairing(sessionId: string): boolean;
   /** Drops a Studio session and forgets its pairing. */
   disconnectSession(sessionId: string): void;
+  /**
+   * Changes what the agent is allowed to do, and tells everyone.
+   *
+   * These go through the server rather than straight to the settings store
+   * because the answer is not only the app's business. Every MCP child is a
+   * separate process working from a tool list it fetched when it connected, and
+   * the bus event is how they learn to fetch it again — without it, a tool the
+   * user has just turned off stays on the menu of every agent already running.
+   */
+  setPermission(group: PermissionGroup, allowed: boolean): void;
+  setToolAllowed(op: Op, allowed: boolean): void;
   setDesktopCaptureProvider(provider: DesktopCaptureProvider | null): void;
   close(): Promise<void>;
 }
@@ -151,6 +162,14 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
       // DataModel that is no longer reachable, and the plugin's copies of the
       // deleted ones went with the connection.
       if (changes.dropSession(sessionId)) bus.emit({ type: "changes.dropped", session: sessionId });
+    },
+    setPermission: (group, allowed) => {
+      settings.setPermission(group, allowed);
+      bus.emit({ type: "capabilities", report: dispatcher.capabilityReport() });
+    },
+    setToolAllowed: (op, allowed) => {
+      settings.setToolAllowed(op, allowed);
+      bus.emit({ type: "capabilities", report: dispatcher.capabilityReport() });
     },
     setDesktopCaptureProvider: (provider) => {
       desktopCapture = provider ?? platformDesktopCaptureProvider();

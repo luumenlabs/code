@@ -13,6 +13,7 @@ import {
   Blocks,
   Bot,
   Check,
+  ChevronRight,
   CircleCheck,
   CircleX,
   Copy,
@@ -21,14 +22,24 @@ import {
   FolderOpen,
   Link2,
   Loader2,
+  Lock,
   RefreshCw,
   RotateCcw,
   Settings2,
   Shield,
   Sparkles,
 } from "lucide-react";
-import { PERMISSION_GROUPS } from "@luumen/code-protocol";
-import type { PermissionGroup } from "@luumen/code-protocol";
+import {
+  COMMANDS,
+  DEFAULT_PERMISSIONS,
+  PERMISSION_GROUPS,
+  groupTally,
+  isOp,
+  toolControl,
+  toolNameFor,
+  toolsInGroup,
+} from "@luumen/code-protocol";
+import type { PermissionGroup, ToolPolicy } from "@luumen/code-protocol";
 import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../../shared/settings.js";
 import { agentBehind, pluginWaiting } from "../../../shared/update.js";
 import type { AgentInfo } from "../../../shared/agent.js";
@@ -57,10 +68,10 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ElementType }> =
 const PERMISSION_COPY: Record<PermissionGroup, { label: string; detail: string }> = {
   inspect: { label: "Look around", detail: "Read your instances, scripts, and what the game is doing" },
   edit: { label: "Change the place", detail: "Create, edit, and delete instances and scripts" },
-  playtest: { label: "Playtest", detail: "Start and stop the game" },
+  playtest: { label: "Playtest", detail: "Start and stop the game, and run its tests" },
   exec: { label: "Run Luau", detail: "Run code inside your Studio session" },
   input: { label: "Play the game", detail: "Click and type in the running game" },
-  screenshot: { label: "Screenshots", detail: "See your Studio window" },
+  screenshot: { label: "See your place", detail: "Screenshots, and pointing the Studio camera at things" },
 };
 
 export function SettingsView({
@@ -329,23 +340,121 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
   );
 }
 
+/**
+ * Two levels of control, one for browsing and one for precision.
+ *
+ * The group switch is what almost everyone will use, and it stays the primary
+ * row for that reason. Underneath it, each tool can be turned off on its own —
+ * "change the place" is a single switch over creating a part and destroying a
+ * subtree, and someone happy for an agent to write scripts but not delete
+ * instances previously had to turn the whole group off to say so.
+ *
+ * The tools are folded away by default. Six rows is a page someone can read; the
+ * fifty underneath are a reference to go looking in, and showing them all at
+ * once would bury the control that actually matters.
+ */
 function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
-  const permissions = harness.snapshot?.capabilities.permissions;
+  const report = harness.snapshot?.capabilities;
+  const [open, setOpen] = React.useState<PermissionGroup | null>(null);
+
+  const policy: ToolPolicy = {
+    permissions: report?.permissions ?? DEFAULT_PERMISSIONS,
+    disabledTools: (report?.disabledTools ?? []).filter(isOp),
+  };
 
   return (
     <Panel
       title="Permissions"
-      description="What the agent is allowed to do to your place. Also on the chip beside the send button."
+      description="What the agent is allowed to do to your place. The groups are also on the chip beside the send button; open one to turn off a single tool without losing the rest."
     >
-      {PERMISSION_GROUPS.map((group) => (
-        <Row key={group} label={PERMISSION_COPY[group].label} detail={PERMISSION_COPY[group].detail}>
-          <Switch
-            checked={permissions?.[group] !== false}
-            onCheckedChange={(allowed) => void window.luuCode.setPermission(group, allowed)}
-          />
-        </Row>
-      ))}
+      {PERMISSION_GROUPS.map((group) => {
+        const groupOn = policy.permissions[group] !== false;
+        const tally = groupTally(policy, group);
+        const expanded = open === group;
+
+        return (
+          <div key={group} className="border-b last:border-b-0">
+            <div className="flex items-start justify-between gap-4 py-3.5">
+              <button
+                onClick={() => setOpen(expanded ? null : group)}
+                className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                aria-expanded={expanded}
+              >
+                <ChevronRight
+                  className={cn("mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")}
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="text-[13.5px] font-medium">{PERMISSION_COPY[group].label}</span>
+                    {/* Counted against the group switch too, so a group that is
+                        off reads "0 of 9" rather than listing tools as on that
+                        cannot run. */}
+                    <span className="text-[11.5px] text-muted-foreground tabular-nums">
+                      {tally.allowed} of {tally.total}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-muted-foreground">
+                    {PERMISSION_COPY[group].detail}
+                  </span>
+                </span>
+              </button>
+
+              <div className="shrink-0 pt-0.5">
+                <Switch checked={groupOn} onCheckedChange={(allowed) => void window.luuCode.setPermission(group, allowed)} />
+              </div>
+            </div>
+
+            {expanded && <ToolList group={group} policy={policy} groupOn={groupOn} />}
+          </div>
+        );
+      })}
     </Panel>
+  );
+}
+
+function ToolList({
+  group,
+  policy,
+  groupOn,
+}: {
+  group: PermissionGroup;
+  policy: ToolPolicy;
+  groupOn: boolean;
+}): React.JSX.Element {
+  const tools = toolsInGroup(group);
+
+  return (
+    // Dimmed rather than hidden when the group is off: the switches still show
+    // what the user chose underneath, so turning the group back on does not
+    // look like it forgot.
+    <div className={cn("mb-3 ml-5 rounded-md border", !groupOn && "opacity-45")}>
+      {tools.map((op) => {
+        const essential = toolControl(op) === "essential";
+        const on = !policy.disabledTools.includes(op);
+
+        return (
+          <div key={op} className="flex items-start justify-between gap-4 border-b px-3 py-2.5 last:border-b-0">
+            <div className="min-w-0">
+              <code className="text-[12px] font-medium">{toolNameFor(op)}</code>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{COMMANDS[op].summary}</p>
+            </div>
+
+            {essential ? (
+              <Hint label="Always on. This is how an agent finds out what is wrong — without it every later failure is unexplainable.">
+                <Lock className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+              </Hint>
+            ) : (
+              <Switch
+                className="mt-0.5 shrink-0"
+                disabled={!groupOn}
+                checked={on}
+                onCheckedChange={(allowed) => void window.luuCode.setToolAllowed(op, allowed)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

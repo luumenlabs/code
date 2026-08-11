@@ -607,6 +607,67 @@ describe("permissions and capabilities", () => {
     expect(input?.reason).toMatch(/running/i);
   });
 
+  /**
+   * Groups alone were not enough: "change the place" is one switch over
+   * creating a part and destroying a subtree. These pin that the finer control
+   * composes the only way it safely can — narrowing further, never widening.
+   */
+  it("refuses one tool while the rest of its group keeps working", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.create", () => ({ instances: [], undoLabel: null }));
+    plugin.on("dm.delete", () => ({ instances: [], undoLabel: null, deleted: 1 }));
+    plugin.start();
+
+    server.setToolAllowed("dm.delete", false);
+
+    try {
+      await expect(server.execute("dm.delete", { targets: ["game.Workspace.Part"] })).rejects.toMatchObject({
+        code: "PERMISSION_DENIED",
+        details: { tool: "studio_delete_instance" },
+      });
+
+      // The rest of the group is untouched, which is the entire point of the
+      // switch existing separately from the group's.
+      await expect(server.execute("dm.create", { className: "Part", parent: "game.Workspace" })).resolves.toBeTruthy();
+    } finally {
+      server.setToolAllowed("dm.delete", true);
+    }
+  });
+
+  it("lets the group override a tool that is individually on", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.create", () => ({ instances: [], undoLabel: null }));
+    plugin.start();
+
+    server.settings.setPermission("edit", false);
+
+    try {
+      // A restriction the user set has to be the ceiling. Reported as the group
+      // rather than the tool, because the group is what they would turn back on.
+      await expect(server.execute("dm.create", { className: "Part", parent: "game.Workspace" })).rejects.toMatchObject({
+        code: "PERMISSION_DENIED",
+        details: { permission: "edit" },
+      });
+    } finally {
+      server.settings.setPermission("edit", true);
+    }
+  });
+
+  it("will not let the controls turn off the tools that explain the controls", () => {
+    expect(() => server.setToolAllowed("session.status", false)).toThrow();
+    expect(() => server.setToolAllowed("session.capabilities", false)).toThrow();
+  });
+
+  it("reports the disabled set so the app and an agent see the same thing", () => {
+    server.setToolAllowed("script.grep", false);
+
+    try {
+      expect(server.capabilities().disabledTools).toContain("script.grep");
+    } finally {
+      server.setToolAllowed("script.grep", true);
+    }
+  });
+
   it("refuses input while nothing is running", async () => {
     plugin = await connectPlugin();
     plugin.start();

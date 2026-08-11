@@ -5,7 +5,7 @@
  * session, and its own conversation history, and nothing else. Spec section 39
  * rules out turning this into a general local tooling surface.
  */
-import type { CapabilityReport, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
+import type { CapabilityReport, Op, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
 import type {
   AgentEvent,
   AgentInfo,
@@ -96,6 +96,8 @@ export interface LuuCodeBridge {
   selectSession(sessionId: string, chat?: string): Promise<void>;
   disconnectSession(sessionId: string): Promise<void>;
   setPermission(group: PermissionGroup, allowed: boolean): Promise<void>;
+  /** Turns one operation off under a group that is otherwise on. */
+  setToolAllowed(op: Op, allowed: boolean): Promise<void>;
 
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   resetSettings(): Promise<AppSettings>;

@@ -34,6 +34,9 @@ const STUDIO_PROVIDED: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "runtime.inspect",
   "runtime.exec",
   "input.virtual",
+  "view.camera",
+  "perf.stats",
+  "test.run",
 ]);
 
 export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityReport {
@@ -42,6 +45,7 @@ export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityRepor
   return {
     capabilities,
     permissions: inputs.settings.permissions,
+    disabledTools: inputs.settings.disabledTools,
     platform: process.platform,
   };
 }

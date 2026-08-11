@@ -18,8 +18,12 @@ local Value = require(script.Parent.Value)
 
 local DataModelOps = require(script.DataModelOps)
 local InputOps = require(script.InputOps)
+local PerfOps = require(script.PerfOps)
 local RunOps = require(script.RunOps)
+local ScreenOps = require(script.ScreenOps)
 local ScriptOps = require(script.ScriptOps)
+local TestOps = require(script.TestOps)
+local ViewOps = require(script.ViewOps)
 
 local Commands = {}
 
@@ -80,7 +84,15 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["view.viewport_info"] = function()
 		return InputOps.viewportInfo()
 	end,
+	["view.gui"] = ScreenOps.tree,
 	["view.screenshot"] = Capture.screenshot,
+	["view.focus"] = ViewOps.focus,
+	["view.highlight"] = ViewOps.highlight,
+
+	["perf.sample"] = PerfOps.sample,
+	["perf.count"] = PerfOps.count,
+
+	["test.run"] = TestOps.run,
 }
 
 --[[
@@ -248,6 +260,18 @@ function Commands.capabilities(): { string }
 		table.insert(available, "view.screenshot")
 	end
 
+	if ViewOps.isAvailable() then
+		table.insert(available, "view.camera")
+	end
+
+	if PerfOps.isAvailable() then
+		table.insert(available, "perf.stats")
+	end
+
+	if TestOps.isAvailable() then
+		table.insert(available, "test.run")
+	end
+
 	table.insert(available, "output.capture")
 
 	return available
@@ -255,6 +279,18 @@ end
 
 function Commands.prune()
 	Handles.prune()
+end
+
+--[[
+	Dropped when the DataModel is replaced, along with the handles.
+
+	A mark adorns an instance in the world it was made in. Carried across an
+	edit/run transition it points at nothing, and a camera position remembered
+	for restore would put the user's viewport somewhere that made sense in a
+	place that no longer exists.
+]]
+function Commands.release()
+	ViewOps.release()
 end
 
 return Commands
