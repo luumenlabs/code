@@ -7,22 +7,25 @@
  * user is deciding about anyway.
  *
  * The same list appears in two widths: the dock, where it is the session's whole
- * history, and under an edit row in the transcript, where it is what that one
- * operation did. Both use the components below so a change looks the same and
- * reverts the same wherever it is read.
+ * history, and under a turn in the transcript, where it is what that turn did.
+ * Both use the components below so a change looks the same and reverts the same
+ * wherever it is read.
+ *
+ * A row is a filename, what moved, and `+12 −3`. It used to be the plugin's
+ * sentence — "Changed the source of Shop" — which is the right thing to hand an
+ * agent and the wrong thing to stack down a panel, because prose does not scan
+ * and does not align. The sentence is still on the row, as its title.
  */
 import * as React from "react";
 import {
   ChevronRight,
   CircleAlert,
-  Columns2,
-  FilePlus2,
   FileCode2,
+  FilePlus2,
   Loader2,
   Maximize2,
   Move,
   Pencil,
-  Rows2,
   Tag,
   Trash2,
   Undo2,
@@ -30,9 +33,9 @@ import {
 import type { ChangeRecord, RevertOutcome } from "@luumen/code-protocol";
 import { groupChanges, isPending } from "@luumen/code-protocol";
 import { ChangeDiff } from "@/components/ChangeDiff";
-import { hasDocument } from "@/components/changeDocument";
+import { changeLabel, changeStats, hasDocument } from "@/components/changeDocument";
+import type { ChangeStats } from "@/components/changeDocument";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Hint } from "@/components/ui/tooltip";
@@ -97,6 +100,41 @@ function useRevert(harness: Harness): {
 }
 
 // ---------------------------------------------------------------------------
+// Counts
+// ---------------------------------------------------------------------------
+
+function sum(records: ChangeRecord[]): ChangeStats {
+  let added = 0;
+  let removed = 0;
+
+  for (const record of records) {
+    const stats = changeStats(record);
+    added += stats.added;
+    removed += stats.removed;
+  }
+
+  return { added, removed };
+}
+
+/**
+ * `+12 −3`.
+ *
+ * The one thing a diff should say before it is opened, and the thing this
+ * product was not saying anywhere: how big it is. A row without it is a row you
+ * have to open to find out whether it was worth opening.
+ */
+function Stats({ stats, className }: { stats: ChangeStats; className?: string }): React.JSX.Element | null {
+  if (stats.added === 0 && stats.removed === 0) return null;
+
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums", className)}>
+      {stats.added > 0 && <span className="text-[var(--success)]">+{stats.added}</span>}
+      {stats.removed > 0 && <span className="text-destructive">−{stats.removed}</span>}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // The dock panel
 // ---------------------------------------------------------------------------
 
@@ -107,10 +145,12 @@ export function ChangesTab({ harness }: { harness: Harness }): React.JSX.Element
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-2.5 py-2">
+      <div className="flex shrink-0 items-center gap-2 px-2.5 py-2">
         <span className="text-[12px] text-muted-foreground">
           {harness.changes.length === 0 ? "" : `${pending.length} of ${harness.changes.length} applied`}
         </span>
+
+        <Stats stats={sum(pending)} />
 
         <span className="flex-1" />
 
@@ -219,12 +259,23 @@ function InstanceGroup({
 /**
  * A flat list of changes, for the transcript.
  *
- * No instance grouping: the operation above it already named what it touched,
- * and a heading repeating that would be a heading saying nothing.
+ * No instance grouping: the rows carry their own paths, and a turn that touched
+ * four instances would otherwise become four headings around four single rows.
  */
-export function ChangeList({ records, harness }: { records: ChangeRecord[]; harness: Harness }): React.JSX.Element {
-  const { outcomes, run } = useRevert(harness);
-
+function ChangeList({
+  records,
+  harness,
+  outcomes,
+  onRevert,
+  defaultOpen,
+}: {
+  records: ChangeRecord[];
+  harness: Harness;
+  outcomes: Outcomes;
+  onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
+  /** Whether the diffs start open. See `TurnChanges`. */
+  defaultOpen?: boolean;
+}): React.JSX.Element {
   return (
     <div className="flex flex-col rounded-lg border bg-card/40">
       {records.map((record) => (
@@ -233,8 +284,9 @@ export function ChangeList({ records, harness }: { records: ChangeRecord[]; harn
           record={record}
           harness={harness}
           outcome={outcomes[record.id]}
-          onRevert={run}
+          onRevert={onRevert}
           showPath={records.length > 1}
+          defaultOpen={defaultOpen}
         />
       ))}
     </div>
@@ -247,49 +299,87 @@ function ChangeRow({
   outcome,
   onRevert,
   showPath,
+  defaultOpen,
 }: {
   record: ChangeRecord;
   harness: Harness;
   outcome: RevertOutcome | undefined;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
   showPath?: boolean;
+  defaultOpen?: boolean;
 }): React.JSX.Element {
   const Icon = KIND_ICON[record.kind];
   const reverted = !isPending(record);
   const busy = harness.reverting.includes(record.id);
-  const [expanded, setExpanded] = React.useState(false);
+  const label = changeLabel(record);
+  const stats = changeStats(record);
+  const open = useOpenChange();
   // Cheap: whether there is a document, not what the diff of it looks like.
   // The diffing itself happens in ChangeDiff, and only once the row is open.
   const detail = React.useMemo(() => hasDocument(record), [record]);
 
-  const body = (
-    <div className="flex items-start gap-2 px-2.5 py-1.5">
-      <Icon className={cn("mt-[3px] size-3.5 shrink-0", reverted ? "text-muted-foreground/50" : "text-violet-400/90")} />
+  /* The plugin's sentence, kept where a sentence belongs: on hover, for the one
+     time in fifty that "what exactly did this do" is the question. */
+  const face = (
+    <>
+      {detail && (
+        <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/change:rotate-90" />
+      )}
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          {detail && (
-            <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/change:rotate-90" />
-          )}
-          <span
-            className={cn(
-              "selectable min-w-0 flex-1 truncate text-left text-[12.5px]",
-              reverted && "text-muted-foreground line-through",
-            )}
-          >
-            {record.summary}
-          </span>
-        </div>
+      <Icon className={cn("size-3.5 shrink-0", reverted ? "text-muted-foreground/50" : "text-violet-400/90")} />
 
-        {showPath && (
-          <code className="block truncate font-mono text-[11px] text-muted-foreground/70">{record.target.path}</code>
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5" title={record.summary}>
+        <span
+          className={cn("min-w-0 truncate font-mono text-[12px]", reverted && "text-muted-foreground line-through")}
+        >
+          {label.name}
+        </span>
+        {label.detail && (
+          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/70">{label.detail}</span>
         )}
-      </div>
+      </span>
+
+      <Stats stats={stats} className={cn(reverted && "opacity-50")} />
+    </>
+  );
+
+  const row = (
+    <div className="group/row flex items-center gap-1.5 pr-1 transition-colors hover:bg-accent/30">
+      {detail ? (
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2.5 text-left">
+          {face}
+        </CollapsibleTrigger>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2.5">{face}</div>
+      )}
+
+      {detail && (
+        <Hint label="Open over the chat">
+          <button
+            type="button"
+            onClick={() => open?.(record.id)}
+            className="shrink-0 rounded p-1 text-muted-foreground/45 transition-colors group-hover/row:text-muted-foreground hover:text-foreground"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </Hint>
+      )}
 
       {busy ? (
-        <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : reverted ? (
-        <span className="mt-px shrink-0 text-[11px] text-muted-foreground/70">Reverted</span>
+        <span className="shrink-0 pr-1 text-[11px] text-muted-foreground/70">Reverted</span>
+      ) : record.revertable ? (
+        <Hint label="Revert">
+          <button
+            type="button"
+            disabled={harness.reverting.length > 0}
+            onClick={() => void onRevert([record])}
+            className="shrink-0 rounded p-1 text-muted-foreground/45 transition-colors group-hover/row:text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <Undo2 className="size-3.5" />
+          </button>
+        </Hint>
       ) : null}
     </div>
   );
@@ -297,41 +387,48 @@ function ChangeRow({
   return (
     <div className="border-t first:border-t-0">
       {detail ? (
-        <Collapsible className="group/change">
-          <CollapsibleTrigger className="w-full text-left transition-colors hover:bg-accent/40">{body}</CollapsibleTrigger>
+        <Collapsible className="group/change" defaultOpen={defaultOpen}>
+          {row}
           <CollapsibleContent>
-            <div className="px-2.5 pb-2 pl-[30px]">
-              <ChangeDetail record={record} onExpand={() => setExpanded(true)} />
+            <div className="px-2.5 pb-2">
+              {showPath && (
+                <code className="selectable mb-1 block truncate font-mono text-[11px] text-muted-foreground/70">
+                  {record.target.path}
+                </code>
+              )}
+              <div className="max-h-[420px] overflow-auto rounded-md">
+                <ChangeDiff record={record} />
+              </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
       ) : (
-        body
+        row
       )}
 
-      <RowFooter record={record} harness={harness} outcome={outcome} onRevert={onRevert} />
-
-      <ExpandedDiff record={record} open={expanded} onOpenChange={setExpanded} />
+      <RowNote record={record} outcome={outcome} busy={busy} onRevert={onRevert} />
     </div>
   );
 }
 
 /**
- * The revert control, and whatever the last attempt had to say.
+ * Whatever the last attempt had to say, and nothing when it had nothing.
  *
- * A change that cannot go back gets the reason instead of a disabled button:
+ * A change that cannot go back gets the reason rather than a disabled button:
  * a button you cannot press tells you nothing about why, and "Archivable is off
- * on this instance" is the whole answer.
+ * on this instance" is the whole answer. A change that went back cleanly, or
+ * has not been tried, draws no row at all — this used to be a permanent strip
+ * under every change holding a Revert link that now lives on the row itself.
  */
-function RowFooter({
+function RowNote({
   record,
-  harness,
   outcome,
+  busy,
   onRevert,
 }: {
   record: ChangeRecord;
-  harness: Harness;
   outcome: RevertOutcome | undefined;
+  busy: boolean;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
 }): React.JSX.Element | null {
   if (!isPending(record)) return null;
@@ -344,185 +441,147 @@ function RowFooter({
     );
   }
 
-  const busy = harness.reverting.includes(record.id);
+  if (!outcome) return null;
 
   return (
-    <div className="flex items-start gap-2 px-2.5 pb-2 pl-[30px]">
-      {outcome ? (
-        <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "flex items-start gap-1.5 text-[11.5px] leading-relaxed",
-              outcome.status === "conflict" ? "text-[var(--warning)]" : "text-destructive",
-            )}
-          >
-            <CircleAlert className="mt-px size-3 shrink-0" />
-            <span className="selectable">{outcome.reason ?? "It could not be put back."}</span>
-          </p>
-          {outcome.current && (
-            <p className="pl-[18px] text-[11px] text-muted-foreground">Now: {outcome.current}</p>
-          )}
-          {/* Only a conflict is worth overriding. A failure is Roblox refusing
-              the write, and asking again harder does not change that. */}
-          {outcome.status === "conflict" && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onRevert([record], true)}
-              className="mt-1 ml-[18px] text-[11.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-            >
-              Revert anyway
-            </button>
-          )}
-        </div>
-      ) : (
+    <div className="px-2.5 pb-2 pl-[30px]">
+      <p
+        className={cn(
+          "flex items-start gap-1.5 text-[11.5px] leading-relaxed",
+          outcome.status === "conflict" ? "text-[var(--warning)]" : "text-destructive",
+        )}
+      >
+        <CircleAlert className="mt-px size-3 shrink-0" />
+        <span className="selectable">{outcome.reason ?? "It could not be put back."}</span>
+      </p>
+
+      {outcome.current && <p className="pl-[18px] text-[11px] text-muted-foreground">Now: {outcome.current}</p>}
+
+      {/* Only a conflict is worth overriding. A failure is Roblox refusing the
+          write, and asking again harder does not change that. */}
+      {outcome.status === "conflict" && (
         <button
           type="button"
-          disabled={busy || harness.reverting.length > 0}
-          onClick={() => void onRevert([record])}
-          className="flex items-center gap-1 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          disabled={busy}
+          onClick={() => void onRevert([record], true)}
+          className="mt-1 ml-[18px] text-[11.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
         >
-          <Undo2 className="size-3" />
-          Revert
+          Revert anyway
         </button>
       )}
     </div>
   );
 }
 
-/**
- * The diff over the conversation, with room to read it.
- *
- * Split is the default here and only here: two columns need width, and the
- * width is the whole reason this exists. The dock keeps the unified view, which
- * is the one that survives a narrow column.
- */
-function ExpandedDiff({
-  record,
-  open,
-  onOpenChange,
-}: {
-  record: ChangeRecord;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}): React.JSX.Element {
-  const [split, setSplit] = React.useState(true);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[86vh] w-[min(1400px,92vw)] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-          <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-[14px]">{record.summary}</DialogTitle>
-            <code className="selectable block truncate font-mono text-[11.5px] text-muted-foreground">
-              {record.target.path}
-            </code>
-          </div>
-
-          <Hint label={split ? "Unified" : "Side by side"}>
-            <Button variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => setSplit((value) => !value)}>
-              {split ? <Rows2 /> : <Columns2 />}
-            </Button>
-          </Hint>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {/* Mounted only while open, so a large script is not diffed and
-              highlighted for every row in a list nobody has opened. */}
-          {open && <ChangeDiff record={record} split={split} className="border-0" />}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/**
- * A change's own diff, plus the way out to a bigger one.
- *
- * The dock is narrow by design, and a script diff read through a 340px column
- * is a diff you scroll rather than read. The expand button opens the same
- * record over the conversation, where there is room for two columns.
- */
-function ChangeDetail({
-  record,
-  onExpand,
-}: {
-  record: ChangeRecord;
-  onExpand: () => void;
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="max-h-[340px] overflow-auto rounded-md">
-        <ChangeDiff record={record} />
-      </div>
-
-      <button
-        type="button"
-        onClick={onExpand}
-        className="flex items-center gap-1 self-start text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <Maximize2 className="size-3" />
-        Open
-      </button>
-    </div>
-  );
-}
 // ---------------------------------------------------------------------------
 // In the transcript
 // ---------------------------------------------------------------------------
 
-/**
- * The harness, for the transcript's activity rows.
- *
- * Through context rather than down the tree: the transcript renders turns
- * inside folds inside runs, and the only thing at the bottom that needs the
- * harness is the one row in five that changed something. Threading it through
- * four components to reach that row would put it in three signatures that have
- * no use for it.
- */
-const HarnessContext = React.createContext<Harness | null>(null);
-
-export function ChangesProvider({
-  harness,
-  children,
-}: {
+interface ChangesContextValue {
   harness: Harness;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return <HarnessContext.Provider value={harness}>{children}</HarnessContext.Provider>;
+  /** Opens one change over the conversation, in place of the transcript. */
+  open: (id: string) => void;
 }
 
 /**
- * What one operation changed, folded under the row that reports it.
+ * The harness and the viewer, for the transcript's turns.
  *
- * Collapsed by default. A turn that edits nine things would otherwise open into
- * nine diffs, and the transcript is for reading what happened, not for
- * reviewing it line by line — that is what the dock is.
+ * Through context rather than down the tree: the transcript renders turns
+ * inside folds inside runs, and the only thing at the bottom that needs either
+ * is the one turn in five that changed something. Threading them through four
+ * components to reach that row would put them in three signatures that have no
+ * use for them.
  */
-export function ActivityChanges({ activityId }: { activityId: string }): React.JSX.Element | null {
-  const harness = React.useContext(HarnessContext);
-  const records = React.useMemo(
-    () => (harness ? harness.changes.filter((record) => record.activityId === activityId) : []),
-    [harness, activityId],
-  );
+const ChangesContext = React.createContext<ChangesContextValue | null>(null);
 
-  if (!harness || records.length === 0) return null;
+export function ChangesProvider({
+  harness,
+  onOpen,
+  children,
+}: {
+  harness: Harness;
+  onOpen: (id: string) => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const value = React.useMemo(() => ({ harness, open: onOpen }), [harness, onOpen]);
+  return <ChangesContext.Provider value={value}>{children}</ChangesContext.Provider>;
+}
 
-  const standing = records.filter(isPending).length;
+function useOpenChange(): ((id: string) => void) | null {
+  return React.useContext(ChangesContext)?.open ?? null;
+}
+
+/**
+ * What a turn changed, under the turn.
+ *
+ * This used to hang off the operation row that caused it, which sounded right
+ * and read terribly: the row is inside a run fold, inside the turn's
+ * working-out fold, and the changes were behind a disclosure of their own — so
+ * a diff was three clicks deep, and two of those clicks were on things that
+ * say nothing about diffs. Every one of those folds exists to keep the
+ * scrollback readable, and none of them should be able to hide the one part of
+ * a turn the user is actually being asked to approve.
+ *
+ * So it sits at the top of the turn instead, next to the answer, where a pull
+ * request would put its files. Nothing folds it away, and the diffs inside are
+ * already open when there are few enough of them to read.
+ */
+export function TurnChanges({ activityIds }: { activityIds: string[] }): React.JSX.Element | null {
+  const context = React.useContext(ChangesContext);
+  if (!context) return null;
+  return <TurnChangeList harness={context.harness} activityIds={activityIds} />;
+}
+
+function TurnChangeList({
+  harness,
+  activityIds,
+}: {
+  harness: Harness;
+  activityIds: string[];
+}): React.JSX.Element | null {
+  const { outcomes, run } = useRevert(harness);
+
+  const records = React.useMemo(() => {
+    const wanted = new Set(activityIds);
+    return harness.changes.filter((record) => wanted.has(record.activityId));
+  }, [harness.changes, activityIds]);
+
+  if (records.length === 0) return null;
+
+  const pending = records.filter(isPending);
 
   return (
-    <Collapsible className="mt-1.5 pl-[22px]">
-      <CollapsibleTrigger className="group flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground">
-        <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-        {records.length === 1 ? "1 change" : `${records.length} changes`}
-        {standing === 0 && <span className="text-muted-foreground/70">· reverted</span>}
-      </CollapsibleTrigger>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+        <span>{records.length === 1 ? "1 change" : `${records.length} changes`}</span>
+        <Stats stats={sum(records)} />
+        {pending.length === 0 && <span className="text-muted-foreground/70">· reverted</span>}
 
-      <CollapsibleContent>
-        <div className="mt-1.5">
-          <ChangeList records={records} harness={harness} />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+        <span className="flex-1" />
+
+        {pending.length > 1 && (
+          <button
+            type="button"
+            disabled={harness.reverting.length > 0}
+            onClick={() => void run(pending)}
+            className="flex items-center gap-1 transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <Undo2 className="size-3" />
+            Revert all
+          </button>
+        )}
+      </div>
+
+      {/* Two is the point where opening everything stops being help. A turn
+          that rewrote one script should show it without being asked; a turn
+          that touched nine instances should show nine rows. */}
+      <ChangeList
+        records={records}
+        harness={harness}
+        outcomes={outcomes}
+        onRevert={run}
+        defaultOpen={records.length <= 2}
+      />
+    </div>
   );
 }

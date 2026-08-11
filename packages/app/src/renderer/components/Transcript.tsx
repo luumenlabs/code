@@ -26,7 +26,7 @@ import {
 import type { ActivityEvent } from "@luumen/code-protocol";
 import type { AgentState } from "../../shared/agent.js";
 import { BrandMark } from "@/components/Brand";
-import { ActivityChanges } from "@/components/Changes";
+import { TurnChanges } from "@/components/Changes";
 import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
@@ -145,6 +145,13 @@ function Turn({ items, busy, live }: { items: TimelineItem[]; busy: boolean; liv
   const working = answerAt === -1 ? [] : rest.slice(0, answerAt);
   const answer = answerAt === -1 ? rest : rest.slice(answerAt);
 
+  /* Every operation in the turn, folded or not. What each of them changed is
+     shown together underneath, outside the folds — see `TurnChanges`. */
+  const activityIds = React.useMemo(
+    () => items.filter((item) => item.kind === "activity").map((item) => item.activity.id),
+    [items],
+  );
+
   return (
     <div className="flex flex-col gap-3">
       {asked.map((item) => (
@@ -159,6 +166,8 @@ function Turn({ items, busy, live }: { items: TimelineItem[]; busy: boolean; liv
           <Rows items={answer} busy={busy} />
         </>
       )}
+
+      <TurnChanges activityIds={activityIds} />
 
       {!live && <TurnFooter items={items} />}
     </div>
@@ -714,12 +723,6 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
           ))}
         </div>
       )}
-
-      {/* What this operation actually changed, and the button that takes it
-          back — one click from the message that caused it, rather than in a
-          panel the user has to go and match up by eye. Renders nothing for the
-          operations that changed nothing, which is most of them. */}
-      <ActivityChanges activityId={activity.id} />
     </div>
   );
 }

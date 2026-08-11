@@ -132,6 +132,26 @@ user's own edits; "take back that one thing the agent did an hour ago" is not a
 question a stack can answer. Both exist: every mutation still runs inside a
 `ChangeHistoryService` recording.
 
+Three files in `packages/app/src/renderer/components` turn a record into a diff:
+`changeDocument.ts` writes the mutation out as the two versions of a Luau file
+and counts the lines that moved, `ChangeDiff.tsx` hands that pair to
+`@pierre/diffs`, and `Changes.tsx` is the row. Three things there are easy to
+undo by accident:
+
+- **The theme is borrowed for token colours only.** Every surface, both diff
+  colours, and the type are bound to the app's own CSS variables through the
+  library's `unsafe` layer. A bundled theme is a whole palette, and it is not
+  this one.
+- **A row is a filename and `+12 −3`,** not `record.summary`. The plugin's
+  sentence is the right thing to hand an agent and to copy out; it is the wrong
+  thing to stack forty of down a panel, so it lives on the row's title and in
+  the viewer's header.
+- **Nothing folds a turn's diffs away.** `TurnChanges` sits at the top level of
+  the turn, outside the working-out fold and the run folds, because those exist
+  to keep scrollback readable and none of them should be able to hide the part
+  the user is being asked to approve. Opening one replaces the chat column
+  rather than floating a modal over it.
+
 ## House style
 
 Comments explain **why**, not what — the tricky decision, the constraint that made

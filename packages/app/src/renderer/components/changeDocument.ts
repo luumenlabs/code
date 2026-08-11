@@ -11,6 +11,7 @@
  * write to make the change themselves, they highlight as code because they are
  * code, and a create reads as the script you would need to build the thing.
  */
+import { parseDiffFromFile } from "@pierre/diffs";
 import type { ChangeRecord, InstanceSnapshot, RbxValue, ValueChange } from "@luumen/code-protocol";
 import { formatValue } from "@luumen/code-protocol";
 
@@ -20,6 +21,30 @@ export interface ChangeDocument {
   /** Null means the file did not exist on that side — a create, or a delete. */
   before: string | null;
   after: string | null;
+}
+
+/** Lines added and removed, which is how every other diff in the world counts. */
+export interface ChangeStats {
+  added: number;
+  removed: number;
+}
+
+/**
+ * What a row calls a change: a thing, and which part of it moved.
+ *
+ * The plugin also writes a sentence — "Set Anchored, CanCollide and 2 more" —
+ * and that sentence is the right thing to hand an agent, to copy out, and to
+ * put in the activity log. It is the wrong thing to stack forty of down a
+ * panel: prose does not scan, does not align, and buries the two words that
+ * identify the row under the grammar around them. `record.summary` is still
+ * there for the places that want a sentence; this is for the places that want
+ * a list.
+ */
+export interface ChangeLabel {
+  /** The instance, or the script file. */
+  name: string;
+  /** Which part of it changed: property names, a class, a tag. */
+  detail: string | null;
 }
 
 /**
@@ -98,6 +123,123 @@ export function changeDocument(record: ChangeRecord): ChangeDocument | null {
 export function hasDocument(record: ChangeRecord): boolean {
   const document = changeDocument(record);
   return document !== null && (document.before !== null || document.after !== null);
+}
+
+export function changeLabel(record: ChangeRecord): ChangeLabel {
+  const leaf = record.target.name || record.target.path;
+
+  switch (record.kind) {
+    case "source":
+      return { name: `${leaf}.luau`, detail: null };
+
+    case "properties":
+      return { name: leaf, detail: names((record.properties ?? []).map((value) => value.name)) };
+
+    case "attributes":
+      // The sigil is the one Roblox itself uses in the Properties pane, and it
+      // is what stops "Owner" reading as a property when it is an attribute.
+      return { name: leaf, detail: names((record.attributes ?? []).map((value) => `@${value.name}`)) };
+
+    case "tags":
+      return {
+        name: leaf,
+        detail: names([
+          ...(record.tags?.added ?? []).map((tag) => `+#${tag}`),
+          ...(record.tags?.removed ?? []).map((tag) => `−#${tag}`),
+        ]),
+      };
+
+    case "rename":
+      return { name: record.renamed?.after ?? leaf, detail: "Name" };
+
+    case "reparent":
+      return { name: leaf, detail: "Parent" };
+
+    case "create":
+    case "delete":
+      return { name: leaf, detail: record.target.className };
+
+    default:
+      return { name: leaf, detail: null };
+  }
+}
+
+/** Three, then a count. A row is a label, not an inventory. */
+function names(list: string[]): string | null {
+  if (list.length === 0) return null;
+  if (list.length <= 3) return list.join(" ");
+  return `${list.slice(0, 3).join(" ")} +${list.length - 3}`;
+}
+
+const NOTHING: ChangeStats = { added: 0, removed: 0 };
+
+/**
+ * Beyond this, the counts are taken from the line totals rather than a diff.
+ *
+ * The number is deliberately generous — a 200KB script still gets a real count.
+ * What it rules out is the pathological case: a turn that rewrote a dozen huge
+ * files, every row of which would otherwise run the diff algorithm on mount,
+ * synchronously, before anything appeared on screen.
+ */
+const MAX_DIFFED = 400_000;
+
+/**
+ * Counted once per record, then remembered.
+ *
+ * A journalled record never changes — the id is enough of a key — and the same
+ * rows are rendered on every keystroke in the composer, every output line, and
+ * every scroll. Diffing a script on each of those is not a cost worth paying
+ * for a number in the corner of a row.
+ */
+const COUNTED = new Map<string, ChangeStats>();
+
+export function changeStats(record: ChangeRecord): ChangeStats {
+  const cached = COUNTED.get(record.id);
+  if (cached) return cached;
+
+  const stats = count(record);
+  // A guard against a session that never ends, not a policy: the next render
+  // pays for the handful of rows actually on screen and the map refills.
+  if (COUNTED.size > 1_000) COUNTED.clear();
+  COUNTED.set(record.id, stats);
+  return stats;
+}
+
+function count(record: ChangeRecord): ChangeStats {
+  const document = changeDocument(record);
+  if (!document) return NOTHING;
+
+  const { name, before, after } = document;
+  if (before === after) return NOTHING;
+  if (before === null) return { added: lineCount(after ?? ""), removed: 0 };
+  if (after === null) return { added: 0, removed: lineCount(before) };
+
+  if (before.length + after.length > MAX_DIFFED) {
+    return { added: lineCount(after), removed: lineCount(before) };
+  }
+
+  try {
+    const parsed = parseDiffFromFile({ name, contents: before }, { name, contents: after });
+    let added = 0;
+    let removed = 0;
+
+    for (const hunk of parsed.hunks) {
+      added += hunk.additionLines;
+      removed += hunk.deletionLines;
+    }
+
+    return { added, removed };
+  } catch {
+    // The diff is the library's problem and it renders the same pair; a count
+    // it could not produce is not worth failing a row over.
+    return NOTHING;
+  }
+}
+
+/** Lines in a document, not counting the one a trailing newline implies. */
+export function lineCount(text: string): number {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body.length === 0 ? 0 : body.split("\n").length;
 }
 
 function sides(leaf: string, values: ValueChange[], prefix: string): ChangeDocument {

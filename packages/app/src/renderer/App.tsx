@@ -1,5 +1,6 @@
 import * as React from "react";
 import { ChangesProvider } from "@/components/Changes";
+import { ChangeViewer } from "@/components/ChangeViewer";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { PairingDialog } from "@/components/PairingDialog";
@@ -23,6 +24,15 @@ export function App(): React.JSX.Element {
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsSection, setSettingsSection] = React.useState<Section>("general");
+  /**
+   * The change being read in place of the chat, by id rather than by record.
+   *
+   * By id because the record is not the app's to hold: it is reverted, the
+   * thread is switched, the journal is reloaded — and a copy kept here would go
+   * on showing a change that is no longer in it. Looking it up each render
+   * means the viewer closes by itself when the thing it was showing is gone.
+   */
+  const [viewing, setViewing] = React.useState<string | null>(null);
 
   // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
   React.useEffect(() => {
@@ -87,6 +97,8 @@ export function App(): React.JSX.Element {
   const showDock = dockOpen && !settingsOpen;
   const fitted = fitPanels({ available, sidebar: sidebarWidth, dock: showDock ? dockWidth : 0 });
 
+  const viewed = viewing ? (harness.changes.find((record) => record.id === viewing) ?? null) : null;
+
   const sessions = harness.snapshot?.status.sessions ?? [];
   const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
 
@@ -103,9 +115,10 @@ export function App(): React.JSX.Element {
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
-      {/* The transcript's edit rows carry their own diffs, and they sit four
-          components deep inside folds that have no use for the harness. */}
-      <ChangesProvider harness={harness}>
+      {/* A turn's diffs sit four components deep inside folds that have no use
+          for the harness, and the button that opens one over the chat is deeper
+          still. */}
+      <ChangesProvider harness={harness} onOpen={setViewing}>
         <div className="flex h-full flex-col">
           <TitleBar
             harness={harness}
@@ -155,17 +168,21 @@ export function App(): React.JSX.Element {
               />
             ) : (
               <>
-                <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <Transcript
-                    items={harness.timeline}
-                    onExample={setDraft}
-                    showThinking={harness.settings.showThinking}
-                    placeName={place?.place.name ?? null}
-                    busy={harness.busy}
-                    state={harness.snapshot?.session.state}
-                  />
-                  <Composer harness={harness} value={draft} onValueChange={setDraft} />
-                </main>
+                {viewed ? (
+                  <ChangeViewer record={viewed} harness={harness} onClose={() => setViewing(null)} />
+                ) : (
+                  <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <Transcript
+                      items={harness.timeline}
+                      onExample={setDraft}
+                      showThinking={harness.settings.showThinking}
+                      placeName={place?.place.name ?? null}
+                      busy={harness.busy}
+                      state={harness.snapshot?.session.state}
+                    />
+                    <Composer harness={harness} value={draft} onValueChange={setDraft} />
+                  </main>
+                )}
 
                 {dockOpen && (
                 <>
