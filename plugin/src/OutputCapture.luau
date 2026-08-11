@@ -24,6 +24,22 @@ local realmProvider: (() -> string)? = nil
 -- Bounded so a runaway loop in the game cannot exhaust Studio's memory.
 local MAX_BUFFER = 2000
 
+-- How much of Studio's own log to adopt at startup. The whole history can be
+-- thousands of lines from previous sessions; what is wanted is the tail that
+-- covers the gap before this plugin loaded.
+local SEED_LIMIT = 300
+
+--[[
+	Messages taken from the log history, so the live listener does not report
+	them a second time.
+
+	MessageOut is deferred by a frame, so a message printed just before the
+	connection is made can still arrive through it. Keyed by second and text,
+	held only for as long as a deferred message could still be in flight.
+]]
+local seeded: { [string]: boolean } = {}
+local seedGuardUntil = 0
+
 local TYPE_BY_MESSAGE_TYPE = {
 	[Enum.MessageType.MessageOutput] = "output",
 	[Enum.MessageType.MessageInfo] = "info",
@@ -45,7 +61,22 @@ local function extractSource(message: string): (string?, string)
 	return nil, message
 end
 
-local function push(messageType: string, message: string, stack: string?)
+local function seedKey(seconds: number, message: string): string
+	return string.format("%d\0%s", seconds, message)
+end
+
+local function push(messageType: string, message: string, stack: string?, seconds: number?)
+	local at = seconds or os.time()
+
+	-- Only while a deferred message could still be arriving; after that the same
+	-- line printed again is the game printing it again, and dropping it would be
+	-- a lie about what the place did.
+	if seconds == nil and os.clock() < seedGuardUntil then
+		if seeded[seedKey(at, message)] then
+			return
+		end
+	end
+
 	if #buffer >= MAX_BUFFER then
 		table.remove(buffer, 1)
 	end
@@ -53,7 +84,7 @@ local function push(messageType: string, message: string, stack: string?)
 	local source, text = extractSource(message)
 
 	table.insert(buffer, {
-		timestamp = os.time() * 1000,
+		timestamp = at * 1000,
 		type = messageType,
 		message = text,
 		source = source,
@@ -66,6 +97,38 @@ local function push(messageType: string, message: string, stack: string?)
 	end
 end
 
+--[[
+	Adopts what Studio already has in its log.
+
+	A runtime peer's plugin loads after the place's own scripts have started, so
+	everything printed up to that point — which is where a startup error lives —
+	is only ever visible in Studio's Output window. Without this the agent asks
+	why the place failed to start and is handed an empty buffer.
+]]
+local function seedFromHistory()
+	local ok, history = pcall(function()
+		return LogService:GetLogHistory()
+	end)
+
+	if not ok or type(history) ~= "table" then
+		return
+	end
+
+	local first = math.max(#history - SEED_LIMIT + 1, 1)
+
+	for index = first, #history do
+		local entry = history[index]
+		local seconds = math.floor(tonumber(entry.timestamp) or os.time())
+
+		seeded[seedKey(seconds, entry.message)] = true
+		push(TYPE_BY_MESSAGE_TYPE[entry.messageType] or "output", entry.message, nil, seconds)
+	end
+
+	-- Long enough to cover the frame MessageOut defers by, short enough that a
+	-- line the game repeats a moment later is still reported.
+	seedGuardUntil = os.clock() + 2
+end
+
 function OutputCapture.start(getRealm: () -> string, onFlushNeeded: () -> ())
 	if capturing then
 		return
@@ -74,6 +137,10 @@ function OutputCapture.start(getRealm: () -> string, onFlushNeeded: () -> ())
 	capturing = true
 	realmProvider = getRealm
 	flushListener = onFlushNeeded
+
+	-- Before the listener, so the ordering in the buffer is the ordering Studio
+	-- printed in.
+	seedFromHistory()
 
 	table.insert(
 		connections,
@@ -104,6 +171,8 @@ function OutputCapture.stop()
 		connection:Disconnect()
 	end
 	table.clear(connections)
+	table.clear(seeded)
+	seedGuardUntil = 0
 	capturing = false
 end
 

@@ -30,12 +30,15 @@ const STUDIO_PROVIDED: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "playtest.play",
   "playtest.run",
   "playtest.multiplayer",
+  "playtest.network",
   "output.capture",
   "runtime.inspect",
   "runtime.exec",
+  "debug.breakpoints",
   "input.virtual",
   "view.camera",
   "perf.stats",
+  "perf.script-profiler",
   "test.run",
 ]);
 
@@ -118,6 +121,40 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
       available: false,
       provider: "studio-plugin",
       reason: "This Studio build does not expose StudioTestService, so playtests cannot be controlled from Luu Code.",
+    };
+  }
+
+  // Named as the beta it is, because the fix is a switch in Studio rather than
+  // anything about the place or the agent's request.
+  if (id === "debug.breakpoints" && !inputs.studio.has(id)) {
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason:
+        "This Studio build did not accept a debugger breakpoint. The Luau debugger API is a beta feature; turn it on under File → Beta Features and reconnect.",
+    };
+  }
+
+  // Whether this build can profile at all, and nothing about the run state:
+  // the session's run state is the one its primary endpoint reports, and during
+  // a playtest that is the edit peer, which is not itself running. The peer the
+  // request reaches knows for certain, and refuses with PLAYTEST_NOT_RUNNING.
+  if (id === "perf.script-profiler" && !inputs.studio.has(id)) {
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason: "This Studio build does not expose ScriptProfilerService.",
+    };
+  }
+
+  if (id === "playtest.network" && !inputs.studio.has(id)) {
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason: "This Studio build does not expose the NetworkSettings simulation fields, so the playtest link cannot be shaped.",
     };
   }
 

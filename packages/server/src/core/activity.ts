@@ -16,6 +16,7 @@ const CATEGORIES: Record<string, Category> = {
   run: "playtest",
   output: "output",
   runtime: "runtime",
+  debug: "runtime",
   input: "input",
   view: "visual",
   session: "inspect",
@@ -24,7 +25,7 @@ const CATEGORIES: Record<string, Category> = {
   test: "runtime",
 };
 
-const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create"];
+const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create", "script.replace"];
 
 export function categoryFor(op: Op): Category {
   // Reading the journal is a read, whatever its namespace suggests.
@@ -58,6 +59,8 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     }
     case "dm.properties":
       return `Reading properties of ${targetName(params)}`;
+    case "dm.class_info":
+      return `Looking up ${String(params.className ?? targetName(params))}`;
     case "dm.selection.get":
       return "Reading the Studio selection";
     case "dm.selection.set":
@@ -93,6 +96,10 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
       return `Reading ${targetName(params)}`;
     case "script.grep":
       return `Searching scripts for "${String(params.pattern)}"`;
+    case "script.replace":
+      return params.dryRun
+        ? `Checking what replacing "${String(params.pattern)}" would change`
+        : `Replacing "${String(params.pattern)}" across the scripts`;
     case "script.set":
       return `Rewriting ${targetName(params)}`;
     case "script.patch":
@@ -124,6 +131,16 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
           return "Ending the multiplayer test";
       }
 
+    case "run.network":
+      switch (params.profile) {
+        case "reset":
+          return "Clearing the simulated network conditions";
+        case "custom":
+          return "Simulating custom network conditions";
+        default:
+          return `Simulating a ${String(params.profile)} connection`;
+      }
+
     case "output.get":
       return "Reading Studio output";
     case "output.mark":
@@ -133,6 +150,18 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
 
     case "runtime.exec":
       return "Running Luau in Studio";
+
+    case "debug.breakpoints":
+      switch (params.action) {
+        case "set":
+          return `Watching line ${String(params.line)} of ${targetName(params)}`;
+        case "remove":
+          return `Stopping watching line ${String(params.line)} of ${targetName(params)}`;
+        case "clear":
+          return "Removing the watched lines";
+        default:
+          return "Listing the watched lines";
+      }
 
     case "input.key":
       return `Pressing ${String(params.key)}`;
@@ -156,6 +185,8 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
 
     case "perf.sample":
       return "Measuring performance";
+    case "perf.script":
+      return `Profiling the ${String(params.realm ?? "server")} scripts`;
     case "perf.count":
       return "Counting what is in the place";
 
@@ -214,18 +245,37 @@ export function detailFor(op: Op, result: unknown): string | null {
       if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
       return parts.join(", ");
     }
+    case "dm.class_info": {
+      const members = ((data.members as unknown[]) ?? []).length;
+      const unknown = ((data.unknown as unknown[]) ?? []).length;
+      return `${members} member${members === 1 ? "" : "s"}${unknown > 0 ? `, ${unknown} not on this class` : ""}`;
+    }
     case "script.get":
       return `${data.totalLines} lines`;
+    case "script.replace": {
+      const scripts = data.scriptsChanged ?? 0;
+      const where = `${data.replaced} replacement${data.replaced === 1 ? "" : "s"} in ${scripts} script${scripts === 1 ? "" : "s"}`;
+      if (data.dryRun) return `${where} — nothing written`;
+
+      // The count of scripts a wide replace has just broken is the part worth
+      // reading, and it is not visible in the diff of any one of them.
+      const broken = ((data.files as Array<{ syntax?: { ok: boolean } | null }>) ?? []).filter(
+        (file) => file.syntax && !file.syntax.ok,
+      ).length;
+      return broken > 0 ? `${where}; ${broken} no longer compile${broken === 1 ? "s" : ""}` : where;
+    }
     case "script.grep": {
       const files = ((data.files as unknown[]) ?? []).length;
       if (files === 0) return `no matches in ${data.scriptsSearched} scripts`;
       return `${data.matchCount} match${data.matchCount === 1 ? "" : "es"} in ${files} script${files === 1 ? "" : "s"}${data.truncated ? " (truncated)" : ""}`;
     }
+    // A script that does not compile is the thing to say about a write, ahead
+    // of how long it is or how much of it moved.
     case "script.set":
     case "script.create":
-      return `${data.lineCount} lines`;
+      return withSyntax(`${data.lineCount} lines`, data.syntax);
     case "script.patch":
-      return typeof data.diff === "string" ? data.diff : `${data.applied} edit(s)`;
+      return withSyntax(typeof data.diff === "string" ? data.diff : `${data.applied} edit(s)`, data.syntax);
     case "run.start":
     case "run.restart":
     case "run.wait_ready":
@@ -243,8 +293,27 @@ export function detailFor(op: Op, result: unknown): string | null {
       const errors = ((data.entries as Array<{ type: string }>) ?? []).filter((entry) => entry.type === "error").length;
       return `${entries.length} entries${errors > 0 ? `, ${errors} error${errors === 1 ? "" : "s"}` : ""}`;
     }
+    case "run.network": {
+      const after = data.after as { latencyMs?: number; jitterMs?: number; lossPercent?: number } | undefined;
+      if (!after || !after.latencyMs) return "no simulated latency";
+      const parts = [`${Math.round(after.latencyMs)}ms round trip`];
+      if (after.jitterMs) parts.push(`${Math.round(after.jitterMs)}ms jitter`);
+      if (after.lossPercent) parts.push(`${after.lossPercent}% loss`);
+      return parts.join(", ");
+    }
     case "runtime.exec":
       return `returned ${formatValue(data.value)}`;
+    case "debug.breakpoints": {
+      const held = ((data.breakpoints as unknown[]) ?? []).length;
+      if (data.removed > 0 && held === 0) return "none left";
+      return `${held} line${held === 1 ? "" : "s"} watched`;
+    }
+    case "perf.script": {
+      const functions = (data.functions as Array<{ name: string; share: number }>) ?? [];
+      if (functions.length === 0) return "nothing sampled";
+      const top = functions[0]!;
+      return `${top.name} at ${(top.share * 100).toFixed(1)}% of the capture`;
+    }
     case "input.gui_click":
       return data.clicked?.path ? `clicked ${data.clicked.path}` : null;
     case "view.screenshot":
@@ -301,6 +370,18 @@ export function instancesFor(result: unknown): InstanceRef[] {
     return [{ handle: data.handle, path: data.path, name: data.name, className: data.className, childCount: data.childCount ?? 0 }];
   }
   return [];
+}
+
+/**
+ * The compile result, appended to whatever the write had to say for itself.
+ * Null when the plugin could not check, which reads the same as before.
+ */
+function withSyntax(detail: string, syntax: unknown): string {
+  const check = syntax as { ok: boolean; message: string | null; line: number | null } | null;
+  if (!check || check.ok) return detail;
+
+  const where = check.line === null ? "" : ` on line ${check.line}`;
+  return `${detail} — does not compile${where}: ${check.message ?? "unknown error"}`;
 }
 
 function firstPath(instances: unknown): string | null {

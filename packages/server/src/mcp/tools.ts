@@ -102,6 +102,11 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
       "Apply many edits in one call. Takes a list of {op, params} where op is one of studio_create_instance, studio_set_properties, studio_delete_instance, studio_rename_instance, studio_move_instance, studio_clone_instance, studio_set_attributes, or studio_set_tags — passed as their operation ids: dm.create, dm.set_properties, dm.delete, dm.rename, dm.reparent, dm.clone, dm.attributes.set, dm.tags.set. Use it whenever you are about to make the same kind of edit more than two or three times: it is one round trip instead of many, and the user gets one Ctrl+Z rather than a stack of them. Every step is validated before any of them runs, and the result says what each one did.",
   },
   {
+    op: "dm.class_info",
+    description:
+      "Find out what a class actually has before you write to it: which properties exist, what type each one holds, what the default is, and whether Roblox will accept a write. Pass names you are unsure about in members and each one comes back either described or listed under unknown with the nearest real name — which is how a guess at CanCollide or PlaceholderText gets settled in one call instead of one rejected write at a time. The answer comes from the engine in front of you, so it is right for this Studio version rather than for the documentation's.",
+  },
+  {
     op: "dm.selection.get",
     description: "Read what the user currently has selected in Studio. Useful context when a request says 'this' or 'the selected part'.",
   },
@@ -122,17 +127,28 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
   {
     op: "script.patch",
     description:
-      "Apply targeted edits to a script by find/replace or line range. Prefer this over rewriting the whole file: a find that matches more than once is rejected rather than guessed at.",
+      "Apply targeted edits to a script by find/replace or line range. Prefer this over rewriting the whole file: a find that matches more than once is rejected rather than guessed at. The result says whether what you wrote compiles, and names the line if it does not.",
   },
   {
     op: "script.set",
-    description: "Replace a script's entire source. Use studio_edit_script for anything smaller than a full rewrite.",
+    description:
+      "Replace a script's entire source. Use studio_edit_script for anything smaller than a full rewrite. The result says whether what you wrote compiles, and names the line if it does not — check it rather than finding out from a playtest that will not start.",
   },
-  { op: "script.create", description: "Create a Script, LocalScript, or ModuleScript with source." },
+  {
+    op: "script.create",
+    description:
+      "Create a Script, LocalScript, or ModuleScript with source. The result says whether the source compiles, and names the line if it does not.",
+  },
   {
     op: "script.grep",
     description:
       "Search every script in the place for a pattern and get back the matching lines with their script, line, and column. This is the fastest way into an unfamiliar game: find where a remote is fired, who requires a module, or what sets a value, without reading files one at a time. Literal by default; set regex for a Luau string pattern (which is not a regular expression — use %d, %a, %w and escape magic characters with %). Scope it to a service to narrow the search.",
+  },
+
+  {
+    op: "script.replace",
+    description:
+      "Replace a pattern across every script in scope in one pass, for a rename or an API change that touches more places than you want to edit one at a time. Matching is per line, like studio_grep_scripts, and literal by default. Run it once with dryRun to see which scripts it would touch and what each changed line would become; the same call without dryRun then applies it as a single undo step for the user, and each script gets its own entry in the change history so a bad pattern can be taken back. Nothing is written if the sweep would exceed maxReplacements or maxPerScript: half an applied rename is worse than none, because the place still builds.",
   },
 
   {
@@ -164,6 +180,12 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
   },
 
   {
+    op: "run.network",
+    description:
+      'Give the playtest a realistic connection. A Studio playtest runs the client and the server in one process with no latency between them, so replication bugs — a remote fired before the instance it names has replicated, prediction that never reconciles, two clients disagreeing about who got there first — simply do not happen there. "good" is a normal connection at 100ms, "poor" is 300ms with jitter and packet loss, and "reset" puts it back. Set it before or during a playtest, then reproduce the behaviour; pair it with studio_multiplayer_test when the bug needs a second player. The conditions read back after the write, so what actually applied is in the result.',
+  },
+
+  {
     op: "output.mark",
     description:
       "Return a cursor for the current position in Studio's output. Mark before making a change, then pass the cursor to studio_output to see only what your change produced.",
@@ -179,6 +201,12 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
     op: "runtime.exec",
     description:
       'Execute Luau inside Studio and return the result. Use it to inspect a runtime value, set up test state, or check an assumption the dedicated tools do not cover. During a playtest, name the realm you mean: "server" and "client" see different worlds, and a probe run in the wrong one returns a confident answer about the wrong side. The result says which realm it ran in.',
+  },
+
+  {
+    op: "debug.breakpoints",
+    description:
+      'Watch a line of a script without editing it. Set a breakpoint with log set to a Luau expression list — \'"hp", humanoid.Health\' — and every time that line runs it writes those values to the output, where studio_output picks them up. Add a condition to hear about it only when something is wrong. This is what to use instead of adding a print: nothing is written to the user\'s place, so there is no edit to review and none to remember to take out. These never pause the game. Set them in edit before starting a playtest and the running peers inherit them; clear them when you are done, which only removes the ones you set and leaves the user\'s own alone.',
   },
 
   {
@@ -231,6 +259,11 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
     op: "perf.sample",
     description:
       "Measure what the engine is actually doing, over a span of seconds: frame time and the frames per second it works out to, render CPU and GPU time, physics step time, draw calls, triangles, and memory broken down by category. This is how to answer \"is it laggy, and why\" — output says nothing about frame time and a screenshot cannot show a stutter. Both the mean and the worst frame come back, because a game that hitches once a second still has a good average. Run it during a playtest; in edit mode it measures Studio drawing the place, which is a different question.",
+  },
+  {
+    op: "perf.script",
+    description:
+      'Find out which Luau is expensive. studio_measure says whether the place is slow; this says what is making it slow, by sampling a running peer and reporting the functions the time went into, worst first. Name the realm: the server and the client run different code, and a stutter on one is invisible from the other. Trigger the slow behaviour while it samples, or the capture is of an idle game. If the names are too coarse to act on, wrap the suspect region in debug.profilebegin("Shop:Refresh") and debug.profileend(), run it again, and the label appears here as its own row. Engine and plugin frames are left out by default because they are not code this place can change.',
   },
   {
     op: "perf.count",

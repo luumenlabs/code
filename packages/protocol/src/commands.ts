@@ -86,6 +86,27 @@ const propertiesParams = z.object({
 const selectionGetParams = z.object({});
 const selectionSetParams = z.object({ targets: z.array(targetSchema).max(200) });
 
+/**
+ * Roblox exposes no property reflection to Luau, so the class is described by
+ * asking a real instance of it: which members exist, what type each value is,
+ * and whether a write takes. Names the caller supplies are probed alongside the
+ * curated set, which is how a guessed property name is checked in one call
+ * rather than one rejected write at a time.
+ */
+const classInfoParams = z
+  .object({
+    className: z.string().min(1).optional().describe('The class to describe, for example "ProximityPrompt". Case sensitive.'),
+    target: targetSchema.optional().describe("Describe the class of this instance instead, when you have a handle rather than a name."),
+    members: z
+      .array(z.string().min(1))
+      .max(100)
+      .default([])
+      .describe(
+        "Member names to check on top of the curated set. Anything the class does not have comes back under unknown with the nearest name it does have, so a misspelling is named rather than guessed at.",
+      ),
+  })
+  .refine((value) => Boolean(value.className || value.target), { message: "Provide either className or target." });
+
 // ---------------------------------------------------------------------------
 // Editing
 // ---------------------------------------------------------------------------
@@ -231,6 +252,35 @@ const scriptGrepParams = z.object({
   pathsOnly: z.boolean().default(false).describe("Return only which scripts matched, not the matching lines."),
 });
 
+/**
+ * The write half of grep. Renaming one function across forty scripts is
+ * otherwise forty round trips and forty entries in the user's history; this is
+ * one of each, and still one journal record per script so a bad pattern can be
+ * taken back in a single action.
+ */
+const scriptReplaceParams = z.object({
+  pattern: z.string().min(1).describe("Text to find. Literal by default."),
+  replacement: z
+    .string()
+    .describe("What to put in its place. With regex on, %1 and %2 refer to captures; a literal % must be written %%."),
+  regex: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Treat pattern as a Luau string pattern rather than literal text. Luau patterns are not PCRE: use %d %a %w %s classes, '.-' for a lazy match, and escape magic characters with %.",
+    ),
+  caseSensitive: z.boolean().default(false).describe("Ignored when regex is true; Luau patterns are always case sensitive."),
+  scope: targetSchema.optional().describe("Restrict the replacement to this subtree, for example ServerScriptService."),
+  className: z.enum(["Script", "LocalScript", "ModuleScript"]).optional(),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe("Report what would change without writing anything. Worth one call before a wide pattern."),
+  maxReplacements: limit(5000, 500).describe("Ceiling on total replacements. The operation fails rather than writing a partial sweep if the pattern matches more than this."),
+  maxPerScript: limit(500, 50).describe("Ceiling on replacements within any one script, applied the same way."),
+  contextLimit: limit(100, 10).describe("How many changed lines to show per script, in both versions."),
+});
+
 // ---------------------------------------------------------------------------
 // Playtest
 // ---------------------------------------------------------------------------
@@ -286,6 +336,49 @@ const runMultiplayerParams = z
     }
   });
 
+/**
+ * Simulated network conditions, through `settings():GetService("NetworkSettings")`.
+ *
+ * Replication bugs do not reproduce on a link with no latency, which is the
+ * only link a Studio playtest has. Every field is read back after the write, so
+ * a build that does not expose one is reported rather than assumed applied.
+ */
+const runNetworkParams = z
+  .object({
+    profile: z
+      .enum(["great", "good", "poor", "custom", "reset"])
+      .describe(
+        'Preset conditions: "great" is 30ms round trip, "good" is 100ms with 10ms of jitter, "poor" is 300ms with 100ms of jitter and packet loss. "reset" puts the link back to no simulation, which is where every playtest starts.',
+      ),
+    latencyMs: z
+      .number()
+      .min(0)
+      .max(2000)
+      .optional()
+      .describe("Round trip in milliseconds, split evenly between the two directions. Used by custom."),
+    jitterMs: z.number().min(0).max(1000).optional().describe("Variation applied in each direction. Used by custom."),
+    lossPercent: z
+      .number()
+      .min(0)
+      .max(0.5)
+      .optional()
+      .describe("Packets dropped in each direction. Roblox caps this at 0.5%, and a higher value is refused rather than clamped."),
+    realm: z
+      .enum(["client", "server", "edit"])
+      .default("client")
+      .describe("Which DataModel applies the change. The simulated link belongs to the client, so that is the default."),
+  })
+  .superRefine((value, ctx) => {
+    if (value.profile !== "custom") return;
+    if (value.latencyMs === undefined && value.jitterMs === undefined && value.lossPercent === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["latencyMs"],
+        message: 'A custom profile needs at least one of latencyMs, jitterMs, or lossPercent. Use "reset" to clear the simulation.',
+      });
+    }
+  });
+
 // ---------------------------------------------------------------------------
 // Output and runtime
 // ---------------------------------------------------------------------------
@@ -314,6 +407,65 @@ const execParams = z.object({
     ),
   timeoutMs: z.number().int().min(100).max(60000).default(10000),
 });
+
+/**
+ * Log breakpoints, through `ScriptDebuggerService`.
+ *
+ * These log and carry on; nothing here pauses a playtest. A breakpoint that
+ * stops execution needs a debugger sitting on the other end to resume it, and
+ * without one the playtest hangs with both peers unreachable — so the stopping
+ * kind is not offered rather than offered and warned about.
+ *
+ * The point is to watch a line without editing the script it is on: no print to
+ * add, none to forget to remove, and no journal record for a debugging aid.
+ */
+const breakpointsParams = z
+  .object({
+    action: z
+      .enum(["set", "remove", "clear", "list"])
+      .describe('"clear" removes every breakpoint Luu Code set in that realm, and leaves the user\'s own alone.'),
+    target: targetSchema.optional().describe("The script to watch. Required for set and remove."),
+    line: z.number().int().min(1).optional().describe("1-based line. Required for set and remove."),
+    log: z
+      .string()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe(
+        'What to log, as a Luau expression list evaluated at that line: \'"health", humanoid.Health\'. Literal text has to be quoted. Required for set.',
+      ),
+    condition: z
+      .string()
+      .max(500)
+      .optional()
+      .describe("Luau expression; the line only logs when it is true, for example \"health < 20\"."),
+    realm: z
+      .enum(["edit", "server", "client"])
+      .default("edit")
+      .describe(
+        "Which DataModel to set it in. Set breakpoints in edit before starting a playtest and the running peers inherit them; name a running realm to add one to a playtest already under way.",
+      ),
+  })
+  .superRefine((value, ctx) => {
+    const need = (field: "target" | "line" | "log") => {
+      if (value[field] === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} is required for action "${value.action}".` });
+      }
+    };
+
+    if (value.action === "set") {
+      need("target");
+      need("line");
+      // A breakpoint with nothing to log and nothing to stop for is a no-op that
+      // reports success, which is the worst of both.
+      need("log");
+    }
+
+    if (value.action === "remove") {
+      need("target");
+      need("line");
+    }
+  });
 
 // ---------------------------------------------------------------------------
 // Input and view
@@ -445,6 +597,40 @@ const perfSampleParams = z.object({
     .boolean()
     .default(true)
     .describe("Break memory down by category. Slightly slower, and the only way to see which system is holding it."),
+});
+
+/**
+ * Which Luau is expensive, from `ScriptProfilerService`.
+ *
+ * `perf.sample` answers whether the place is slow; this answers what is making
+ * it slow. It only works on a running peer, because there is no game code to
+ * profile in edit mode.
+ */
+const perfScriptParams = z.object({
+  durationMs: z
+    .number()
+    .int()
+    .min(100)
+    .max(15000)
+    .default(1000)
+    .describe("How long to sample for. Keep it short and trigger the slow behaviour while it runs."),
+  frequency: z.number().int().min(100).max(10000).default(1000).describe("Samples per second."),
+  realm: z
+    .enum(["server", "client"])
+    .default("server")
+    .describe("Which peer to profile. They run different code, so a client-side stutter is invisible from the server."),
+  limit: limit(100, 20).describe("How many functions to return, most expensive first."),
+  minMicroseconds: z.number().int().min(0).default(0).describe("Drop anything below this total, to cut the long tail."),
+  contains: z
+    .string()
+    .optional()
+    .describe(
+      'Only functions whose name or script matches. Wrap a suspect region in debug.profilebegin("Shop:Refresh") and debug.profileend() and it appears here under that label.',
+    ),
+  includeEngine: z
+    .boolean()
+    .default(false)
+    .describe("Include native engine and plugin frames. Off by default: they are not code you can change."),
 });
 
 const perfCountParams = z.object({
@@ -580,6 +766,14 @@ export const COMMANDS = {
     capability: "inspect.datamodel",
     mutates: false,
     summary: "Read specific properties from an instance.",
+  },
+  "dm.class_info": {
+    params: classInfoParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "inspect.datamodel",
+    mutates: false,
+    summary: "Describe a class: which members it has, what type each value is, and whether it can be written.",
   },
   "dm.selection.get": {
     params: selectionGetParams,
@@ -719,6 +913,14 @@ export const COMMANDS = {
     mutates: false,
     summary: "Search every script's source for a pattern and return the matching lines.",
   },
+  "script.replace": {
+    params: scriptReplaceParams,
+    executor: "studio",
+    permission: "edit",
+    capability: "edit.scripts",
+    mutates: true,
+    summary: "Replace a pattern across every script in scope, in one pass.",
+  },
 
   "run.state": {
     params: runStateParams,
@@ -774,6 +976,14 @@ export const COMMANDS = {
     mutates: true,
     summary: "Start, inspect, grow, or end a multi-client Studio test session.",
   },
+  "run.network": {
+    params: runNetworkParams,
+    executor: "studio",
+    permission: "playtest",
+    capability: "playtest.network",
+    mutates: true,
+    summary: "Simulate latency, jitter, and packet loss on the playtest's network link.",
+  },
 
   "output.get": {
     params: outputGetParams,
@@ -807,6 +1017,16 @@ export const COMMANDS = {
     capability: "runtime.exec",
     mutates: true,
     summary: "Execute Luau inside the connected Studio session and return the result.",
+  },
+  "debug.breakpoints": {
+    params: breakpointsParams,
+    executor: "studio",
+    permission: "exec",
+    capability: "debug.breakpoints",
+    // Studio's debugger state rather than the place: nothing to journal, and
+    // nothing the user would want a Revert button beside.
+    mutates: true,
+    summary: "Log a line of a script every time it runs, without editing the script.",
   },
 
   "input.key": {
@@ -892,6 +1112,14 @@ export const COMMANDS = {
     mutates: false,
     summary: "Watch frame time, draw calls, and memory over a span and report the mean and the worst frame.",
   },
+  "perf.script": {
+    params: perfScriptParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "perf.script-profiler",
+    mutates: false,
+    summary: "Sample a running peer's Luau and report which functions the time went into.",
+  },
   "perf.count": {
     params: perfCountParams,
     executor: "studio",
@@ -957,6 +1185,7 @@ export const TOOL_NAMES = {
   "dm.tree": "studio_tree",
   "dm.search": "studio_search",
   "dm.properties": "studio_get_properties",
+  "dm.class_info": "studio_class_info",
   "dm.selection.get": "studio_get_selection",
   "dm.selection.set": "studio_set_selection",
   "dm.set_properties": "studio_set_properties",
@@ -972,6 +1201,7 @@ export const TOOL_NAMES = {
   "script.list": "studio_list_scripts",
   "script.get": "studio_read_script",
   "script.grep": "studio_grep_scripts",
+  "script.replace": "studio_replace_in_scripts",
   "script.set": "studio_write_script",
   "script.patch": "studio_edit_script",
   "script.create": "studio_create_script",
@@ -982,12 +1212,14 @@ export const TOOL_NAMES = {
   "run.restart": "studio_restart_playtest",
   "run.wait_ready": "studio_wait_ready",
   "run.multiplayer": "studio_multiplayer_test",
+  "run.network": "studio_network_conditions",
 
   "output.get": "studio_output",
   "output.mark": "studio_mark_output",
   "output.clear": "studio_clear_output",
 
   "runtime.exec": "studio_exec",
+  "debug.breakpoints": "studio_breakpoints",
 
   "input.key": "studio_press_key",
   "input.text": "studio_type_text",
@@ -1001,6 +1233,7 @@ export const TOOL_NAMES = {
   "view.highlight": "studio_highlight",
 
   "perf.sample": "studio_measure",
+  "perf.script": "studio_profile_scripts",
   "perf.count": "studio_census",
 
   "test.run": "studio_run_tests",
@@ -1109,6 +1342,103 @@ export interface GrepFile {
   matches: GrepMatch[];
   /** Matches in this script, which exceeds `matches.length` when maxPerScript cut it short. */
   matchCount: number;
+}
+
+/**
+ * Whether what was just written compiles.
+ *
+ * Returned by every script write, because the alternative is that a missing
+ * `end` is discovered by starting a playtest and reading the output — three
+ * round trips to learn something the compiler knew at the moment of the write.
+ * The write still happens: a script that does not compile yet is a normal state
+ * to be in halfway through a change, and refusing it would make the next edit
+ * impossible.
+ */
+export interface SyntaxCheck {
+  ok: boolean;
+  /** Compiler message, with the script's own name in it. Null when it compiled. */
+  message: string | null;
+  /** 1-based line the compiler pointed at, when it named one. */
+  line: number | null;
+}
+
+/** One line a replacement changed, in both versions. */
+export interface ReplaceMatch {
+  line: number;
+  before: string;
+  after: string;
+}
+
+export interface ReplaceFile {
+  instance: InstanceRef;
+  replacements: number;
+  /** Changed lines, up to contextLimit. */
+  matches: ReplaceMatch[];
+  matchesTruncated: boolean;
+  syntax: SyntaxCheck | null;
+}
+
+/**
+ * One member of a class, as the live engine reports it.
+ *
+ * `kind` separates the three things an agent can do with a name — read it, call
+ * it, connect to it — because indexing an event and indexing a property look
+ * identical until one of them fails.
+ */
+export interface ClassMember {
+  name: string;
+  kind: "property" | "method" | "event";
+  /** Luau typeof of the value on a default instance. Null for methods and events. */
+  valueType: string | null;
+  /** The default value, in the same JSON format writes take. */
+  value: RbxValue | null;
+  /**
+   * Whether a write is accepted. Null when it was not tried, which is every
+   * member of a service: probing that means writing to the user's live one.
+   */
+  writable: boolean | null;
+  /** Why the member could not be read or written, when it could not. */
+  reason: string | null;
+}
+
+/** One log breakpoint Luu Code has set. */
+export interface BreakpointRef {
+  instance: InstanceRef;
+  /** Where Studio put it, which is the next runnable line at or after the one asked for. */
+  line: number;
+  requestedLine: number;
+  log: string | null;
+  condition: string | null;
+  /** False when Studio accepted it but could not bind it to running code. */
+  verified: boolean;
+  realm: StudioRealm;
+}
+
+export interface ProfiledFunction {
+  /** The function's name, a debug.profilebegin label, or "<anonymous>". */
+  name: string;
+  /** Script the function was compiled from, as Roblox reports it at runtime. */
+  source: string | null;
+  line: number | null;
+  /** Cumulative microseconds attributed to it over the capture. */
+  totalMicroseconds: number;
+  /** Its share of everything sampled, 0 to 1. */
+  share: number;
+  /** True for engine and plugin frames, which are not code the place can change. */
+  engine: boolean;
+}
+
+/** The six simulation fields, read back after any write. */
+export interface NetworkConditions {
+  /** Round trip, both directions added together. */
+  latencyMs: number;
+  /** The worse of the two directions; `fields` has each on its own. */
+  jitterMs: number;
+  lossPercent: number;
+  /** Exactly what each NetworkSettings property reads, for anything asymmetric. */
+  fields: Record<string, number>;
+  /** Fields this Studio build does not expose, named rather than reported as zero. */
+  unavailable: string[];
 }
 
 /**
@@ -1266,6 +1596,17 @@ export interface CommandResults {
   "dm.tree": { root: TreeNode; nodeCount: number; truncated: boolean };
   "dm.search": SearchResult;
   "dm.properties": { instance: InstanceRef; properties: Record<string, RbxValue>; unreadable: Record<string, string> };
+  "dm.class_info": {
+    className: string;
+    /** False for a service and for the abstract classes nothing can instantiate. */
+    creatable: boolean;
+    isService: boolean;
+    /** Base classes this one satisfies, most general first. */
+    ancestry: string[];
+    members: ClassMember[];
+    /** Names asked about that this class does not have, each with the nearest one it does. */
+    unknown: Array<{ name: string; nearest: string | null }>;
+  };
   "dm.selection.get": { selection: InstanceRef[] };
   "dm.selection.set": { selection: InstanceRef[] };
 
@@ -1281,9 +1622,19 @@ export interface CommandResults {
 
   "script.list": { scripts: InstanceRef[]; truncated: boolean };
   "script.get": ScriptSourceResult;
-  "script.set": MutationResult & { lineCount: number };
-  "script.patch": MutationResult & { applied: number; lineCount: number; diff: string };
-  "script.create": MutationResult & { lineCount: number };
+  "script.set": MutationResult & { lineCount: number; syntax: SyntaxCheck | null };
+  "script.patch": MutationResult & { applied: number; lineCount: number; diff: string; syntax: SyntaxCheck | null };
+  "script.create": MutationResult & { lineCount: number; syntax: SyntaxCheck | null };
+  "script.replace": MutationResult & {
+    files: ReplaceFile[];
+    /** Replacements made, or that would be made when dryRun is on. */
+    replaced: number;
+    scriptsChanged: number;
+    scriptsSearched: number;
+    /** Scripts whose source Studio refused, skipped rather than failing the sweep. */
+    unreadable: number;
+    dryRun: boolean;
+  };
   "script.grep": {
     files: GrepFile[];
     /** Total matches found, which exceeds the sum of what is returned when a limit cut it short. */
@@ -1302,12 +1653,20 @@ export interface CommandResults {
   "run.restart": RunState & { ready: boolean };
   "run.wait_ready": RunState & { ready: boolean };
   "run.multiplayer": MultiplayerState & { run: RunState };
+  "run.network": { profile: string; realm: StudioRealm; before: NetworkConditions; after: NetworkConditions };
 
   "output.get": { entries: OutputEntry[]; cursor: string; truncated: boolean };
   "output.mark": { cursor: string };
   "output.clear": { cleared: number };
 
   "runtime.exec": ExecResult;
+
+  "debug.breakpoints": {
+    /** Every breakpoint Luu Code holds in that realm after the action, not only the one just touched. */
+    breakpoints: BreakpointRef[];
+    removed: number;
+    realm: StudioRealm;
+  };
 
   // `delivered: true` and nothing else would be a claim these operations are
   // not in a position to make. The realm says which world the input went into,
@@ -1342,6 +1701,17 @@ export interface CommandResults {
   "view.highlight": { marked: InstanceRef[]; cleared: number };
 
   "perf.sample": PerfSample;
+  "perf.script": {
+    realm: StudioRealm;
+    durationMs: number;
+    frequency: number;
+    functions: ProfiledFunction[];
+    /** The capture window in microseconds, which is what the shares are taken against. */
+    totalMicroseconds: number;
+    /** Functions the filters removed, so an empty list is explainable. */
+    filtered: number;
+    truncated: boolean;
+  };
   "perf.count": {
     total: number;
     scope: InstanceRef | null;

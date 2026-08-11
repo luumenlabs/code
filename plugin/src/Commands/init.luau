@@ -16,8 +16,11 @@ local History = require(script.Parent.History)
 local InputBridge = require(script.Parent.InputBridge)
 local Value = require(script.Parent.Value)
 
+local ClassOps = require(script.ClassOps)
 local DataModelOps = require(script.DataModelOps)
+local DebugOps = require(script.DebugOps)
 local InputOps = require(script.InputOps)
+local NetworkOps = require(script.NetworkOps)
 local PerfOps = require(script.PerfOps)
 local RunOps = require(script.RunOps)
 local ScreenOps = require(script.ScreenOps)
@@ -36,6 +39,7 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["dm.tree"] = DataModelOps.tree,
 	["dm.search"] = DataModelOps.search,
 	["dm.properties"] = DataModelOps.properties,
+	["dm.class_info"] = ClassOps.info,
 	["dm.selection.get"] = function()
 		return DataModelOps.selectionGet()
 	end,
@@ -59,6 +63,7 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["script.list"] = ScriptOps.list,
 	["script.get"] = ScriptOps.get,
 	["script.grep"] = ScriptOps.grep,
+	["script.replace"] = ScriptOps.replace,
 	["script.set"] = ScriptOps.set,
 	["script.patch"] = ScriptOps.patch,
 	["script.create"] = ScriptOps.create,
@@ -72,10 +77,12 @@ local HANDLERS: { [string]: (any) -> any } = {
 	end,
 	["run.wait_ready"] = RunOps.waitReady,
 	["run.multiplayer"] = RunOps.multiplayer,
+	["run.network"] = NetworkOps.apply,
 
 	["runtime.exec"] = function(params)
 		return Exec.run(params.source, params.timeoutMs or 10000)
 	end,
+	["debug.breakpoints"] = DebugOps.breakpoints,
 
 	["input.key"] = InputOps.key,
 	["input.text"] = InputOps.text,
@@ -90,6 +97,7 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["view.highlight"] = ViewOps.highlight,
 
 	["perf.sample"] = PerfOps.sample,
+	["perf.script"] = PerfOps.script,
 	["perf.count"] = PerfOps.count,
 
 	["test.run"] = TestOps.run,
@@ -228,6 +236,16 @@ function Commands.capabilities(): { string }
 		table.insert(available, "runtime.exec")
 	end
 
+	-- Probed by setting one and taking it back: the debugger API is behind a
+	-- Studio beta, and a build without it still hands over the service.
+	if DebugOps.isAvailable() then
+		table.insert(available, "debug.breakpoints")
+	end
+
+	if NetworkOps.isAvailable() then
+		table.insert(available, "playtest.network")
+	end
+
 	-- Probed by constructing the VirtualInput, not by naming a service. The old
 	-- check asked whether VirtualInputManager could be fetched — which is always
 	-- true, and told us nothing about whether its methods were callable, which
@@ -260,6 +278,10 @@ function Commands.capabilities(): { string }
 
 	if PerfOps.isAvailable() then
 		table.insert(available, "perf.stats")
+	end
+
+	if PerfOps.canProfileScripts() then
+		table.insert(available, "perf.script-profiler")
 	end
 
 	if TestOps.isAvailable() then

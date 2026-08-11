@@ -58,6 +58,43 @@ local function build(source: string): (boolean, any)
 	return false, result
 end
 
+--[[
+	Compiles source without running it, for the check returned by every script
+	write.
+
+	The body goes inside a function that is never called, so `require` compiles
+	the whole chunk and executes only the `return`. That is what makes this safe
+	to run against code the agent has just written and has no intention of
+	executing yet. The wrapper is vararg because a top-level `...` is legal in a
+	Script and would not compile inside a fixed-argument function.
+
+	One line of wrapper means every line the compiler names is one too high.
+]]
+function Exec.check(source: string): any
+	local ok, err = compile("return function(...)\n" .. source .. "\nend")
+
+	if ok then
+		return { ok = true, message = Value.NIL, line = Value.NIL }
+	end
+
+	local message = tostring(err)
+	local line: number? = nil
+
+	-- "LuuCodeExec_3:12: Expected 'end' ...". The chunk name is the throwaway
+	-- module and means nothing to the caller; the line does, once corrected.
+	local chunk, reported, rest = string.match(message, "^([%w_%.]+):(%d+):%s(.*)$")
+	if chunk ~= nil then
+		line = math.max((tonumber(reported) or 2) - 1, 1)
+		message = rest
+	end
+
+	return {
+		ok = false,
+		message = message,
+		line = line or Value.NIL,
+	}
+end
+
 function Exec.run(source: string, timeoutMs: number): any
 	local startedAt = os.clock()
 
@@ -121,9 +158,18 @@ end
 	Probes whether execution works at all in this Studio session, so the server
 	can report the capability honestly instead of failing on first use.
 ]]
+local available: boolean? = nil
+
 function Exec.isAvailable(): boolean
-	local ok, factory = compile("return function() return true end")
-	return ok and type(factory) == "function"
+	-- Whether a chunk can be compiled at all is a property of the plugin VM, not
+	-- of the DataModel it is attached to, so this is asked once. It is also on
+	-- the path of every script write now, through Exec.check.
+	if available == nil then
+		local ok, factory = compile("return function() return true end")
+		available = ok and type(factory) == "function"
+	end
+
+	return available :: boolean
 end
 
 return Exec

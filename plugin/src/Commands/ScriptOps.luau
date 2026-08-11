@@ -10,6 +10,7 @@
 
 local Errors = require(script.Parent.Parent.Errors)
 local Changes = require(script.Parent.Parent.Changes)
+local Exec = require(script.Parent.Parent.Exec)
 local Handles = require(script.Parent.Parent.Handles)
 local History = require(script.Parent.Parent.History)
 local Path = require(script.Parent.Parent.Path)
@@ -20,6 +21,21 @@ local ScriptOps = {}
 
 local splitLines = ScriptSource.splitLines
 local countLines = ScriptSource.countLines
+
+--[[
+	Does it compile? Answered on the way out of every write.
+
+	Without this the first sign of a missing `end` is a playtest that will not
+	start, three round trips later. A build where nothing can be compiled reports
+	nothing rather than a compile failure it cannot substantiate.
+]]
+local function checkSyntax(source: string): any
+	if not Exec.isAvailable() then
+		return Value.NIL
+	end
+
+	return Exec.check(source)
+end
 
 local function requireScript(target: string): LuaSourceContainer
 	local instance = Handles.resolve(target)
@@ -219,6 +235,193 @@ function ScriptOps.grep(params: any): any
 	}
 end
 
+--[[
+	Replaces every match on one line, returning the new line and how many.
+
+	The literal case splices around the columns grep already knows how to find,
+	which sidesteps escaping entirely — the text being replaced is user code, and
+	it is full of the characters Luau patterns treat as magic. Only the pattern
+	case goes through gsub, where that syntax is what the caller asked for.
+]]
+local function replaceInLine(
+	line: string,
+	needle: string,
+	replacement: string,
+	isPattern: boolean,
+	caseSensitive: boolean,
+	budget: number
+): (string, number)
+	if budget <= 0 then
+		return line, 0
+	end
+
+	if isPattern then
+		local ok, updated, count = pcall(string.gsub, line, needle, replacement, budget)
+
+		if not ok then
+			Errors.throw(
+				"INVALID_PARAMS",
+				string.format("Could not apply the replacement: %s", tostring(updated)),
+				{ pattern = needle, replacement = replacement },
+				"Luau patterns are not regular expressions. %1 and %2 refer to captures in the pattern, and a literal % must be written %%."
+			)
+		end
+
+		return updated :: string, count :: number
+	end
+
+	local columns = findInLine(line, needle, false, caseSensitive)
+	if #columns == 0 then
+		return line, 0
+	end
+
+	local pieces = {}
+	local cursor = 1
+	local made = 0
+
+	for _, column in ipairs(columns) do
+		if made >= budget then
+			break
+		end
+
+		-- Overlapping matches: findInLine advances one character at a time, so a
+		-- column inside the text already consumed is not a second replacement.
+		if column >= cursor then
+			table.insert(pieces, string.sub(line, cursor, column - 1))
+			table.insert(pieces, replacement)
+			cursor = column + #needle
+			made += 1
+		end
+	end
+
+	table.insert(pieces, string.sub(line, cursor))
+
+	return table.concat(pieces), made
+end
+
+--[[
+	One pattern across every script in scope.
+
+	Everything is computed before anything is written, so a sweep that would go
+	over either ceiling fails having touched nothing. Half a rename applied
+	across a codebase is worse than none: the place still builds, and the agent
+	has no way to tell which half it got.
+]]
+function ScriptOps.replace(params: any): any
+	local scope = params.scope and Handles.resolve(params.scope) or game
+	local isPattern = params.regex == true
+	local caseSensitive = isPattern or params.caseSensitive == true
+	local dryRun = params.dryRun == true
+	local maxReplacements = params.maxReplacements or 500
+	local maxPerScript = params.maxPerScript or 50
+	local contextLimit = params.contextLimit or 10
+
+	local planned = {}
+	local files = {}
+	local replaced = 0
+	local scriptsSearched = 0
+	local unreadable = 0
+
+	for _, instance in ipairs(scope:GetDescendants()) do
+		if instance:IsA("LuaSourceContainer") and (params.className == nil or instance.ClassName == params.className) then
+			local source = ScriptSource.tryRead(instance)
+
+			if source == nil then
+				unreadable += 1
+			else
+				scriptsSearched += 1
+
+				local lines = splitLines(source)
+				local matches = {}
+				local inThisScript = 0
+				local changedLines = 0
+				local changed = false
+
+				for number, line in ipairs(lines) do
+					local updated, count =
+						replaceInLine(line, params.pattern, params.replacement, isPattern, caseSensitive, maxPerScript - inThisScript + 1)
+
+					if count > 0 then
+						inThisScript += count
+						changedLines += 1
+						changed = true
+
+						if #matches < contextLimit then
+							table.insert(matches, { line = number, before = line, after = updated })
+						end
+
+						lines[number] = updated
+					end
+
+					if inThisScript > maxPerScript then
+						Errors.throw(
+							"INVALID_PARAMS",
+							string.format("%s alone has more than %d matches, so nothing was replaced", Path.of(instance), maxPerScript),
+							{ path = Path.of(instance), maxPerScript = maxPerScript },
+							"Narrow the pattern or the scope, or raise maxPerScript once you have seen the matches with a dryRun."
+						)
+					end
+				end
+
+				if changed then
+					replaced += inThisScript
+
+					if replaced > maxReplacements then
+						Errors.throw(
+							"INVALID_PARAMS",
+							string.format("The pattern matches more than %d times, so nothing was replaced", maxReplacements),
+							{ maxReplacements = maxReplacements, scriptsSearched = scriptsSearched },
+							"Run it again with dryRun to see what it would touch, then narrow the pattern or raise maxReplacements."
+						)
+					end
+
+					local updatedSource = table.concat(lines, "\n")
+
+					table.insert(planned, { instance = instance, before = source, after = updatedSource })
+					table.insert(files, {
+						instance = Handles.describe(instance),
+						replacements = inThisScript,
+						matches = matches,
+						matchesTruncated = #matches < changedLines,
+						syntax = checkSyntax(updatedSource),
+					})
+				end
+			end
+		end
+	end
+
+	local instances = {}
+	local drafts = {}
+	local undoLabel: any = Value.NIL
+
+	if not dryRun and #planned > 0 then
+		local _, label = History.record(string.format("Replace in %d script(s)", #planned), function()
+			for _, entry in ipairs(planned) do
+				writeSource(entry.instance, entry.after)
+			end
+		end)
+
+		undoLabel = label
+
+		for _, entry in ipairs(planned) do
+			table.insert(instances, Handles.describe(entry.instance))
+			table.insert(drafts, Changes.source(entry.instance, entry.before, nil, entry.after))
+		end
+	end
+
+	return {
+		instances = instances,
+		undoLabel = undoLabel,
+		files = files,
+		replaced = replaced,
+		scriptsChanged = #planned,
+		scriptsSearched = scriptsSearched,
+		unreadable = unreadable,
+		dryRun = dryRun,
+		changes = drafts,
+	}
+end
+
 function ScriptOps.get(params: any): any
 	local instance = requireScript(params.target)
 	local source = readSource(instance)
@@ -269,6 +472,7 @@ function ScriptOps.set(params: any): any
 		instances = { Handles.describe(instance) },
 		undoLabel = undoLabel,
 		lineCount = countLines(params.source),
+		syntax = checkSyntax(params.source),
 		changes = { Changes.source(instance, before, unreadable, params.source) },
 	}
 end
@@ -382,6 +586,7 @@ function ScriptOps.patch(params: any): any
 		applied = #params.edits,
 		lineCount = countLines(updated),
 		diff = table.concat(summaries, "; "),
+		syntax = checkSyntax(updated),
 		changes = { Changes.source(instance, original, nil, updated) },
 	}
 end
@@ -413,6 +618,7 @@ function ScriptOps.create(params: any): any
 		instances = { Handles.describe(created) },
 		undoLabel = undoLabel,
 		lineCount = countLines(params.source or ""),
+		syntax = checkSyntax(params.source or ""),
 		-- One record, not two. The script and its source arrived together, so
 		-- taking the create back takes the source with it, and a separate source
 		-- record would offer to revert a script into existing with no contents.

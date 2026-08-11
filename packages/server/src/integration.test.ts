@@ -16,6 +16,7 @@ process.env.LUU_CODE_LOG = "error";
 
 const { createLuuCodeServer } = await import("./index.js");
 const { SettingsStore } = await import("./config/settings.js");
+const { detailFor } = await import("./core/activity.js");
 type LuuCodeServer = Awaited<ReturnType<typeof createLuuCodeServer>>;
 
 /**
@@ -47,6 +48,10 @@ class FakePlugin {
     "playtest.run",
     "playtest.play",
     "playtest.multiplayer",
+    "playtest.network",
+    "debug.breakpoints",
+    "perf.stats",
+    "perf.script-profiler",
     "view.screenshot",
   ];
 
@@ -1122,6 +1127,270 @@ describe("script search", () => {
 
     expect(result.matchCount).toBe(1);
     expect(result.files[0].matches[0].line).toBe(12);
+  });
+});
+
+const SCRIPT_REF = {
+  handle: "@s1",
+  path: "game.ServerScriptService.Shop",
+  name: "Shop",
+  className: "Script",
+  childCount: 0,
+};
+
+describe("script writes", () => {
+  it("hands the compiler's verdict back with the write", async () => {
+    plugin = await connectPlugin();
+    plugin.on("script.set", () => ({
+      instances: [SCRIPT_REF],
+      undoLabel: "Edit Shop",
+      lineCount: 12,
+      syntax: { ok: false, message: "Expected 'end' (to close 'function' at line 3), got <eof>", line: 12 },
+    }));
+    plugin.start();
+
+    const result = (await server.execute("script.set", { target: SCRIPT_REF.path, source: "local x = 1" })) as any;
+
+    expect(result.syntax.ok).toBe(false);
+    expect(result.syntax.line).toBe(12);
+  });
+
+  it("reads a passing check as no news", async () => {
+    plugin = await connectPlugin();
+    plugin.on("script.create", () => ({
+      instances: [SCRIPT_REF],
+      undoLabel: "Create Shop",
+      lineCount: 1,
+      // The plugin sends an absent value as a Nil tag like any other, so this
+      // also covers the write not arriving with `message: undefined`.
+      syntax: { ok: true, message: { $t: "Nil" }, line: { $t: "Nil" } },
+    }));
+    plugin.start();
+
+    const result = (await server.execute("script.create", {
+      className: "Script",
+      parent: "game.ServerScriptService",
+      name: "Shop",
+      source: "print('hi')",
+    })) as any;
+
+    expect(result.syntax).toEqual({ ok: true, message: null, line: null });
+  });
+
+  it("puts the failure in the row the user reads", () => {
+    const detail = detailFor("script.set", {
+      lineCount: 12,
+      syntax: { ok: false, message: "Expected 'end'", line: 12 },
+    });
+
+    expect(detail).toBe("12 lines — does not compile on line 12: Expected 'end'");
+  });
+});
+
+describe("replacing across scripts", () => {
+  it("summarises a dry run without writing anything", async () => {
+    plugin = await connectPlugin();
+    plugin.on("script.replace", (params) => {
+      expect(params.dryRun).toBe(true);
+      return {
+        instances: [],
+        undoLabel: { $t: "Nil" },
+        files: [
+          {
+            instance: SCRIPT_REF,
+            replacements: 2,
+            matches: [{ line: 4, before: "buyItem()", after: "purchaseItem()" }],
+            matchesTruncated: false,
+            syntax: { ok: true, message: { $t: "Nil" }, line: { $t: "Nil" } },
+          },
+        ],
+        replaced: 2,
+        scriptsChanged: 1,
+        scriptsSearched: 40,
+        unreadable: 0,
+        dryRun: true,
+      };
+    });
+    plugin.start();
+
+    const result = (await server.execute("script.replace", {
+      pattern: "buyItem",
+      replacement: "purchaseItem",
+      dryRun: true,
+    })) as any;
+
+    expect(result.replaced).toBe(2);
+    expect(detailFor("script.replace", result)).toBe("2 replacements in 1 script — nothing written");
+  });
+
+  it("counts the scripts a sweep has just broken", () => {
+    const detail = detailFor("script.replace", {
+      replaced: 9,
+      scriptsChanged: 3,
+      dryRun: false,
+      files: [{ syntax: { ok: false } }, { syntax: { ok: true } }, { syntax: null }],
+    });
+
+    expect(detail).toBe("9 replacements in 3 scripts; 1 no longer compiles");
+  });
+});
+
+describe("class reflection", () => {
+  it("needs something to describe", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.class_info", () => {
+      throw new Error("an invalid request should never reach Studio");
+    });
+    plugin.start();
+
+    await expect(server.execute("dm.class_info", {})).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+  });
+
+  it("names the nearest member for a guess that is not one", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.class_info", (params) => ({
+      className: params.className,
+      creatable: true,
+      isService: false,
+      ancestry: ["Instance", "BasePart"],
+      members: [{ name: "CanCollide", kind: "property", valueType: "boolean", value: true, writable: true, reason: { $t: "Nil" } }],
+      unknown: [{ name: "Collidable", nearest: "CanCollide" }],
+    }));
+    plugin.start();
+
+    const result = (await server.execute("dm.class_info", { className: "Part", members: ["Collidable"] })) as any;
+
+    expect(result.unknown[0].nearest).toBe("CanCollide");
+    expect(detailFor("dm.class_info", result)).toBe("1 member, 1 not on this class");
+  });
+});
+
+describe("log breakpoints", () => {
+  it("refuses a breakpoint with nothing to log", async () => {
+    plugin = await connectPlugin();
+    plugin.on("debug.breakpoints", () => {
+      throw new Error("a breakpoint that logs nothing should never reach Studio");
+    });
+    plugin.start();
+
+    await expect(
+      server.execute("debug.breakpoints", { action: "set", target: SCRIPT_REF.path, line: 12 }),
+    ).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+  });
+
+  it("reports where Studio actually put it", async () => {
+    plugin = await connectPlugin();
+    plugin.on("debug.breakpoints", () => ({
+      breakpoints: [
+        {
+          instance: SCRIPT_REF,
+          line: 13,
+          requestedLine: 12,
+          log: '"hp", humanoid.Health',
+          condition: { $t: "Nil" },
+          verified: true,
+          realm: "edit",
+        },
+      ],
+      removed: 0,
+      realm: "edit",
+    }));
+    plugin.start();
+
+    const result = (await server.execute("debug.breakpoints", {
+      action: "set",
+      target: SCRIPT_REF.path,
+      line: 12,
+      log: '"hp", humanoid.Health',
+    })) as any;
+
+    expect(result.breakpoints[0].line).toBe(13);
+    expect(result.breakpoints[0].condition).toBeNull();
+    expect(detailFor("debug.breakpoints", result)).toBe("1 line watched");
+  });
+});
+
+describe("script profiling", () => {
+  // There is no server DataModel to send this to until a playtest exists, and
+  // saying that is more use than a capability that was never the problem.
+  it("has no running peer to profile until a playtest is up", async () => {
+    plugin = await connectPlugin();
+    plugin.on("perf.script", () => {
+      throw new Error("there is nothing to profile in edit mode");
+    });
+    plugin.start();
+
+    await expect(server.execute("perf.script", {})).rejects.toMatchObject({ code: "RUNTIME_CONTEXT_UNAVAILABLE" });
+  });
+
+  it("leads with the function the time went into", async () => {
+    const edit = await connectPlugin();
+    edit.start();
+
+    const play = new FakePlugin(server.port, (edit as any).installId, (edit as any).windowId, 123);
+    play.running = true;
+    play.realmOverride = "server";
+
+    const hello = await play.hello(edit.token);
+    play.sessionId = hello.body.sessionId;
+    play.token = hello.body.token;
+    play.endpointId = hello.body.endpointId;
+    play.on("perf.script", () => ({
+      realm: "server",
+      durationMs: 1000,
+      frequency: 1000,
+      functions: [
+        { name: "Shop:Refresh", source: "ServerScriptService.Shop", line: 40, totalMicroseconds: 412000, share: 0.412, engine: false },
+      ],
+      totalMicroseconds: 1000000,
+      filtered: 6,
+      truncated: false,
+    }));
+    play.start();
+
+    const result = (await server.execute("perf.script", { realm: "server" })) as any;
+
+    expect(result.functions[0].name).toBe("Shop:Refresh");
+    expect(detailFor("perf.script", result)).toBe("Shop:Refresh at 41.2% of the capture");
+
+    play.stop();
+    edit.stop();
+  });
+});
+
+describe("network conditions", () => {
+  it("needs a number to go with a custom profile", async () => {
+    plugin = await connectPlugin();
+    plugin.on("run.network", () => {
+      throw new Error("an empty custom profile should never reach Studio");
+    });
+    plugin.start();
+
+    await expect(server.execute("run.network", { profile: "custom" })).rejects.toMatchObject({
+      code: "INVALID_PARAMS",
+    });
+  });
+
+  it("reports what the link actually became", async () => {
+    plugin = await connectPlugin();
+    plugin.on("run.network", (params) => ({
+      profile: params.profile,
+      realm: "edit",
+      before: { latencyMs: 0, jitterMs: 0, lossPercent: 0, fields: {}, unavailable: [] },
+      after: {
+        latencyMs: 300,
+        jitterMs: 100,
+        lossPercent: 0.5,
+        fields: { InboundNetworkMinDelayMs: 150, OutboundNetworkMinDelayMs: 150 },
+        unavailable: [],
+      },
+    }));
+    plugin.start();
+
+    const result = (await server.execute("run.network", { profile: "poor", realm: "edit" })) as any;
+
+    expect(result.after.latencyMs).toBe(300);
+    expect(detailFor("run.network", result)).toBe("300ms round trip, 100ms jitter, 0.5% loss");
   });
 });
 

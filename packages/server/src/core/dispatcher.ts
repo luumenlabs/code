@@ -48,6 +48,8 @@ const SLOW_OPS: Partial<Record<Op, number>> = {
   // One pass over every script's source, and the source of a large place is the
   // largest thing in it.
   "script.grep": 60_000,
+  // The same pass, and then a compile of each script it rewrote.
+  "script.replace": 90_000,
   "input.text": 60_000,
   // Capture waits on a rendered frame, then reads the pixels back a tile at a
   // time. Both are slower than a round trip and neither is the plugin hanging.
@@ -601,5 +603,13 @@ function timeoutFor(op: Op, params: Record<string, any>): number {
     // trip so the server does not give up before Studio answers.
     return params.timeoutMs + 5_000;
   }
+
+  // An operation that watches for a span cannot answer during it. Without this
+  // a thirty-second measurement is abandoned at fifteen, and the failure names
+  // Studio rather than the duration the caller chose.
+  if (typeof params.durationMs === "number") {
+    return params.durationMs + (SLOW_OPS[op] ?? DEFAULT_TIMEOUT_MS);
+  }
+
   return SLOW_OPS[op] ?? DEFAULT_TIMEOUT_MS;
 }

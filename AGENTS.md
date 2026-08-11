@@ -126,6 +126,44 @@ desktop.
 `native/screenshot.ts` answer `source: "window"` and `"screen"` only, and nothing
 falls back to them silently.
 
+## Diagnostics
+
+Four operations answer questions the DataModel cannot, and each is shaped by
+what Roblox will and will not expose to a plugin.
+
+**Every script write is compiled.** `script.set`, `script.patch`, and
+`script.create` return a `syntax` check, produced by `Exec.check` wrapping the
+source in `return function(...) ... end` and requiring it: the whole chunk is
+compiled and only the `return` runs, so the body is never executed. The wrapper
+costs one line, which is why the reported line number is decremented. The write
+still happens when it fails — a script that does not compile yet is a normal
+state to be halfway through — but the activity row says so, and so does the
+result. `syntax` is null, not false, where the plugin cannot compile at all.
+
+**`debug.breakpoints` never pauses.** `ContinueExecution` is always true and a
+`set` without a `log` is refused. A stopping breakpoint needs a
+`ScriptDebuggerService.OnStopped` handler to resume it, and with none installed
+the playtest stops with both peers unreachable — so that kind is not offered
+rather than offered with a warning. Only breakpoints Luu Code set are removed by
+`clear`; the user's own are theirs. The capability is probed by setting one on a
+throwaway ModuleScript and taking it back, because the debugger API is behind a
+Studio beta and a build without it still hands over the service.
+
+**`dm.class_info` is a probe, not a dump.** Roblox exposes no property
+reflection to Luau, so the class is described by creating one instance and
+reading each member — the curated set from `Props.luau`, plus whatever names the
+caller passed. `writable` is established by writing the value just read back to
+itself, which is why it is null for a service: that instance is the user's.
+`FindService` rather than `GetService`, because `GetService` would insert a
+service the place does not have, and describing a class is a read.
+
+**`perf.script` needs a running peer**, and the run state cannot be used to
+decide that. A session's run state is its primary endpoint's, and during a
+playtest that is the edit peer, which is not itself running — so the capability
+says only whether the build can profile, and the peer that receives the request
+raises `PLAYTEST_NOT_RUNNING`. Same reasoning applies to anything else tempted
+to gate on run state at the server.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.
@@ -325,6 +363,16 @@ These are all real, and all cost time when hit blind.
   again each launch, which is the honest answer for a place Luu Code cannot
   recognise twice. Test doubles must mint their own window ids; giving them all
   one is how this went unnoticed.
+- **Output has to be seeded from `LogService:GetLogHistory()`.** A runtime peer's
+  plugin loads after the place's own scripts have started, so everything printed
+  up to that point — which is where a startup error lives — exists only in
+  Studio's Output window. `OutputCapture.start` adopts the tail of the history
+  before connecting `MessageOut`, and holds the messages it took for two seconds
+  so the deferred ones do not arrive twice.
+- **An operation that watches for a span needs a timeout to match.** `timeoutFor`
+  adds `durationMs` to the budget for exactly this: a thirty-second measurement
+  was otherwise abandoned at fifteen, and the failure named Studio rather than
+  the duration the caller chose.
 - **The renderer only runs under Electron.** There is no browser mock bridge; a
   bare `vite` serve renders nothing.
 - **Do not stop an agent when the user switches chat.** It used to, and the stop

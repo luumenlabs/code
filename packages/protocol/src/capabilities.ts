@@ -17,13 +17,16 @@ export const CAPABILITIES = [
   "playtest.run",
   "playtest.play",
   "playtest.multiplayer",
+  "playtest.network",
   "output.capture",
   "runtime.inspect",
   "runtime.exec",
+  "debug.breakpoints",
   "input.virtual",
   "view.screenshot",
   "view.camera",
   "perf.stats",
+  "perf.script-profiler",
   "test.run",
 ] as const;
 

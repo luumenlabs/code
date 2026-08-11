@@ -19,10 +19,11 @@ You bring Claude Code or Codex. Luu Code brings Studio. No credits, no API key, 
 
 | | |
 |---|---|
-| **Look around** | Services, instance trees, properties, attributes, tags, your selection, script source |
-| **Change things** | Create, delete, rename, reparent, clone, set properties, edit scripts |
-| **Playtest** | Start and stop Play and Run mode, restart, wait for the game to be ready |
-| **Read output** | Everything Studio prints, including the error your last change caused |
+| **Look around** | Services, instance trees, properties, attributes, tags, your selection, script source, what a class actually has |
+| **Change things** | Create, delete, rename, reparent, clone, set properties, edit scripts, replace a pattern across every script at once |
+| **Playtest** | Start and stop Play and Run mode, restart, wait for the game to be ready, give the link real latency |
+| **Read output** | Everything Studio prints, including the error your last change caused and the ones from before it connected |
+| **Work out why** | Log any line without touching the script, and profile which functions the frame time went into |
 | **Poke the game** | Players, characters, PlayerGui, the camera, and Luau it runs live |
 | **See the screen** | Screenshots of Studio, handed straight to the agent |
 | **Play the game** | Keyboard, mouse, and clicks on real on-screen buttons |

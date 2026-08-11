@@ -7,11 +7,15 @@
 	to report is named in `unavailable` rather than returned as zero.
 ]]
 
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 
+local Errors = require(script.Parent.Parent.Errors)
 local Handles = require(script.Parent.Parent.Handles)
 local RunState = require(script.Parent.Parent.RunState)
+local Value = require(script.Parent.Parent.Value)
 
 local PerfOps = {}
 
@@ -148,6 +152,241 @@ function PerfOps.sample(params: any): any
 		memoryByCategory = byCategory,
 		unavailable = missing,
 	}
+end
+
+--[[
+	Where the Luau time went, from ScriptProfilerService.
+
+	perf.sample says whether the place is slow; this says which function is
+	making it slow, which is the question the fix depends on. It needs running
+	code, so it is a playtest operation — in edit mode there is nothing to
+	sample.
+
+	Flags are a bitfield on each function: 1 is a native engine frame and 2 is a
+	plugin one. Neither is code the place can change, so both are dropped unless
+	they were asked for — a profile led by Luu Code's own capture is a profile of
+	the wrong program.
+]]
+local NATIVE_FLAG = 1
+local PLUGIN_FLAG = 2
+
+local function profiler(): any
+	local ok, service = pcall(function()
+		return game:GetService("ScriptProfilerService")
+	end)
+
+	if not ok or service == nil then
+		Errors.throw(
+			"UNSUPPORTED_CAPABILITY",
+			"This Studio build does not expose ScriptProfilerService",
+			{ reason = ok and "nil service" or tostring(service) },
+			"Use perf.sample for frame time and memory, which every build reports."
+		)
+	end
+
+	return service
+end
+
+local function displayName(entry: any): string
+	if type(entry.Name) == "string" and entry.Name ~= "" then
+		return entry.Name
+	end
+
+	if type(entry.Source) == "string" and entry.Source ~= "" then
+		if type(entry.Line) == "number" and entry.Line > 0 then
+			return string.format("%s:%d", entry.Source, entry.Line)
+		end
+		return entry.Source
+	end
+
+	return "<anonymous>"
+end
+
+function PerfOps.script(params: any): any
+	local state = RunState.current()
+
+	if not state.running then
+		Errors.throw(
+			"PLAYTEST_NOT_RUNNING",
+			"There is no running code to profile in edit mode",
+			{ realm = state.realm },
+			"Start a playtest first, then profile the peer running the code you care about."
+		)
+	end
+
+	local service = profiler()
+	local durationMs = params.durationMs or 1000
+	local frequency = params.frequency or 1000
+	local isServer = RunService:IsServer()
+	local player = Players.LocalPlayer
+
+	if not isServer and player == nil then
+		Errors.throw(
+			"RUNTIME_CONTEXT_UNAVAILABLE",
+			"This client DataModel has no LocalPlayer to profile",
+			{ realm = state.realm },
+			'Wait for the playtest to be ready with studio_wait_ready, or profile the server with realm "server".'
+		)
+	end
+
+	local raw: string? = nil
+	local connection = service.OnNewData:Connect(function(_player: any, json: string)
+		if raw == nil then
+			raw = json
+		end
+	end)
+
+	local started, startError = pcall(function()
+		if isServer then
+			service:ServerStart(frequency)
+		else
+			service:ClientStart(player, frequency)
+		end
+	end)
+
+	if not started then
+		connection:Disconnect()
+		error(Errors.fromRobloxError(tostring(startError), { realm = state.realm }), 0)
+	end
+
+	task.wait(durationMs / 1000)
+
+	local stopped, stopError = pcall(function()
+		if isServer then
+			service:ServerStop()
+			service:ServerRequestData()
+		else
+			service:ClientStop(player)
+			service:ClientRequestData(player)
+		end
+	end)
+
+	if not stopped then
+		connection:Disconnect()
+		error(Errors.fromRobloxError(tostring(stopError), { realm = state.realm }), 0)
+	end
+
+	-- The data arrives on an event rather than from the call, so there is a wait
+	-- here that is not the sample.
+	local deadline = os.clock() + 5
+	while raw == nil and os.clock() < deadline do
+		task.wait(0.05)
+	end
+
+	connection:Disconnect()
+
+	if raw == nil then
+		Errors.throw(
+			"STUDIO_TIMEOUT",
+			"The profiler stopped but never handed back its data",
+			{ durationMs = durationMs, realm = state.realm },
+			"Try a shorter durationMs, or profile the other peer."
+		)
+	end
+
+	local captured = raw :: string
+	local decoded, profile = pcall(function()
+		return HttpService:JSONDecode(captured)
+	end)
+
+	if not decoded then
+		Errors.throw("INTERNAL", string.format("Could not read the profiler's output: %s", tostring(profile)), {
+			bytes = #captured,
+		})
+	end
+
+	local window = durationMs * 1000
+	if type(profile.SessionStartTime) == "number" and type(profile.SessionEndTime) == "number" then
+		local measured = profile.SessionEndTime - profile.SessionStartTime
+		if measured > 0 then
+			window = measured
+		end
+	end
+
+	local rows = {}
+	local filtered = 0
+
+	for _, entry in ipairs(profile.Functions or {}) do
+		local flags = type(entry.Flags) == "number" and entry.Flags or 0
+		local engine = bit32.band(flags, NATIVE_FLAG) ~= 0 or bit32.band(flags, PLUGIN_FLAG) ~= 0
+		local total = type(entry.TotalDuration) == "number" and entry.TotalDuration or 0
+		local name = displayName(entry)
+		local source = type(entry.Source) == "string" and entry.Source or nil
+
+		local keep = total >= (params.minMicroseconds or 0)
+
+		if keep and engine and params.includeEngine ~= true then
+			keep = false
+		end
+
+		if keep and params.contains ~= nil then
+			local needle = string.lower(params.contains)
+			local haystack = string.lower(name .. " " .. (source or ""))
+			keep = string.find(haystack, needle, 1, true) ~= nil
+		end
+
+		if keep then
+			table.insert(rows, {
+				name = name,
+				source = source or Value.NIL,
+				line = type(entry.Line) == "number" and entry.Line or Value.NIL,
+				totalMicroseconds = total,
+				share = window > 0 and total / window or 0,
+				engine = engine,
+			})
+		else
+			filtered += 1
+		end
+	end
+
+	table.sort(rows, function(left, right)
+		return left.totalMicroseconds > right.totalMicroseconds
+	end)
+
+	local limit = params.limit or 20
+	local truncated = #rows > limit
+
+	while #rows > limit do
+		table.remove(rows)
+	end
+
+	return {
+		realm = state.realm,
+		durationMs = durationMs,
+		frequency = frequency,
+		functions = rows,
+		totalMicroseconds = window,
+		filtered = filtered,
+		truncated = truncated,
+	}
+end
+
+--[[
+	Probed by asking for the service and for the entry point that matches this
+	peer. There is nothing to probe by doing: starting a capture is the operation
+	itself, and it takes a second.
+]]
+function PerfOps.canProfileScripts(): boolean
+	local ok, service = pcall(function()
+		return game:GetService("ScriptProfilerService")
+	end)
+
+	if not ok or service == nil then
+		return false
+	end
+
+	-- The value, not just whether the index raised: a member Roblox does not have
+	-- raises on an Instance, but one it has and cannot use would still read back,
+	-- and reporting a capability that fails on first call is worse than reporting
+	-- none.
+	local probed, usable = pcall(function()
+		if RunService:IsServer() then
+			return service.ServerStart ~= nil and service.ServerRequestData ~= nil
+		end
+		return service.ClientStart ~= nil and service.ClientRequestData ~= nil
+	end)
+
+	return probed and usable == true
 end
 
 --[[
