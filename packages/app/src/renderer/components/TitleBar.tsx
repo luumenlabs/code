@@ -85,12 +85,19 @@ export function TitleBar({
      * is the chat's own background, so the conversation simply continues up.
      * No bottom border for the same reason — there is nothing to divide. The
      * dock gets the same treatment on the right, when it is open.
+     *
+     * The segments are laid out the way the row below is — a panel of exactly
+     * the panel's width, then a separate pixel of divider — rather than with a
+     * border on the segment. A border is inside the box, so a 276px segment
+     * with `border-r` puts its line at 275 while the `Resizer` under it sits at
+     * 276, and the join between the two showed as a visible jog. Same structure,
+     * same arithmetic, no off-by-one to keep in step.
      */
     <header className="drag-region flex h-topbar shrink-0 items-stretch bg-background">
       <div
         style={{ width: sidebarWidth }}
         className={cn(
-          "flex shrink-0 items-center gap-3 border-r border-sidebar-border bg-sidebar",
+          "flex shrink-0 items-center gap-3 bg-sidebar",
           // Room for the traffic lights, which macOS draws over this corner.
           platform === "darwin" ? "pl-[86px]" : "pl-3",
         )}
@@ -113,6 +120,9 @@ export function TitleBar({
           </span>
         )}
       </div>
+
+      {/* The sidebar's Resizer, continued to the top of the window. */}
+      <div className="w-px shrink-0 bg-sidebar-border" />
 
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
         {session ? (
@@ -147,12 +157,12 @@ export function TitleBar({
         column of it.
       */}
       {dockVisible && (
-        <div
-          style={{ width: dockWidth }}
-          className="flex shrink-0 items-center justify-end border-l border-sidebar-border bg-sidebar"
-        >
-          {pinned}
-        </div>
+        <>
+          <div className="w-px shrink-0 bg-sidebar-border" />
+          <div style={{ width: dockWidth }} className="flex shrink-0 items-center justify-end bg-sidebar">
+            {pinned}
+          </div>
+        </>
       )}
     </header>
   );
