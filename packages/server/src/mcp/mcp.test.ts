@@ -71,14 +71,19 @@ describe("tool calls", () => {
       width: 1280,
       height: 720,
       capturedAt: 0,
-      source: "studio",
+      source: "viewport",
+      realm: "client",
     }));
 
     const result = await client.callTool({ name: "studio_screenshot", arguments: {} });
-    const content = result.content as Array<{ type: string; data?: string; mimeType?: string }>;
+    const content = result.content as Array<{ type: string; data?: string; mimeType?: string; text?: string }>;
 
     expect(content[0]?.type).toBe("image");
     expect(content[0]?.mimeType).toBe("image/png");
+    // The caption has to say which of the three pictures this is: a window
+    // capture has Studio's own interface around it, which moves every
+    // coordinate an agent might read off the image.
+    expect(content[1]?.text).toContain("client viewport");
     await client.close();
   });
 

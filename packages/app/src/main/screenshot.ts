@@ -1,20 +1,25 @@
 /**
- * Screenshot capture through Electron.
+ * Desktop capture through Electron.
  *
  * This is one of the concrete advantages of owning the harness (spec section
  * 22): desktopCapturer goes through the compositor, so the Roblox Studio window
  * can be captured without bringing it to the front or stealing the user's
  * focus. The server falls back to a platform helper when the app is not
  * running.
+ *
+ * This is the fallback path. `view.screenshot` captures the viewport through
+ * CaptureService inside Studio by default, which sees what the experience is
+ * drawing rather than a window with Studio's interface around it; what is here
+ * answers `source: "window"` and `source: "screen"`.
  */
 import { desktopCapturer, screen } from "electron";
-import type { ScreenshotProvider, ScreenshotRequest } from "@luumen/code-server";
+import type { DesktopCaptureProvider, DesktopCaptureRequest } from "@luumen/code-server";
 import { LuuCodeError } from "@luumen/code-protocol";
 
 const STUDIO_WINDOW_PATTERN = /roblox studio/i;
 
-export function createElectronScreenshotProvider(): ScreenshotProvider {
-  return async (request: ScreenshotRequest) => {
+export function createElectronDesktopCaptureProvider(): DesktopCaptureProvider {
+  return async (request: DesktopCaptureRequest) => {
     const scale = screen.getPrimaryDisplay().scaleFactor || 1;
     const bounds = screen.getPrimaryDisplay().bounds;
 
@@ -26,20 +31,20 @@ export function createElectronScreenshotProvider(): ScreenshotProvider {
     };
 
     const sources = await desktopCapturer.getSources({
-      types: request.source === "studio" ? ["window", "screen"] : ["screen"],
+      types: request.source === "window" ? ["window", "screen"] : ["screen"],
       thumbnailSize,
       fetchWindowIcons: false,
     });
 
     const source =
-      request.source === "studio"
+      request.source === "window"
         ? sources.find((entry) => STUDIO_WINDOW_PATTERN.test(entry.name)) ?? null
         : sources.find((entry) => entry.id.startsWith("screen")) ?? sources[0] ?? null;
 
     if (!source) {
       throw new LuuCodeError(
         "SCREENSHOT_FAILED",
-        request.source === "studio"
+        request.source === "window"
           ? "No Roblox Studio window was found to capture."
           : "No screen was available to capture.",
         { hint: "Open the place in Studio, then capture again." },
@@ -61,15 +66,16 @@ export function createElectronScreenshotProvider(): ScreenshotProvider {
     }
 
     const finalSize = image.getSize();
-    const buffer = request.format === "jpeg" ? image.toJPEG(82) : image.toPNG();
 
     return {
-      data: buffer.toString("base64"),
-      mimeType: request.format === "jpeg" ? "image/jpeg" : "image/png",
+      data: image.toPNG().toString("base64"),
+      mimeType: "image/png",
       width: finalSize.width,
       height: finalSize.height,
       capturedAt: Date.now(),
       source: request.source,
+      // A desktop capture photographs a window, not a DataModel.
+      realm: null,
     };
   };
 }

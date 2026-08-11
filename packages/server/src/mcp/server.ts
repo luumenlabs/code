@@ -78,7 +78,7 @@ function successResult(op: string, result: unknown): CallToolResult {
         },
         {
           type: "text",
-          text: `Captured the ${shot.source === "studio" ? "Roblox Studio window" : "screen"} at ${shot.width}x${shot.height}.`,
+          text: `${describeCapture(shot)} at ${shot.width}x${shot.height}. Mouse and GUI coordinates are in this image's pixel space.`,
         },
       ],
     };
@@ -87,6 +87,19 @@ function successResult(op: string, result: unknown): CallToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
   };
+}
+
+/**
+ * Says which of the three pictures this is.
+ *
+ * They are not interchangeable: a viewport capture is what the experience is
+ * drawing, and a window capture has Studio's own chrome around it, which moves
+ * every coordinate in the image.
+ */
+function describeCapture(shot: ScreenshotResult): string {
+  if (shot.source === "viewport") return `Captured the ${shot.realm ?? "Studio"} viewport`;
+  if (shot.source === "window") return "Captured the Roblox Studio window, including Studio's own interface";
+  return "Captured the whole screen";
 }
 
 function errorResult(error: LuuCodeError): CallToolResult {

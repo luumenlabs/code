@@ -2,85 +2,102 @@
 --[[
 	Synthetic input into the running experience. Spec sections 18 and 51.
 
-	VirtualInputManager is the structured path: it delivers events straight into
-	the game rather than driving the desktop, so it works without stealing the
-	user's mouse and is deterministic enough to test with. Desktop-level input
-	stays in the native layer for the cases Studio cannot cover.
+	`UserInputService:CreateVirtualInput()` is the path that works. The object it
+	returns feeds the engine's real input pipeline, so a key reaches
+	UserInputService.InputBegan and the default control modules — W walks the
+	character at its actual WalkSpeed, with the controls intact and no Humanoid
+	hijack — and a mouse button hit-tests against the GUI exactly as a user's
+	click would. It is confined to the experience: the user's own mouse and
+	keyboard are never touched, and Studio does not have to be the frontmost
+	window.
+
+	This module used to use VirtualInputManager, which looks like the obvious
+	choice and cannot work. Every one of its Send* methods is RobloxScriptSecurity
+	and a plugin does not have that capability, so each call raised — and
+	`isAvailable` only checked that the *service* could be fetched, which it
+	always can. The result was a session that advertised input.virtual, accepted
+	every key and click, and delivered none of them. Availability here is
+	therefore probed by constructing the object, not by naming the API.
 ]]
 
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local Errors = require(script.Parent.Errors)
+local RenderMonitor = require(script.Parent.RenderMonitor)
 
 local InputBridge = {}
 
-local function manager(): any
-	local ok, service = pcall(function()
-		return game:GetService("VirtualInputManager")
+local MOUSE_BUTTONS = {
+	left = Enum.UserInputType.MouseButton1,
+	right = Enum.UserInputType.MouseButton2,
+	middle = Enum.UserInputType.MouseButton3,
+}
+
+--[[
+	One VirtualInput for the life of this plugin VM.
+
+	It has to be reused: `press` and `release` arrive as separate calls, and a
+	key held down by one input source cannot be released by another, so a fresh
+	object per call would leave W stuck down forever.
+]]
+local cached: any = nil
+local probed = false
+local probeFailure: string? = nil
+
+local function create(): (any, string?)
+	local ok, result = pcall(function()
+		return (UserInputService :: any):CreateVirtualInput()
 	end)
 
-	if not ok or service == nil then
+	if ok and result ~= nil then
+		return result, nil
+	end
+
+	return nil, tostring(result)
+end
+
+local function virtualInput(): any
+	if cached ~= nil then
+		return cached
+	end
+
+	local created, failure = create()
+
+	if created == nil then
 		Errors.throw(
 			"UNSUPPORTED_CAPABILITY",
-			"VirtualInputManager is unavailable in this Studio session",
-			nil,
-			"Enable native input in Luu Code to drive the game through desktop events instead."
+			"This Studio build does not offer UserInputService:CreateVirtualInput(), so input cannot be delivered",
+			{ reason = failure },
+			"Drive the game through runtime.exec instead — set the property or fire the event the input would have caused."
 		)
 	end
 
-	return service
+	cached = created
+	return cached
 end
 
-local BUTTON_NUMBERS = {
-	left = 0,
-	right = 1,
-	middle = 2,
-}
+--[[
+	Input is dropped by the engine, silently, when the window is not rendering.
+	Refusing up front with the reason is the difference between an agent that
+	restores the window and one that concludes the game's keybinds are broken.
+]]
+local function requireDeliverable()
+	if not RunService:IsRunning() then
+		Errors.throw(
+			"PLAYTEST_NOT_RUNNING",
+			"Input can only be delivered while the experience is running",
+			nil,
+			"Start a playtest first with run.start."
+		)
+	end
 
--- Characters that need Shift, mapped to the unshifted key they live on.
-local SHIFTED = {
-	["!"] = "One",
-	["@"] = "Two",
-	["#"] = "Three",
-	["$"] = "Four",
-	["%"] = "Five",
-	["^"] = "Six",
-	["&"] = "Seven",
-	["*"] = "Eight",
-	["("] = "Nine",
-	[")"] = "Zero",
-	["_"] = "Minus",
-	["+"] = "Equals",
-	["{"] = "LeftBracket",
-	["}"] = "RightBracket",
-	["|"] = "BackSlash",
-	[":"] = "Semicolon",
-	['"'] = "Quote",
-	["<"] = "Comma",
-	[">"] = "Period",
-	["?"] = "Slash",
-	["~"] = "Backquote",
-}
-
-local UNSHIFTED = {
-	["-"] = "Minus",
-	["="] = "Equals",
-	["["] = "LeftBracket",
-	["]"] = "RightBracket",
-	["\\"] = "BackSlash",
-	[";"] = "Semicolon",
-	["'"] = "Quote",
-	[","] = "Comma",
-	["."] = "Period",
-	["/"] = "Slash",
-	["`"] = "Backquote",
-	[" "] = "Space",
-	["\n"] = "Return",
-	["\t"] = "Tab",
-}
-
-local DIGITS = { "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine" }
+	local stalled = RenderMonitor.stallReason()
+	if stalled ~= nil then
+		Errors.throw("INPUT_FAILED", stalled, { rendering = false }, "Restore the Studio window, then send the input again.")
+	end
+end
 
 function InputBridge.keyCode(name: string): EnumItem
 	local keyCode = (Enum.KeyCode :: any)[name]
@@ -95,18 +112,18 @@ function InputBridge.keyCode(name: string): EnumItem
 	return keyCode
 end
 
-local function requireRunning()
-	if not RunService:IsRunning() then
-		Errors.throw("PLAYTEST_NOT_RUNNING", "Input can only be delivered while the experience is running", nil, "Start a playtest first.")
+function InputBridge.sendKey(keyCode: EnumItem, isPressed: boolean)
+	local ok, err = pcall(function()
+		virtualInput():SendKey(isPressed, keyCode)
+	end)
+
+	if not ok then
+		Errors.throw("INPUT_FAILED", string.format("Could not send %s: %s", keyCode.Name, tostring(err)))
 	end
 end
 
-function InputBridge.sendKey(keyCode: EnumItem, isPressed: boolean)
-	manager():SendKeyEvent(isPressed, keyCode, false, game)
-end
-
 function InputBridge.key(name: string, action: string, durationMs: number): any
-	requireRunning()
+	requireDeliverable()
 	local keyCode = InputBridge.keyCode(name)
 
 	if action == "press" then
@@ -123,139 +140,40 @@ function InputBridge.key(name: string, action: string, durationMs: number): any
 end
 
 --[[
-	Types text as key events.
+	Types into whatever currently has focus.
 
-	Roblox's character-level input entry point is not stable across Studio
-	versions, and guessing at it would fail silently. Key events are well
-	defined, so unsupported characters are reported back rather than dropped.
+	SendTextInput hands the engine the characters directly, so this no longer has
+	to map each one onto a key and a shift state — which meant anything outside a
+	US keyboard layout came back as "could not be typed". The one thing it cannot
+	do is type where nothing is focused, and that is worth saying plainly rather
+	than reporting a successful delivery into nowhere.
 ]]
 function InputBridge.text(text: string): any
-	requireRunning()
+	requireDeliverable()
 
-	local shift = InputBridge.keyCode("LeftShift")
-	local skipped = {}
+	local focused = nil
+	pcall(function()
+		focused = UserInputService:GetFocusedTextBox()
+	end)
 
-	for index = 1, #text do
-		local char = string.sub(text, index, index)
-		local keyName: string? = nil
-		local needsShift = false
-
-		if string.match(char, "^%l$") then
-			keyName = string.upper(char)
-		elseif string.match(char, "^%u$") then
-			keyName = char
-			needsShift = true
-		elseif string.match(char, "^%d$") then
-			local digit = tonumber(char)
-			keyName = digit ~= nil and DIGITS[digit + 1] or nil
-		elseif SHIFTED[char] ~= nil then
-			keyName = SHIFTED[char]
-			needsShift = true
-		elseif UNSHIFTED[char] ~= nil then
-			keyName = UNSHIFTED[char]
-		end
-
-		if keyName == nil then
-			table.insert(skipped, char)
-		else
-			local keyCode = InputBridge.keyCode(keyName)
-			if needsShift then
-				InputBridge.sendKey(shift, true)
-			end
-			InputBridge.sendKey(keyCode, true)
-			task.wait(0.012)
-			InputBridge.sendKey(keyCode, false)
-			if needsShift then
-				InputBridge.sendKey(shift, false)
-			end
-			task.wait(0.012)
-		end
-	end
-
-	if #skipped > 0 then
+	if focused == nil then
 		Errors.throw(
 			"INPUT_FAILED",
-			string.format("%d character(s) could not be typed as key events", #skipped),
-			{ skipped = skipped },
-			"Set the TextBox's Text property directly instead."
+			"No TextBox has focus, so there is nothing for typed text to go into",
+			nil,
+			"Click the TextBox first with input.gui_click, or set its Text property directly."
 		)
 	end
 
+	local ok, err = pcall(function()
+		virtualInput():SendTextInput(text)
+	end)
+
+	if not ok then
+		Errors.throw("INPUT_FAILED", string.format("Could not type into %s: %s", focused.Name, tostring(err)))
+	end
+
 	return { delivered = true, length = #text }
-end
-
-function InputBridge.moveMouse(x: number, y: number)
-	manager():SendMouseMoveEvent(x, y, game)
-end
-
-function InputBridge.clickAt(x: number, y: number, button: string)
-	local number = BUTTON_NUMBERS[button]
-	if number == nil then
-		Errors.throw("INVALID_PARAMS", string.format("Unknown mouse button %q", button))
-	end
-
-	local vim = manager()
-	vim:SendMouseMoveEvent(x, y, game)
-	task.wait(0.02)
-	vim:SendMouseButtonEvent(x, y, number, true, game, 0)
-	task.wait(0.04)
-	vim:SendMouseButtonEvent(x, y, number, false, game, 0)
-end
-
-function InputBridge.mouse(params: any): any
-	requireRunning()
-
-	local viewport = InputBridge.viewportSize()
-	local function toPixels(x: number?, y: number?): (number, number)
-		local px = x or viewport.X / 2
-		local py = y or viewport.Y / 2
-		if params.normalized then
-			px = px * viewport.X
-			py = py * viewport.Y
-		end
-		return px, py
-	end
-
-	local x, y = toPixels(params.x, params.y)
-	local vim = manager()
-	local button = BUTTON_NUMBERS[params.button or "left"]
-
-	if button == nil then
-		Errors.throw("INVALID_PARAMS", string.format("Unknown mouse button %q", tostring(params.button)))
-	end
-
-	if params.action == "move" then
-		vim:SendMouseMoveEvent(x, y, game)
-	elseif params.action == "click" then
-		InputBridge.clickAt(x, y, params.button or "left")
-	elseif params.action == "down" then
-		vim:SendMouseButtonEvent(x, y, button, true, game, 0)
-	elseif params.action == "up" then
-		vim:SendMouseButtonEvent(x, y, button, false, game, 0)
-	elseif params.action == "scroll" then
-		vim:SendMouseWheelEvent(x, y, (params.scrollDelta or 1) > 0, game)
-	elseif params.action == "drag" then
-		local toX, toY = toPixels(params.toX, params.toY)
-		vim:SendMouseMoveEvent(x, y, game)
-		task.wait(0.02)
-		vim:SendMouseButtonEvent(x, y, button, true, game, 0)
-
-		-- Interpolated so the game sees movement rather than a teleport, which
-		-- most drag handlers depend on.
-		local steps = math.max(4, math.floor((params.durationMs or 80) / 16))
-		for step = 1, steps do
-			local alpha = step / steps
-			vim:SendMouseMoveEvent(x + (toX - x) * alpha, y + (toY - y) * alpha, game)
-			task.wait(0.016)
-		end
-
-		vim:SendMouseButtonEvent(toX, toY, button, false, game, 0)
-		x, y = toX, toY
-	else
-		Errors.throw("INVALID_PARAMS", string.format("Unknown mouse action %q", tostring(params.action)))
-	end
-
-	return { delivered = true, position = { x = x, y = y } }
 end
 
 function InputBridge.viewportSize(): Vector2
@@ -273,11 +191,149 @@ function InputBridge.guiInset(): Vector2
 	return ok and inset or Vector2.new(0, 0)
 end
 
-function InputBridge.isAvailable(): boolean
-	local ok = pcall(function()
-		return game:GetService("VirtualInputManager")
+local function sendMousePosition(position: Vector2)
+	local ok, err = pcall(function()
+		virtualInput():SendMousePosition(position)
 	end)
-	return ok
+
+	if not ok then
+		Errors.throw("INPUT_FAILED", string.format("Could not move the mouse: %s", tostring(err)))
+	end
+end
+
+local function sendMouseButton(position: Vector2, button: string, isDown: boolean)
+	local inputType = MOUSE_BUTTONS[button]
+	if inputType == nil then
+		Errors.throw("INVALID_PARAMS", string.format("Unknown mouse button %q", tostring(button)), nil, 'Use "left", "right", or "middle".')
+	end
+
+	local ok, err = pcall(function()
+		virtualInput():SendMouseButton(position, inputType, isDown)
+	end)
+
+	if not ok then
+		Errors.throw("INPUT_FAILED", string.format("Could not send the %s mouse button: %s", button, tostring(err)))
+	end
+end
+
+--[[
+	Positions the pointer before pressing.
+
+	SendMouseButton takes the position with it, so the press would land correctly
+	either way — but the engine's hover state, and every UI that reacts to it,
+	follows the pointer rather than the click. Moving first is what makes a
+	button that only responds when hovered behave the way it does for a user.
+]]
+function InputBridge.clickAt(x: number, y: number, button: string)
+	local position = Vector2.new(x, y)
+	sendMousePosition(position)
+	task.wait(0.02)
+	sendMouseButton(position, button, true)
+	task.wait(0.04)
+	sendMouseButton(position, button, false)
+end
+
+function InputBridge.mouse(params: any): any
+	requireDeliverable()
+
+	local viewport = InputBridge.viewportSize()
+	local function toPixels(x: number?, y: number?): (number, number)
+		local px = x or viewport.X / 2
+		local py = y or viewport.Y / 2
+		if params.normalized then
+			px = px * viewport.X
+			py = py * viewport.Y
+		end
+		return px, py
+	end
+
+	local x, y = toPixels(params.x, params.y)
+	local button = params.button or "left"
+	local action = params.action
+
+	if action == "move" then
+		sendMousePosition(Vector2.new(x, y))
+	elseif action == "click" then
+		InputBridge.clickAt(x, y, button)
+	elseif action == "down" then
+		sendMousePosition(Vector2.new(x, y))
+		sendMouseButton(Vector2.new(x, y), button, true)
+	elseif action == "up" then
+		sendMouseButton(Vector2.new(x, y), button, false)
+	elseif action == "scroll" then
+		-- SendPointerAction is the only wheel entry point on VirtualInput, and
+		-- the shape of its action table is not documented. It is attempted
+		-- rather than assumed: a build that does not take it gets an error
+		-- naming a way round, not a success that scrolled nothing.
+		local delta = params.scrollDelta or 1
+		local ok = pcall(function()
+			virtualInput():SendPointerAction(Vector2.new(x, y), { Wheel = delta })
+		end)
+
+		if not ok then
+			Errors.throw(
+				"UNSUPPORTED_CAPABILITY",
+				"This Studio build does not accept wheel input through VirtualInput",
+				{ scrollDelta = delta },
+				"Set the ScrollingFrame's CanvasPosition directly with runtime.exec instead."
+			)
+		end
+	elseif action == "drag" then
+		local toX, toY = toPixels(params.toX, params.toY)
+
+		sendMousePosition(Vector2.new(x, y))
+		task.wait(0.02)
+		sendMouseButton(Vector2.new(x, y), button, true)
+
+		-- Interpolated so the game sees movement rather than a teleport, which
+		-- most drag handlers depend on.
+		local steps = math.max(4, math.floor((params.durationMs or 80) / 16))
+		for step = 1, steps do
+			local alpha = step / steps
+			sendMousePosition(Vector2.new(x + (toX - x) * alpha, y + (toY - y) * alpha))
+			task.wait(0.016)
+		end
+
+		sendMouseButton(Vector2.new(toX, toY), button, false)
+		x, y = toX, toY
+	else
+		Errors.throw("INVALID_PARAMS", string.format("Unknown mouse action %q", tostring(action)))
+	end
+
+	return { delivered = true, position = { x = x, y = y } }
+end
+
+--[[
+	Probed once, by building the thing.
+
+	The old version asked whether a service existed, which is a question with the
+	same answer whether or not input works. Constructing the VirtualInput is the
+	only check that distinguishes them, and the object is kept because it is the
+	one this session will go on using.
+]]
+function InputBridge.isAvailable(): boolean
+	if cached ~= nil then
+		return true
+	end
+
+	if probed then
+		return false
+	end
+
+	probed = true
+	local created, failure = create()
+
+	if created == nil then
+		probeFailure = failure
+		return false
+	end
+
+	cached = created
+	return true
+end
+
+function InputBridge.unavailableReason(): string?
+	return probeFailure
 end
 
 return InputBridge

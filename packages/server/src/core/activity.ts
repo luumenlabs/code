@@ -22,7 +22,7 @@ const CATEGORIES: Record<string, Category> = {
   changes: "edit",
 };
 
-const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "script.set", "script.patch", "script.create"];
+const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create"];
 
 export function categoryFor(op: Op): Category {
   // Reading the journal is a read, whatever its namespace suggests.
@@ -80,11 +80,17 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
       return `Setting attributes on ${targetName(params)}`;
     case "dm.tags.set":
       return `Changing tags on ${targetName(params)}`;
+    case "dm.batch": {
+      const count = ((params.operations as unknown[]) ?? []).length;
+      return count === 1 ? "Making an edit" : `Making ${count} edits`;
+    }
 
     case "script.list":
       return "Listing scripts";
     case "script.get":
       return `Reading ${targetName(params)}`;
+    case "script.grep":
+      return `Searching scripts for "${String(params.pattern)}"`;
     case "script.set":
       return `Rewriting ${targetName(params)}`;
     case "script.patch":
@@ -102,6 +108,19 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
       return "Restarting the playtest";
     case "run.wait_ready":
       return "Waiting for the experience to be ready";
+    case "run.multiplayer":
+      switch (params.action) {
+        case "start":
+          return `Starting a ${String(params.players)}-player test session`;
+        case "status":
+          return "Checking the multiplayer test";
+        case "add_players":
+          return `Adding ${String(params.players)} player(s) to the test`;
+        case "leave_client":
+          return `Removing client ${String(params.client ?? 1)} from the test`;
+        default:
+          return "Ending the multiplayer test";
+      }
 
     case "output.get":
       return "Reading Studio output";
@@ -125,7 +144,7 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     case "view.viewport_info":
       return "Reading the viewport and camera";
     case "view.screenshot":
-      return "Capturing a screenshot";
+      return params.source === "viewport" || params.source === undefined ? "Capturing the viewport" : "Capturing the Studio window";
 
     case "changes.list":
       return "Reading the change history";
@@ -170,8 +189,19 @@ export function detailFor(op: Op, result: unknown): string | null {
       return firstPath(data.instances);
     case "dm.delete":
       return `${data.deleted} deleted`;
+    case "dm.batch": {
+      const parts = [`${data.applied} applied`];
+      if (data.failed > 0) parts.push(`${data.failed} failed`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+      return parts.join(", ");
+    }
     case "script.get":
       return `${data.totalLines} lines`;
+    case "script.grep": {
+      const files = ((data.files as unknown[]) ?? []).length;
+      if (files === 0) return `no matches in ${data.scriptsSearched} scripts`;
+      return `${data.matchCount} match${data.matchCount === 1 ? "" : "es"} in ${files} script${files === 1 ? "" : "s"}${data.truncated ? " (truncated)" : ""}`;
+    }
     case "script.set":
     case "script.create":
       return `${data.lineCount} lines`;
@@ -183,6 +213,12 @@ export function detailFor(op: Op, result: unknown): string | null {
       return data.running ? `running in the ${data.realm} DataModel${data.ready ? ", ready" : ""}` : "not running";
     case "run.stop":
       return "back in edit mode";
+    case "run.multiplayer": {
+      const connected = ((data.connected as unknown[]) ?? []).length;
+      if (data.phase === "failed") return `failed: ${String(data.error ?? "unknown")}`;
+      if (data.phase === "completed") return "finished";
+      return `${data.phase}, ${connected} player${connected === 1 ? "" : "s"} connected`;
+    }
     case "output.get": {
       const entries = (data.entries as unknown[]) ?? [];
       const errors = ((data.entries as Array<{ type: string }>) ?? []).filter((entry) => entry.type === "error").length;
@@ -193,7 +229,7 @@ export function detailFor(op: Op, result: unknown): string | null {
     case "input.gui_click":
       return data.clicked?.path ? `clicked ${data.clicked.path}` : null;
     case "view.screenshot":
-      return `${data.width}x${data.height}`;
+      return data.source === "viewport" ? `${data.width}x${data.height} of the ${data.realm} viewport` : `${data.width}x${data.height}`;
     case "changes.revert": {
       const outcomes = (data.outcomes as Array<{ status: string }>) ?? [];
       const reverted = data.reverted ?? 0;

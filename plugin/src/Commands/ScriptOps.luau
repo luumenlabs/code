@@ -60,6 +60,165 @@ function ScriptOps.list(params: any): any
 	return { scripts = scripts, truncated = truncated }
 end
 
+--[[
+	Every match of `pattern` on one line, left to right.
+
+	A literal search lowercases both sides when it is case-insensitive but
+	measures the column against the original, so the number points at the real
+	character. A pattern search is always case-sensitive, because Luau patterns
+	carry their own character classes and folding the subject would quietly
+	change what %u and %l mean.
+]]
+local function findInLine(line: string, needle: string, isPattern: boolean, caseSensitive: boolean): { number }
+	local columns = {}
+	local haystack = line
+	local subject = needle
+
+	if isPattern then
+		local from = 1
+		while from <= #haystack do
+			local ok, start, finish = pcall(string.find, haystack, subject, from)
+
+			-- A malformed pattern is the caller's mistake, and it is the same
+			-- mistake on every line; raising it once, named, beats returning no
+			-- matches and letting them conclude the code is not there.
+			if not ok then
+				Errors.throw(
+					"INVALID_PARAMS",
+					string.format("%q is not a valid Luau pattern: %s", needle, tostring(start)),
+					{ pattern = needle },
+					"Luau patterns are not regular expressions. Escape magic characters with %, or set regex to false for a literal search."
+				)
+			end
+
+			if start == nil then
+				break
+			end
+
+			table.insert(columns, start)
+			-- An empty match would otherwise spin here forever.
+			from = math.max((finish :: number) + 1, (start :: number) + 1)
+		end
+
+		return columns
+	end
+
+	if not caseSensitive then
+		haystack = string.lower(haystack)
+		subject = string.lower(subject)
+	end
+
+	local from = 1
+	while true do
+		local start = string.find(haystack, subject, from, true)
+		if start == nil then
+			break
+		end
+		table.insert(columns, start)
+		from = start + 1
+	end
+
+	return columns
+end
+
+local function contextSlice(lines: { string }, from: number, to: number): { string }
+	local slice = {}
+	for index = math.max(from, 1), math.min(to, #lines) do
+		table.insert(slice, lines[index])
+	end
+	return slice
+end
+
+--[[
+	Searches every script's source in one pass.
+
+	There is no filesystem to grep: the source of truth is the DataModel, and
+	finding one call site by reading scripts individually costs a round trip and
+	a context window per file. Scripts whose source Studio will not hand over are
+	skipped rather than failing the search — one locked module should not hide
+	every other match — and the count of them comes back so a suspiciously empty
+	result is explainable.
+]]
+function ScriptOps.grep(params: any): any
+	local scope = params.scope and Handles.resolve(params.scope) or game
+	local isPattern = params.regex == true
+	local caseSensitive = params.caseSensitive == true
+	local contextLines = params.contextLines or 0
+	local maxMatches = params.maxMatches or 100
+	local maxPerScript = params.maxPerScript or 20
+	local pathsOnly = params.pathsOnly == true
+
+	local files = {}
+	local matchCount = 0
+	local scriptsSearched = 0
+	local unreadable = 0
+	local truncated = false
+
+	for _, instance in ipairs(scope:GetDescendants()) do
+		if matchCount >= maxMatches then
+			truncated = true
+			break
+		end
+
+		if instance:IsA("LuaSourceContainer") and (params.className == nil or instance.ClassName == params.className) then
+			local source = ScriptSource.tryRead(instance)
+
+			if source == nil then
+				unreadable += 1
+			else
+				scriptsSearched += 1
+				local lines = splitLines(source)
+				local matches = {}
+				local inThisScript = 0
+
+				for number, line in ipairs(lines) do
+					local columns = findInLine(line, params.pattern, isPattern, caseSensitive)
+
+					for _, column in ipairs(columns) do
+						inThisScript += 1
+						matchCount += 1
+
+						if not pathsOnly and #matches < maxPerScript then
+							table.insert(matches, {
+								line = number,
+								column = column,
+								text = line,
+								before = contextLines > 0 and contextSlice(lines, number - contextLines, number - 1) or {},
+								after = contextLines > 0 and contextSlice(lines, number + 1, number + contextLines) or {},
+							})
+						end
+
+						if matchCount >= maxMatches then
+							truncated = true
+							break
+						end
+					end
+
+					if matchCount >= maxMatches then
+						break
+					end
+				end
+
+				if inThisScript > 0 then
+					table.insert(files, {
+						instance = Handles.describe(instance),
+						matches = matches,
+						matchCount = inThisScript,
+					})
+				end
+			end
+		end
+	end
+
+	return {
+		files = files,
+		matchCount = matchCount,
+		scriptsSearched = scriptsSearched,
+		unreadable = unreadable,
+		truncated = truncated,
+	}
+end
+
 function ScriptOps.get(params: any): any
 	local instance = requireScript(params.target)
 	local source = readSource(instance)

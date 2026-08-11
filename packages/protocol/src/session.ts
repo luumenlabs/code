@@ -15,6 +15,16 @@ export type StudioRealm = "edit" | "server" | "client" | "unknown";
 
 export type PlaytestMode = "play" | "run";
 
+/**
+ * How far a `StudioTestService` multiplayer session has got.
+ *
+ * `ExecuteMultiplayerTestAsync` yields for the whole life of the test, so the
+ * edit peer that called it cannot answer questions about it. The phase is
+ * tracked alongside instead, and is what `run.multiplayer` with action "status"
+ * reports.
+ */
+export type MultiplayerPhase = "idle" | "starting" | "running" | "completed" | "failed";
+
 export interface RunState {
   /** True when the place is running (either Run or Play). */
   running: boolean;
@@ -31,6 +41,27 @@ export interface RunState {
   epoch: number;
   /** True once a LocalPlayer and character exist, where applicable. */
   ready: boolean;
+  /**
+   * Players present in this DataModel. Zero in Run mode and in edit, one in an
+   * ordinary Play session, and however many joined a multiplayer test.
+   *
+   * Absent from plugins older than this field, which is why every reader treats
+   * it as optional rather than defaulting it to zero: "no answer" and "no
+   * players" are different things.
+   */
+  playerCount?: number;
+  /** True when this peer belongs to a StudioTestService multiplayer session. */
+  multiplayer?: boolean;
+  /**
+   * Whether the Studio window is drawing frames.
+   *
+   * A minimized window keeps running scripts but suspends rendering *and* input
+   * processing, so virtual input silently does nothing and a screenshot never
+   * completes. Reported so those two can fail with the real reason instead of a
+   * timeout or a false success. Absent on a peer that has no render loop to
+   * watch, such as a multiplayer test's server DataModel.
+   */
+  rendering?: boolean;
 }
 
 export const EDIT_RUN_STATE: RunState = {

@@ -12,7 +12,7 @@ import { targetSchema } from "./targets.js";
 import type { InstanceDetail, InstanceRef, TreeNode } from "./targets.js";
 import { rbxPropertyMapSchema, rbxValueSchema } from "./value.js";
 import type { RbxValue } from "./value.js";
-import type { PlaytestMode, RunState, StudioRealm } from "./session.js";
+import type { MultiplayerPhase, PlaytestMode, RunState, StudioRealm } from "./session.js";
 
 /** Where the operation is executed. */
 export type Executor = "studio" | "server";
@@ -129,6 +129,45 @@ const tagsParams = z.object({
   remove: z.array(z.string()).optional(),
 });
 
+/** The editing operations that may appear inside a batch. */
+export const BATCHABLE_OPS = [
+  "dm.create",
+  "dm.set_properties",
+  "dm.delete",
+  "dm.rename",
+  "dm.reparent",
+  "dm.clone",
+  "dm.attributes.set",
+  "dm.tags.set",
+] as const;
+
+export type BatchableOp = (typeof BATCHABLE_OPS)[number];
+
+/**
+ * Many edits, one round trip, one undo waypoint.
+ *
+ * Building a hundred parts one operation at a time is a hundred requests, a
+ * hundred rows in the transcript, and a hundred entries in the user's undo
+ * stack for what was one instruction. Each step is still journalled
+ * individually, because reviewing and reverting work at the level of the change
+ * rather than the batch.
+ */
+const batchParams = z.object({
+  operations: z
+    .array(
+      z.object({
+        op: z.enum(BATCHABLE_OPS),
+        params: z.record(z.any()).describe("Exactly the parameters that operation takes on its own."),
+      }),
+    )
+    .min(1)
+    .max(200),
+  stopOnError: z
+    .boolean()
+    .default(true)
+    .describe("Stop at the first failure. Turn this off only when the steps are genuinely independent; the result reports each one either way."),
+});
+
 // ---------------------------------------------------------------------------
 // Scripts
 // ---------------------------------------------------------------------------
@@ -179,10 +218,53 @@ const scriptCreateParams = z.object({
   properties: rbxPropertyMapSchema.optional(),
 });
 
+/**
+ * Search across every script's source at once.
+ *
+ * There is no filesystem to grep here — the source of truth is the DataModel,
+ * and reading it a script at a time to find one call site costs a round trip
+ * and a context window per file. This is the operation that makes an unfamiliar
+ * place navigable: one request, one pass over the descendants, only the lines
+ * that matched.
+ */
+const scriptGrepParams = z.object({
+  pattern: z.string().min(1).describe("Text to find. Literal by default."),
+  regex: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Treat pattern as a Luau string pattern rather than literal text. Luau patterns are not PCRE: use %d %a %w %s classes, '.-' for a lazy match, and escape magic characters with %.",
+    ),
+  caseSensitive: z.boolean().default(false).describe("Ignored when regex is true; Luau patterns are always case sensitive."),
+  scope: targetSchema.optional().describe("Restrict the search to this subtree, for example ServerScriptService."),
+  className: z.enum(["Script", "LocalScript", "ModuleScript"]).optional(),
+  contextLines: z.number().int().min(0).max(10).default(0).describe("Lines of surrounding context to return with each match."),
+  maxMatches: limit(1000, 100).describe("Stop after this many matches in total."),
+  maxPerScript: limit(200, 20).describe("Stop after this many matches within any one script."),
+  pathsOnly: z.boolean().default(false).describe("Return only which scripts matched, not the matching lines."),
+});
+
 // ---------------------------------------------------------------------------
 // Playtest
 // ---------------------------------------------------------------------------
 
+/**
+ * Playtesting is driven entirely through `StudioTestService`.
+ *
+ * Studio exposes `ExecutePlayModeAsync`, `ExecuteRunModeAsync`,
+ * `ExecuteMultiplayerTestAsync` and `EndTest` to plugins, which is a complete,
+ * structured way to start and stop a session. Nothing here touches the user's
+ * keyboard, focuses a window, or synthesises a shortcut: an agent that can take
+ * over the desktop to press Play is one that can press anything else too, and a
+ * shortcut is invisible to the user until their typing lands somewhere it
+ * should not have.
+ *
+ * The two halves run in different DataModels and that is not an implementation
+ * detail. `ExecutePlayModeAsync` yields for the entire life of the playtest, so
+ * only the *edit* peer can start one; `EndTest` only exists in the *running*
+ * peer. Every operation below is routed to the peer that can actually perform
+ * it rather than to whichever connection happened to be selected.
+ */
 const runStateParams = z.object({});
 
 const runStartParams = z.object({
@@ -190,13 +272,15 @@ const runStartParams = z.object({
     .enum(["play", "run"])
     .default("play")
     .describe(
-      '"play" starts a playtest with a character and observes the client; "run" starts the place as a server with no player and observes the server.',
+      '"play" starts a playtest with a character and a client to observe, which is what GUI, input, and gameplay need. "run" starts the place as a server with no player, which is better for server-side logic.',
     ),
   waitReady: z.boolean().default(true),
   timeoutMs: z.number().int().min(1000).max(120000).default(30000),
 });
 
-const runStopParams = z.object({});
+const runStopParams = z.object({
+  timeoutMs: z.number().int().min(1000).max(120000).default(20000),
+});
 
 const runRestartParams = z.object({
   mode: z.enum(["play", "run"]).optional(),
@@ -207,6 +291,28 @@ const runWaitReadyParams = z.object({
   timeoutMs: z.number().int().min(1000).max(120000).default(30000),
   requireCharacter: z.boolean().default(true),
 });
+
+/**
+ * One operation rather than five, because these are the transitions of a single
+ * state machine and an agent reading a tool list is better served by one entry
+ * that explains the lifecycle than by five that each explain a third of it.
+ */
+const runMultiplayerParams = z
+  .object({
+    action: z
+      .enum(["start", "status", "add_players", "leave_client", "end"])
+      .describe("Which transition to make. Call status first if you are unsure what is already running."),
+    players: z.number().int().min(1).max(8).optional().describe("How many client players. Required for start and add_players."),
+    client: z.number().int().min(1).max(8).default(1).describe("Which client to act on, 1-based. Used by leave_client."),
+    testArgs: rbxValueSchema.optional().describe("Handed to StudioTestService:GetTestArgs() on the server and every client."),
+    value: rbxValueSchema.optional().describe("Returned to the edit-side call when the test ends. Used by end."),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.action === "start" || value.action === "add_players") && value.players === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["players"], message: `players is required for action "${value.action}".` });
+    }
+  });
 
 // ---------------------------------------------------------------------------
 // Output and runtime
@@ -223,7 +329,22 @@ const outputMarkParams = z.object({});
 const outputClearParams = z.object({});
 
 const execParams = z.object({
-  source: z.string().min(1).describe("Luau to execute in the current Studio context. The last expression or return value is sent back."),
+  source: z.string().min(1).describe("Luau to execute. The last expression or return value is sent back, along with anything it printed."),
+  /**
+   * Which DataModel the code runs in.
+   *
+   * During a playtest there are two or three live connections and they see
+   * different worlds — a server-side table is not readable from the client, and
+   * PlayerGui does not exist on the server. Leaving this to "whichever
+   * connection is selected" made half of all runtime probes answer about the
+   * wrong world, and the answer looked plausible either way.
+   */
+  realm: z
+    .enum(["auto", "edit", "server", "client"])
+    .default("auto")
+    .describe(
+      '"auto" uses the client during a Play session and the edit DataModel otherwise. Name a realm explicitly when the answer depends on which side you are asking: server state, or client-only state like PlayerGui and the camera.',
+    ),
   timeoutMs: z.number().int().min(100).max(60000).default(10000),
 });
 
@@ -231,25 +352,50 @@ const execParams = z.object({
 // Input and view
 // ---------------------------------------------------------------------------
 
+/**
+ * Input is delivered by `UserInputService:CreateVirtualInput()`.
+ *
+ * That object feeds the engine's real input pipeline: a key reaches
+ * `UserInputService.InputBegan` and the default control modules, so W walks the
+ * character at its actual WalkSpeed with the controls intact, and a mouse
+ * button hit-tests against the GUI exactly as a user's click would. It is also
+ * confined to the experience — the user's own mouse and keyboard are never
+ * touched, and Studio does not need to be the frontmost window.
+ *
+ * `VirtualInputManager` is the obvious-looking alternative and it is a trap:
+ * every one of its Send* methods is RobloxScriptSecurity, so from a plugin they
+ * cannot work. We used it, reported the capability as available, and delivered
+ * nothing.
+ */
 const inputKeyParams = z.object({
   key: z.string().min(1).describe('Enum.KeyCode name, for example "W", "Space", "E", "LeftShift".'),
-  action: z.enum(["tap", "press", "release"]).default("tap"),
+  action: z
+    .enum(["tap", "press", "release"])
+    .default("tap")
+    .describe('"press" and "release" pair up across calls, so a key can be held down while you do something else.'),
   durationMs: z.number().int().min(0).max(30000).default(60).describe("Hold time for tap."),
 });
 
-const inputTextParams = z.object({ text: z.string().min(1).max(2000) });
-
-const inputMouseParams = z.object({
-  action: z.enum(["move", "click", "down", "up", "scroll", "drag"]),
-  x: z.number().optional().describe("Viewport pixel X, or 0-1 when normalized is true."),
-  y: z.number().optional(),
-  toX: z.number().optional().describe("Drag destination."),
-  toY: z.number().optional(),
-  button: z.enum(["left", "right", "middle"]).default("left"),
-  scrollDelta: z.number().default(1),
-  normalized: z.boolean().default(false),
-  durationMs: z.number().int().min(0).max(10000).default(80),
+const inputTextParams = z.object({
+  text: z.string().min(1).max(2000).describe("Goes to the focused TextBox, as if typed."),
 });
+
+const inputMouseParams = z
+  .object({
+    action: z.enum(["move", "click", "down", "up", "scroll", "drag"]),
+    x: z.number().optional().describe("Viewport pixel X, or 0-1 when normalized is true. Defaults to the middle of the viewport."),
+    y: z.number().optional(),
+    toX: z.number().optional().describe("Drag destination."),
+    toY: z.number().optional(),
+    button: z.enum(["left", "right", "middle"]).default("left"),
+    scrollDelta: z.number().default(1).describe("Wheel clicks; negative scrolls the other way."),
+    normalized: z.boolean().default(false),
+    durationMs: z.number().int().min(0).max(10000).default(80).describe("How long a drag takes. The path is interpolated, so drag handlers see movement rather than a teleport."),
+  })
+  .refine((value) => value.action !== "drag" || (value.toX !== undefined && value.toY !== undefined), {
+    message: "A drag needs toX and toY.",
+    path: ["toX"],
+  });
 
 const inputGuiClickParams = z
   .object({
@@ -264,13 +410,28 @@ const inputGuiClickParams = z
 
 const viewportInfoParams = z.object({});
 
+/**
+ * Two capture paths, and the default is the one inside the engine.
+ *
+ * `CaptureService:CaptureScreenshot` gives the rendered viewport and nothing
+ * else — no ribbon, no Explorer, no other application that happens to be on top
+ * — and it works while a playtest is running, which is when a screenshot is
+ * worth taking. It needs the window to be drawing frames, and reading the
+ * pixels back needs the place's Mesh/Image API permission, so both failures are
+ * reported by name with `window` offered as the way round them.
+ *
+ * The desktop paths are kept because those two conditions are real. They
+ * capture pixels that are already on screen and can never see an occluded or
+ * minimised window.
+ */
 const screenshotParams = z.object({
   source: z
-    .enum(["studio", "screen"])
-    .default("studio")
-    .describe('"studio" captures the Roblox Studio window; "screen" captures the primary display.'),
-  maxWidth: z.number().int().min(160).max(4096).default(1280),
-  format: z.enum(["png", "jpeg"]).default("png"),
+    .enum(["viewport", "window", "screen"])
+    .default("viewport")
+    .describe(
+      '"viewport" captures what the experience is rendering, from inside Studio. "window" captures the whole Roblox Studio window from the desktop. "screen" captures the primary display.',
+    ),
+  maxWidth: z.number().int().min(160).max(4096).default(1280).describe("The image is scaled down to this width before it is sent."),
 });
 
 // ---------------------------------------------------------------------------
@@ -474,6 +635,14 @@ export const COMMANDS = {
     mutates: true,
     summary: "Add or remove CollectionService tags on an instance.",
   },
+  "dm.batch": {
+    params: batchParams,
+    executor: "server",
+    permission: "edit",
+    capability: "edit.instances",
+    mutates: true,
+    summary: "Apply a sequence of edits in one round trip, under a single undo waypoint.",
+  },
 
   "script.list": {
     params: scriptListParams,
@@ -515,6 +684,14 @@ export const COMMANDS = {
     mutates: true,
     summary: "Create a new script with source.",
   },
+  "script.grep": {
+    params: scriptGrepParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "inspect.scripts",
+    mutates: false,
+    summary: "Search every script's source for a pattern and return the matching lines.",
+  },
 
   "run.state": {
     params: runStateParams,
@@ -524,9 +701,12 @@ export const COMMANDS = {
     mutates: false,
     summary: "Report whether the place is in edit mode or running, and which realm is observable.",
   },
-  // Playtest transitions are orchestrated by the server, not by Studio: the
-  // DataModel that receives the request is destroyed by it, so the connection
-  // that would report the outcome is gone before it can.
+  // Playtest transitions are orchestrated by the server, not by Studio, for two
+  // reasons. The DataModel that receives the request is torn down by it, so the
+  // connection that would report the outcome is often gone before it can. And
+  // the peer that can start a playtest is never the peer that can stop one:
+  // starting belongs to the edit DataModel and stopping to the running one, so
+  // something outside both has to decide where each request goes.
   "run.start": {
     params: runStartParams,
     executor: "server",
@@ -558,6 +738,14 @@ export const COMMANDS = {
     capability: "playtest.run",
     mutates: false,
     summary: "Wait until the running experience is ready enough to observe.",
+  },
+  "run.multiplayer": {
+    params: runMultiplayerParams,
+    executor: "server",
+    permission: "playtest",
+    capability: "playtest.multiplayer",
+    mutates: true,
+    summary: "Start, inspect, grow, or end a multi-client Studio test session.",
   },
 
   "output.get": {
@@ -730,16 +918,79 @@ export interface ViewportInfo {
     cameraType: string;
   } | null;
   realm: StudioRealm;
+  /**
+   * False when the Studio window is minimised or otherwise not drawing. Input
+   * and screenshots both need frames, so this is the first thing to check when
+   * either appears to do nothing.
+   */
+  rendering: boolean;
 }
 
 export interface ScreenshotResult {
-  /** Base64 PNG or JPEG. */
+  /** Base64 PNG. */
   data: string;
-  mimeType: "image/png" | "image/jpeg";
+  mimeType: "image/png";
   width: number;
   height: number;
   capturedAt: number;
-  source: "studio" | "screen";
+  /** Which path produced it, since the three see different things. */
+  source: "viewport" | "window" | "screen";
+  /** The DataModel the viewport was captured from. Null for a desktop capture. */
+  realm: StudioRealm | null;
+}
+
+export interface GrepMatch {
+  /** 1-based line number in the script's source. */
+  line: number;
+  /** 1-based column where the match starts. */
+  column: number;
+  text: string;
+  /** Lines immediately before and after, when contextLines asked for them. */
+  before: string[];
+  after: string[];
+}
+
+export interface GrepFile {
+  instance: InstanceRef;
+  matches: GrepMatch[];
+  /** Matches in this script, which exceeds `matches.length` when maxPerScript cut it short. */
+  matchCount: number;
+}
+
+/**
+ * One step of a batch, in the order it was requested.
+ *
+ * A step that never ran because an earlier one failed is reported as `skipped`
+ * rather than omitted: the agent asked for a sequence, and knowing where the
+ * sequence stopped is the whole point.
+ */
+export interface BatchStep {
+  index: number;
+  op: BatchableOp;
+  status: "ok" | "failed" | "skipped";
+  instances: InstanceRef[];
+  error: import("./errors.js").WireError | null;
+}
+
+export interface PlayerRef {
+  name: string;
+  userId: number;
+  displayName: string;
+}
+
+export interface MultiplayerState {
+  phase: MultiplayerPhase;
+  /** Identifies this test run, so a status call can tell it from the last one. */
+  testId: string | null;
+  /** Clients the session was asked for. */
+  players: number | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  /** What EndTest handed back to the edit-side call, once the test has finished. */
+  value: RbxValue | null;
+  error: string | null;
+  /** Players actually connected, as seen by the running server peer. */
+  connected: PlayerRef[];
 }
 
 export interface MutationResult {
@@ -809,18 +1060,35 @@ export interface CommandResults {
   "dm.clone": MutationResult;
   "dm.attributes.set": MutationResult & { applied: string[] };
   "dm.tags.set": MutationResult & { tags: string[] };
+  "dm.batch": MutationResult & { steps: BatchStep[]; applied: number; failed: number; skipped: number };
 
   "script.list": { scripts: InstanceRef[]; truncated: boolean };
   "script.get": ScriptSourceResult;
   "script.set": MutationResult & { lineCount: number };
   "script.patch": MutationResult & { applied: number; lineCount: number; diff: string };
   "script.create": MutationResult & { lineCount: number };
+  "script.grep": {
+    files: GrepFile[];
+    /** Total matches found, which exceeds the sum of what is returned when a limit cut it short. */
+    matchCount: number;
+    scriptsSearched: number;
+    /**
+     * Scripts whose source Studio refused to hand over, and which were skipped.
+     * One locked module should not hide every other match, but an empty result
+     * with a count here means something different from an empty result without.
+     */
+    unreadable: number;
+    truncated: boolean;
+  };
 
-  "run.state": RunState & { mode: PlaytestMode | null };
+  // `multiplayerPhase` is "idle" rather than absent when there is no session, so
+  // it never has to be told apart from a plugin too old to report one.
+  "run.state": RunState & { mode: PlaytestMode | null; multiplayerPhase: MultiplayerPhase };
   "run.start": RunState & { ready: boolean };
   "run.stop": RunState;
   "run.restart": RunState & { ready: boolean };
   "run.wait_ready": RunState & { ready: boolean };
+  "run.multiplayer": MultiplayerState & { run: RunState };
 
   "output.get": { entries: OutputEntry[]; cursor: string; truncated: boolean };
   "output.mark": { cursor: string };
@@ -828,9 +1096,12 @@ export interface CommandResults {
 
   "runtime.exec": ExecResult;
 
-  "input.key": { delivered: true; key: string; action: string };
-  "input.text": { delivered: true; length: number };
-  "input.mouse": { delivered: true; position: { x: number; y: number } };
+  // `delivered: true` and nothing else would be a claim these operations are
+  // not in a position to make. The realm says which world the input went into,
+  // which is the part an agent can check against what it expected.
+  "input.key": { delivered: true; key: string; action: string; realm: StudioRealm };
+  "input.text": { delivered: true; length: number; realm: StudioRealm };
+  "input.mouse": { delivered: true; position: { x: number; y: number }; realm: StudioRealm };
   "input.gui_click": GuiClickResult;
   "view.viewport_info": ViewportInfo;
   "view.screenshot": ScreenshotResult;

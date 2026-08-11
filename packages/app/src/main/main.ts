@@ -16,7 +16,7 @@ import type { ChangeRecord, PermissionGroup, ServerEvent } from "@luumen/code-pr
 import { AgentManager } from "./agents/manager.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
 import { PluginInstaller } from "./plugin.js";
-import { createElectronScreenshotProvider } from "./screenshot.js";
+import { createElectronDesktopCaptureProvider } from "./screenshot.js";
 import { SettingsStore } from "./settings.js";
 import { ThreadStore } from "./threads.js";
 import { fromAgentEvent, fromServerEvent, userEntry } from "./transcript.js";
@@ -432,7 +432,7 @@ async function bootstrap(): Promise<void> {
   if (requireSettings().current().plugin.autoInstall && plugin.needsInstall()) plugin.install();
 
   server = await createLuuCodeServer({
-    screenshotProvider: createElectronScreenshotProvider(),
+    desktopCaptureProvider: createElectronDesktopCaptureProvider(),
   });
 
   server.bus.subscribe((event: ServerEvent) => {

@@ -51,6 +51,8 @@ interface EndpointRecord {
   realm: StudioRealm;
   run: RunState;
   lastSeen: number;
+  /** First handshake, which orders the clients of a multiplayer test. */
+  connectedAt: number;
   capabilities: Set<CapabilityId>;
   queue: StudioCommand[];
   pending: Map<string, PendingCommand>;
@@ -115,6 +117,32 @@ interface PendingPairing {
 export interface SessionEvents {
   onOutput(sessionId: string, entries: Array<Record<string, unknown>>): void;
   onRunState(sessionId: string, state: RunState): void;
+}
+
+/**
+ * One live plugin connection, named well enough to send a command straight to
+ * it.
+ *
+ * Playtesting is what needs this. Studio runs the plugin separately in the edit
+ * DataModel and in each DataModel a playtest creates, and the two halves of a
+ * playtest cannot be performed by the same one: only the edit peer can call
+ * `ExecutePlayModeAsync`, and only a running peer can call `EndTest`. Which
+ * connection a request goes to is therefore part of the operation, not a
+ * routing preference — and it is not always an endpoint of the session the
+ * caller is bound to, because a play DataModel handshakes as a connection of
+ * its own.
+ */
+export interface PeerRef {
+  sessionId: string;
+  endpointId: string;
+  realm: StudioRealm;
+  run: RunState;
+  /**
+   * When this connection first handshook. It is what gives "client 2" a
+   * meaning — the second client that joined — rather than whichever one a map
+   * happened to yield second.
+   */
+  connectedAt: number;
 }
 
 export class SessionRegistry {
@@ -486,14 +514,17 @@ export class SessionRegistry {
   async send(
     op: Op,
     params: Record<string, unknown>,
-    options: SessionTarget & { realm?: StudioRealm; timeoutMs: number },
+    options: SessionTarget & { realm?: StudioRealm; peer?: PeerRef; timeoutMs: number },
   ): Promise<unknown> {
-    const session = this.resolveSession(options);
-    const endpoint = this.resolveEndpoint(session, options.realm);
+    const session = options.peer ? this.requireSession(options.peer.sessionId) : this.resolveSession(options);
+    const endpoint = options.peer ? this.requireEndpoint(session, options.peer.endpointId) : this.resolveEndpoint(session, options.realm);
 
     // Bound here rather than at resolution, so a chat is pinned by the first
-    // command it actually sends and not by a status or capability probe.
-    if (options.chat) this.bindChat(options.chat, session);
+    // command it actually sends and not by a status or capability probe. A
+    // command aimed at a named peer never rebinds: a playtest's DataModel is a
+    // transient connection, and following a chat into one would strand it the
+    // moment the playtest ended.
+    if (options.chat && !options.peer) this.bindChat(options.chat, session);
 
     const command: StudioCommand = {
       id: `c_${randomUUID().slice(0, 8)}`,
@@ -520,6 +551,66 @@ export class SessionRegistry {
     this.release(endpoint);
 
     return deferred.promise;
+  }
+
+  private requireSession(sessionId: string): SessionRecord {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new LuuCodeError("SESSION_UNKNOWN", "That Studio connection is no longer registered.", {
+        hint: "The playtest it belonged to has probably ended. Check run.state.",
+      });
+    }
+    return session;
+  }
+
+  private requireEndpoint(session: SessionRecord, endpointId: string): EndpointRecord {
+    const endpoint = session.endpoints.get(endpointId);
+    if (!endpoint) {
+      throw new LuuCodeError("STUDIO_NOT_CONNECTED", "That Studio connection went away before the command could be sent.", {
+        hint: "A playtest transition drops connections. Check run.state and try again.",
+      });
+    }
+    return endpoint;
+  }
+
+  /**
+   * Every live plugin connection for the game the caller is working in.
+   *
+   * Scoped by install id rather than by session, because a playtest's DataModel
+   * generates a fresh window id and so handshakes as a session of its own. The
+   * connections still belong to one game and one Studio process, which is what
+   * the install id records — and grouping them is the only way an operation can
+   * ask for "the peer that is running" without the caller knowing how Studio
+   * happened to arrange them.
+   *
+   * The caller's own session comes first, so anything with a preference gets the
+   * connection it was already working in.
+   */
+  peers(target: SessionTarget = {}): PeerRef[] {
+    const session = this.resolveSession(target);
+    const siblings = [...this.sessions.values()].filter(
+      (other) => other.id !== session.id && other.installId === session.installId && other.endpoints.size > 0,
+    );
+
+    const refs: PeerRef[] = [];
+    for (const record of [session, ...siblings]) {
+      for (const endpoint of record.endpoints.values()) {
+        refs.push({
+          sessionId: record.id,
+          endpointId: endpoint.id,
+          realm: endpoint.realm,
+          run: endpoint.run,
+          connectedAt: endpoint.connectedAt,
+        });
+      }
+    }
+
+    return refs;
+  }
+
+  /** The first live connection matching `want`, or null when none does. */
+  findPeer(target: SessionTarget, want: (peer: PeerRef) => boolean): PeerRef | null {
+    return this.peers(target).find(want) ?? null;
   }
 
   private resolveSession(target: SessionTarget = {}): SessionRecord {
@@ -725,6 +816,7 @@ export class SessionRegistry {
       realm: run.realm,
       run,
       lastSeen: Date.now(),
+      connectedAt: Date.now(),
       capabilities: new Set(capabilities),
       queue: [],
       pending: new Map(),

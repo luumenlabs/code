@@ -276,7 +276,7 @@ function StudioDetails({
           variant="outline"
           size="sm"
           className="flex-1"
-          onClick={() => void harness.run("view.screenshot", { source: "studio" })}
+          onClick={() => void harness.run("view.screenshot", {})}
         >
           <Camera />
           Screenshot

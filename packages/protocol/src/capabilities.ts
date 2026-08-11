@@ -16,11 +16,11 @@ export const CAPABILITIES = [
   "edit.undo-history",
   "playtest.run",
   "playtest.play",
+  "playtest.multiplayer",
   "output.capture",
   "runtime.inspect",
   "runtime.exec",
   "input.virtual",
-  "input.native",
   "view.screenshot",
 ] as const;
 
@@ -31,7 +31,13 @@ export interface CapabilityState {
   available: boolean;
   /** Why it is unavailable, phrased for the agent. */
   reason?: string;
-  /** Which layer provides it, useful when diagnosing a failure. */
+  /**
+   * Which layer provides it, useful when diagnosing a failure.
+   *
+   * `native` is the desktop layer, and only screenshots still use it. Nothing
+   * here drives the user's keyboard or mouse: every input path is a structured
+   * Studio API delivered inside the running experience.
+   */
   provider: "studio-plugin" | "native" | "server";
 }
 

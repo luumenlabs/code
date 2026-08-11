@@ -100,6 +100,12 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   { name: "studio_set_tags", op: "dm.tags.set", description: "Add or remove CollectionService tags on an instance." },
   {
+    name: "studio_batch_edit",
+    op: "dm.batch",
+    description:
+      "Apply many edits in one call. Takes a list of {op, params} where op is one of studio_create_instance, studio_set_properties, studio_delete_instance, studio_rename_instance, studio_move_instance, studio_clone_instance, studio_set_attributes, or studio_set_tags — passed as their operation ids: dm.create, dm.set_properties, dm.delete, dm.rename, dm.reparent, dm.clone, dm.attributes.set, dm.tags.set. Use it whenever you are about to make the same kind of edit more than two or three times: it is one round trip instead of many, and the user gets one Ctrl+Z rather than a stack of them. Every step is validated before any of them runs, and the result says what each one did.",
+  },
+  {
     name: "studio_get_selection",
     op: "dm.selection.get",
     description: "Read what the user currently has selected in Studio. Useful context when a request says 'this' or 'the selected part'.",
@@ -133,6 +139,12 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description: "Replace a script's entire source. Use studio_edit_script for anything smaller than a full rewrite.",
   },
   { name: "studio_create_script", op: "script.create", description: "Create a Script, LocalScript, or ModuleScript with source." },
+  {
+    name: "studio_grep_scripts",
+    op: "script.grep",
+    description:
+      "Search every script in the place for a pattern and get back the matching lines with their script, line, and column. This is the fastest way into an unfamiliar game: find where a remote is fired, who requires a module, or what sets a value, without reading files one at a time. Literal by default; set regex for a Luau string pattern (which is not a regular expression — use %d, %a, %w and escape magic characters with %). Scope it to a service to narrow the search.",
+  },
 
   {
     name: "studio_run_state",
@@ -144,9 +156,13 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "studio_start_playtest",
     op: "run.start",
     description:
-      'Start a playtest. Mode "play" produces a character and a client to observe, which is what you want for GUI, input, and gameplay. Mode "run" starts the place as a server with no player, which is better for server-side logic. Waits until the session is ready by default.',
+      'Start a playtest through Studio\'s own test service. Mode "play" produces a character and a client to observe, which is what you want for GUI, input, and gameplay. Mode "run" starts the place as a server with no player, which is better for server-side logic. Waits until the session is ready by default. This does not take over the user\'s keyboard or focus their window.',
   },
-  { name: "studio_stop_playtest", op: "run.stop", description: "Stop the playtest and return Studio to edit mode." },
+  {
+    name: "studio_stop_playtest",
+    op: "run.stop",
+    description: "Stop the playtest and return Studio to edit mode. Returns once Studio is actually back in edit mode, not when the request was sent.",
+  },
   {
     name: "studio_restart_playtest",
     op: "run.restart",
@@ -156,6 +172,12 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "studio_wait_ready",
     op: "run.wait_ready",
     description: "Wait until the running experience is ready to observe, for example until the character has spawned.",
+  },
+  {
+    name: "studio_multiplayer_test",
+    op: "run.multiplayer",
+    description:
+      'Run a playtest with more than one client, for testing replication, ownership, and anything that only breaks with a second player. action="start" with players=N opens a server and N clients; "status" reports the phase and who has joined; "add_players" brings more in; "leave_client" removes one to test a player leaving; "end" finishes the session. Each action is sent to the DataModel that can perform it, so you do not need to reason about which peer you are on. Use studio_exec with an explicit realm to inspect either side.',
   },
 
   {
@@ -176,19 +198,26 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "studio_exec",
     op: "runtime.exec",
     description:
-      "Execute Luau inside the connected Studio session and return the result. Use it to inspect a runtime value, set up test state, or check an assumption that the dedicated tools do not cover. Runs in whichever DataModel is currently connected; the result says which.",
+      'Execute Luau inside Studio and return the result. Use it to inspect a runtime value, set up test state, or check an assumption the dedicated tools do not cover. During a playtest, name the realm you mean: "server" and "client" see different worlds, and a probe run in the wrong one returns a confident answer about the wrong side. The result says which realm it ran in.',
   },
 
   {
     name: "studio_press_key",
     op: "input.key",
-    description: "Send a keyboard event to the running experience, for example to move the character or trigger a keybind.",
+    description:
+      "Send a key to the running experience, for example to move the character or trigger a keybind. It goes through the engine's real input pipeline, so the character walks at its actual speed with the game's own controls, and the user's keyboard is untouched. Requires a running playtest and a Studio window that is drawing — a minimized window has its input discarded by the engine, and this reports that rather than pretending the key landed.",
   },
-  { name: "studio_type_text", op: "input.text", description: "Type text into the running experience, for example into a focused TextBox." },
+  {
+    name: "studio_type_text",
+    op: "input.text",
+    description:
+      "Type text into the focused TextBox in the running experience. Click the box first with studio_click_gui; with nothing focused this fails rather than typing into nowhere.",
+  },
   {
     name: "studio_mouse",
     op: "input.mouse",
-    description: "Move, click, drag, or scroll the mouse in the running experience using viewport coordinates.",
+    description:
+      "Move, click, drag, or scroll the mouse in the running experience using viewport coordinates — the same coordinates studio_screenshot returns, so you can read a position off an image and click it. Hover state follows the pointer, so a control that only responds when hovered behaves as it does for a user.",
   },
   {
     name: "studio_click_gui",
@@ -199,13 +228,14 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "studio_viewport",
     op: "view.viewport_info",
-    description: "Read viewport size, GUI inset, and camera state. Use it to convert between world, screen, and GUI coordinates.",
+    description:
+      "Read viewport size, GUI inset, camera state, and whether the window is drawing. Use it to convert between world, screen, and GUI coordinates, and to check why input or a screenshot is not working.",
   },
   {
     name: "studio_screenshot",
     op: "view.screenshot",
     description:
-      "Capture the Roblox Studio window as an image. Use it to judge layout, spacing, overlap, and whether a scene looks right; use structured inspection for anything a property can answer.",
+      'Capture what the experience is rendering. The default captures the viewport from inside Studio — no ribbon, no Explorer, nothing sitting on top — and works during a playtest, which is when a screenshot is usually worth taking. Use it to judge layout, spacing, overlap, and whether a scene looks right; use structured inspection for anything a property can answer. If the place has the Mesh/Image APIs turned off, or the window is minimized, this says so and source "window" captures the desktop instead.',
   },
 ];
 

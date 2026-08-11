@@ -7,11 +7,14 @@
  * code. Spec sections 21 and 25.
  */
 import { randomUUID } from "node:crypto";
-import { COMMANDS, LuuCodeError, isOp, isSilent } from "@luumen/code-protocol";
+import { BATCHABLE_OPS, COMMANDS, LuuCodeError, isOp, isSilent } from "@luumen/code-protocol";
 import type {
   ActivityEvent,
+  BatchStep,
+  BatchableOp,
   CapabilityId,
   CapabilityReport,
+  InstanceRef,
   Op,
   RevertOutcome,
   RunState,
@@ -27,11 +30,11 @@ import type { ChangeJournal } from "./changes.js";
 import type { EventBus } from "./events.js";
 import { nilTagsToNulls, nullsToNilTags } from "./normalize.js";
 import type { OutputStore } from "./output.js";
+import { encodePng } from "./png.js";
 import type { RunControl } from "./runControl.js";
-import type { SessionRegistry, SessionTarget } from "./sessions.js";
+import type { PeerRef, SessionRegistry, SessionTarget } from "./sessions.js";
 import type { SettingsStore } from "../config/settings.js";
-import type { NativeInput } from "../native/input.js";
-import type { ScreenshotProvider, ScreenshotRequest } from "../native/screenshot.js";
+import type { DesktopCaptureProvider } from "../native/screenshot.js";
 import { createLogger } from "../util/logger.js";
 
 const log = createLogger("dispatch");
@@ -42,7 +45,13 @@ const SLOW_OPS: Partial<Record<Op, number>> = {
   "dm.tree": 30_000,
   "dm.search": 30_000,
   "script.list": 30_000,
+  // One pass over every script's source, and the source of a large place is the
+  // largest thing in it.
+  "script.grep": 60_000,
   "input.text": 60_000,
+  // Capture waits on a rendered frame, then reads the pixels back a tile at a
+  // time. Both are slower than a round trip and neither is the plugin hanging.
+  "view.screenshot": 45_000,
   // A revert is a batch: a hundred records is one request, and each one reads
   // the live value back before it writes.
   "changes.apply": 60_000,
@@ -69,8 +78,7 @@ export interface DispatcherDeps {
   output: OutputStore;
   changes: ChangeJournal;
   runControl: RunControl;
-  nativeInput: NativeInput;
-  getScreenshotProvider: () => ScreenshotProvider | null;
+  getDesktopCaptureProvider: () => DesktopCaptureProvider | null;
 }
 
 export class Dispatcher {
@@ -81,8 +89,7 @@ export class Dispatcher {
       studio: this.deps.sessions.capabilitiesFor(target),
       studioConnected: this.deps.sessions.hasSessions(),
       run: this.deps.sessions.runStateFor(target),
-      nativeInputAvailable: this.deps.nativeInput.available,
-      screenshotAvailable: this.deps.getScreenshotProvider() !== null,
+      desktopCaptureAvailable: this.deps.getDesktopCaptureProvider() !== null,
       settings: this.deps.settings,
     });
   }
@@ -123,7 +130,7 @@ export class Dispatcher {
     if (!silent) this.deps.bus.emit({ type: "activity", activity });
 
     try {
-      const raw = await this.route(op, params, context);
+      const raw = await this.route(op, params, context, activity);
       // The journal comes off here, before anything else sees the result: what
       // the agent gets back must not carry the old source of the script it just
       // rewrote.
@@ -233,7 +240,12 @@ export class Dispatcher {
     });
   }
 
-  private async route(op: Op, params: Record<string, any>, context: ExecuteContext): Promise<unknown> {
+  /**
+   * `activity` is threaded through for one operation: a batch that stops
+   * halfway has already edited the place, and it has to file those changes
+   * before it fails. Everything else journals on the way out of `execute`.
+   */
+  private async route(op: Op, params: Record<string, any>, context: ExecuteContext, activity: ActivityEvent): Promise<unknown> {
     switch (op) {
       case "session.status":
         return this.deps.sessions.status() satisfies SessionStatus;
@@ -270,13 +282,34 @@ export class Dispatcher {
         );
 
       case "run.stop":
-        return this.deps.runControl.stop(context) as Promise<RunState>;
+        return this.deps.runControl.stop({ timeoutMs: params.timeoutMs }, context) as Promise<RunState>;
 
       case "run.restart":
         return this.deps.runControl.restart({ mode: params.mode, timeoutMs: params.timeoutMs }, context);
 
+      case "run.multiplayer":
+        return this.deps.runControl.multiplayer(
+          {
+            action: params.action,
+            players: params.players,
+            client: params.client,
+            testArgs: params.testArgs,
+            value: params.value,
+            timeoutMs: params.timeoutMs,
+          },
+          context,
+        );
+
+      case "dm.batch":
+        return this.batch(
+          params.operations as Array<{ op: BatchableOp; params: Record<string, unknown> }>,
+          params.stopOnError === true,
+          context,
+          activity,
+        );
+
       case "view.screenshot":
-        return this.screenshot(params as ScreenshotRequest);
+        return this.screenshot(params as { source: "viewport" | "window" | "screen"; maxWidth: number }, context);
 
       case "changes.list":
         return this.deps.changes.list({
@@ -340,26 +373,166 @@ export class Dispatcher {
     return { outcomes, reverted: outcomes.filter((entry) => entry.status === "reverted").length };
   }
 
-  private async screenshot(request: ScreenshotRequest): Promise<ScreenshotResult> {
-    const provider = this.deps.getScreenshotProvider();
+  /**
+   * Runs a sequence of edits as one request.
+   *
+   * Each step is validated here rather than in Studio, against the same schema
+   * the operation has on its own, so a typo in step forty is reported before
+   * step one has touched the place. The steps then go over as one command, which
+   * is what buys the round trip and the single undo waypoint.
+   *
+   * The journal still gets a record per mutation. Review and revert work at the
+   * level of the change — "put that rename back" — and a batch is a transport
+   * detail the user never asked about.
+   */
+  private async batch(
+    operations: Array<{ op: BatchableOp; params: Record<string, unknown> }>,
+    stopOnError: boolean,
+    context: ExecuteContext,
+    activity: ActivityEvent,
+  ): Promise<unknown> {
+    const prepared = operations.map((entry, index) => {
+      if (!(BATCHABLE_OPS as readonly string[]).includes(entry.op)) {
+        throw new LuuCodeError("INVALID_PARAMS", `Step ${index + 1}: ${entry.op} cannot appear in a batch.`, {
+          details: { allowed: BATCHABLE_OPS },
+        });
+      }
+
+      try {
+        return { op: entry.op, params: COMMANDS[entry.op].params.parse(entry.params ?? {}) as Record<string, unknown> };
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const issues = error.issues.map((issue) => `${issue.path.join(".") || "params"}: ${issue.message}`);
+          throw new LuuCodeError("INVALID_PARAMS", `Step ${index + 1} (${entry.op}) is invalid. ${issues.join("; ")}`, {
+            details: { step: index + 1, op: entry.op, issues },
+          });
+        }
+        throw error;
+      }
+    });
+
+    const result = (await this.sendToStudio("dm.batch", { operations: prepared, stopOnError }, context)) as {
+      steps?: BatchStep[];
+      instances?: InstanceRef[];
+    };
+
+    const steps = result?.steps ?? [];
+    const first = steps.find((step) => step.status === "failed");
+
+    if (!first || !stopOnError) return result;
+
+    // A batch that got halfway is not a batch that worked, so it fails — but the
+    // steps that did land are real edits to the place, and they have to reach the
+    // journal before this throws. `execute` only journals what it gets back, and
+    // it is not getting anything back. An edit with no record is one the user
+    // cannot see and cannot take away.
+    const { changes } = takeChanges(result);
+    this.journal("dm.batch", changes, activity, context);
+
+    throw new LuuCodeError(
+      first.error?.code ?? "INTERNAL",
+      `Step ${first.index + 1} (${first.op}) failed: ${first.error?.message ?? "unknown error"}`,
+      {
+        details: { steps, applied: steps.filter((step) => step.status === "ok").length },
+        hint: first.error?.hint ?? "Earlier steps have already been applied; changes.list shows what landed.",
+      },
+    );
+  }
+
+  /**
+   * Captures the viewport from inside Studio, or the desktop, as asked.
+   *
+   * The in-engine path is the default and is not silently swapped for the other
+   * when it fails. They photograph different things — one is what the game is
+   * drawing, the other is a window with a ribbon and an Explorer around it — so
+   * quietly substituting one would answer a question the agent did not ask, and
+   * "is this GUI centred?" is precisely the question that gets a wrong answer
+   * from the wrong picture. A failure names the desktop path instead.
+   */
+  private async screenshot(
+    request: { source: "viewport" | "window" | "screen"; maxWidth: number },
+    context: ExecuteContext,
+  ): Promise<ScreenshotResult> {
+    if (request.source === "viewport") return this.captureViewport(request.maxWidth, context);
+
+    const provider = this.deps.getDesktopCaptureProvider();
 
     if (!provider) {
-      throw new LuuCodeError("UNSUPPORTED_CAPABILITY", `Screen capture is not implemented for ${process.platform}.`, {
-        hint: "Run the Luu Code app, which captures through the desktop compositor.",
+      throw new LuuCodeError("UNSUPPORTED_CAPABILITY", `Desktop capture is not implemented for ${process.platform}.`, {
+        hint: 'Use source "viewport", which captures through Studio itself.',
       });
     }
 
-    return provider(request);
+    return provider({ source: request.source, maxWidth: request.maxWidth });
+  }
+
+  /**
+   * The in-engine path, aimed at whichever peer has a window to photograph.
+   *
+   * During a playtest that is the client, because the server DataModel does not
+   * render at all; in edit mode it is the edit peer. A peer whose window is
+   * minimised is skipped rather than sent to, since capture there waits for a
+   * frame that never arrives and then reports a timeout that says nothing about
+   * the real cause.
+   */
+  private async captureViewport(maxWidth: number, context: ExecuteContext): Promise<ScreenshotResult> {
+    let peers: PeerRef[];
+
+    try {
+      peers = this.deps.sessions.peers(context);
+    } catch (error) {
+      // Studio being unreachable is a fine reason to fail, but the caller asked
+      // for a picture and there may still be a way to take one. Say so, rather
+      // than leaving them with a connection error and no next step.
+      throw new LuuCodeError("SCREENSHOT_FAILED", LuuCodeError.from(error).message, {
+        hint: this.deps.getDesktopCaptureProvider()
+          ? 'Capturing the viewport needs the Studio plugin. Use source "window" to photograph the Studio window from the desktop instead.'
+          : "Open the place in Studio and approve the Luu Code connection panel.",
+        cause: error,
+      });
+    }
+
+    const rendering = (peer: PeerRef) => peer.realm !== "server" && peer.run.rendering !== false;
+
+    const chosen =
+      peers.find((peer) => peer.run.running && peer.realm === "client" && rendering(peer)) ??
+      peers.find((peer) => !peer.run.running && rendering(peer)) ??
+      peers.find(rendering);
+
+    if (!chosen) {
+      throw new LuuCodeError("SCREENSHOT_FAILED", "No connected Studio DataModel is drawing a viewport to capture.", {
+        details: { peers: peers.map((peer) => ({ realm: peer.realm, running: peer.run.running, rendering: peer.run.rendering })) },
+        hint: 'The Studio window is probably minimized. Restore it, or capture the desktop with source "window".',
+      });
+    }
+
+    const raw = (await this.deps.sessions.send(
+      "view.screenshot",
+      { maxWidth },
+      { timeoutMs: SLOW_OPS["view.screenshot"] ?? DEFAULT_TIMEOUT_MS, peer: chosen, ...pick(context) },
+    )) as { pixels: string; width: number; height: number; realm: StudioRealm };
+
+    const pixels = Buffer.from(raw.pixels, "base64");
+
+    return {
+      data: encodePng(pixels, raw.width, raw.height).toString("base64"),
+      mimeType: "image/png",
+      width: raw.width,
+      height: raw.height,
+      capturedAt: Date.now(),
+      source: "viewport",
+      realm: raw.realm,
+    };
   }
 
   private async sendToStudio(op: Op, params: Record<string, any>, context: ExecuteContext): Promise<unknown> {
     const outbound = nullsToNilTags(params) as Record<string, unknown>;
+    const realm = realmFor(params) ?? context.realm;
 
     return this.deps.sessions.send(op, outbound, {
       timeoutMs: timeoutFor(op, params),
-      ...(context.sessionId ? { sessionId: context.sessionId } : {}),
-      ...(context.chat ? { chat: context.chat } : {}),
-      ...(context.realm ? { realm: context.realm } : {}),
+      ...pick(context),
+      ...(realm ? { realm } : {}),
     });
   }
 
@@ -398,6 +571,29 @@ function imageFrom(result: unknown): ActivityEvent["image"] {
   const shot = result as ScreenshotResult | null;
   if (!shot?.data) return null;
   return { data: shot.data, mimeType: shot.mimeType, width: shot.width, height: shot.height };
+}
+
+/** The SessionTarget half of an execute context. */
+function pick(context: ExecuteContext): SessionTarget {
+  return {
+    ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+    ...(context.chat ? { chat: context.chat } : {}),
+  };
+}
+
+/**
+ * A realm the caller asked for by parameter, which outranks the one implied by
+ * the connection they happen to be on.
+ *
+ * `runtime.exec` is the operation that needs this. During a playtest the client
+ * and the server see different worlds, and running a probe in whichever
+ * DataModel was selected answered about the wrong one roughly half the time —
+ * plausibly enough that the mistake was not obvious.
+ */
+function realmFor(params: Record<string, any>): StudioRealm | undefined {
+  const realm = params.realm;
+  if (realm === "edit" || realm === "server" || realm === "client") return realm;
+  return undefined;
 }
 
 function timeoutFor(op: Op, params: Record<string, any>): number {

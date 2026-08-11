@@ -15,8 +15,8 @@ export interface CapabilityInputs {
   studio: Set<CapabilityId>;
   studioConnected: boolean;
   run: RunState | null;
-  nativeInputAvailable: boolean;
-  screenshotAvailable: boolean;
+  /** True when the desktop capture path exists for this platform. */
+  desktopCaptureAvailable: boolean;
   settings: SettingsStore;
 }
 
@@ -27,7 +27,9 @@ const STUDIO_PROVIDED: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "edit.instances",
   "edit.scripts",
   "edit.undo-history",
+  "playtest.play",
   "playtest.run",
+  "playtest.multiplayer",
   "output.capture",
   "runtime.inspect",
   "runtime.exec",
@@ -45,42 +47,22 @@ export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityRepor
 }
 
 function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
+  // Two independent capture paths, and either is enough. The in-engine one is
+  // better — it sees the viewport during a playtest and nothing outside it — but
+  // it needs the plugin, so a desktop capture still answers with Studio closed.
   if (id === "view.screenshot") {
-    return inputs.screenshotAvailable
-      ? { id, available: true, provider: "native" }
-      : {
-          id,
-          available: false,
-          provider: "native",
-          reason: `Screen capture is not implemented for ${process.platform}.`,
-        };
-  }
-
-  if (id === "input.native") {
-    return inputs.nativeInputAvailable
-      ? { id, available: true, provider: "native" }
-      : {
-          id,
-          available: false,
-          provider: "native",
-          reason: `Desktop input is not implemented for ${process.platform}.`,
-        };
+    if (inputs.studio.has("view.screenshot")) return { id, available: true, provider: "studio-plugin" };
+    if (inputs.desktopCaptureAvailable) return { id, available: true, provider: "native" };
+    return {
+      id,
+      available: false,
+      provider: "native",
+      reason: `Nothing here can capture an image: Studio is not connected and screen capture is not implemented for ${process.platform}.`,
+    };
   }
 
   if (!inputs.studioConnected) {
     return { id, available: false, provider: "studio-plugin", reason: "Roblox Studio is not connected." };
-  }
-
-  if (id === "playtest.play") {
-    // Play has two independent paths, and only one of them has to work.
-    if (inputs.studio.has("playtest.play")) return { id, available: true, provider: "studio-plugin" };
-    if (inputs.nativeInputAvailable) return { id, available: true, provider: "native" };
-    return {
-      id,
-      available: false,
-      provider: "studio-plugin",
-      reason: 'Studio cannot start Play mode here. Use mode "run" for a server-only playtest.',
-    };
   }
 
   if (id === "runtime.inspect" && inputs.run && !inputs.run.running) {
@@ -92,12 +74,55 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     };
   }
 
-  if (id === "input.virtual" && inputs.run && !inputs.run.running) {
+  // Reported unavailable while the window is not drawing, because the engine
+  // discards input in that state. Saying so up front is the difference between
+  // an agent restoring the window and one concluding the game is broken.
+  if (id === "input.virtual") {
+    if (!inputs.studio.has("input.virtual")) {
+      return {
+        id,
+        available: false,
+        provider: "studio-plugin",
+        reason: "This Studio build does not offer UserInputService:CreateVirtualInput(), so input cannot be delivered.",
+      };
+    }
+
+    if (inputs.run && !inputs.run.running) {
+      return {
+        id,
+        available: false,
+        provider: "studio-plugin",
+        reason: "Input can only be delivered while the experience is running.",
+      };
+    }
+
+    if (inputs.run?.rendering === false) {
+      return {
+        id,
+        available: false,
+        provider: "studio-plugin",
+        reason: "The Studio window is not drawing, probably because it is minimized, and the engine discards input while it is not.",
+      };
+    }
+
+    return { id, available: true, provider: "studio-plugin" };
+  }
+
+  if ((id === "playtest.play" || id === "playtest.run") && !inputs.studio.has(id)) {
     return {
       id,
       available: false,
       provider: "studio-plugin",
-      reason: "Input can only be delivered while the experience is running.",
+      reason: "This Studio build does not expose StudioTestService, so playtests cannot be controlled from Luu Code.",
+    };
+  }
+
+  if (id === "playtest.multiplayer" && !inputs.studio.has(id)) {
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason: "This Studio build does not offer StudioTestService:ExecuteMultiplayerTestAsync().",
     };
   }
 

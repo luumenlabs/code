@@ -7,12 +7,14 @@
 	mistake in one handler can never take the connection down.
 ]]
 
+local Capture = require(script.Parent.Capture)
 local Changes = require(script.Parent.Changes)
 local Errors = require(script.Parent.Errors)
 local Exec = require(script.Parent.Exec)
 local Handles = require(script.Parent.Handles)
 local History = require(script.Parent.History)
 local InputBridge = require(script.Parent.InputBridge)
+local Value = require(script.Parent.Value)
 
 local DataModelOps = require(script.DataModelOps)
 local InputOps = require(script.InputOps)
@@ -52,6 +54,7 @@ local HANDLERS: { [string]: (any) -> any } = {
 
 	["script.list"] = ScriptOps.list,
 	["script.get"] = ScriptOps.get,
+	["script.grep"] = ScriptOps.grep,
 	["script.set"] = ScriptOps.set,
 	["script.patch"] = ScriptOps.patch,
 	["script.create"] = ScriptOps.create,
@@ -64,6 +67,7 @@ local HANDLERS: { [string]: (any) -> any } = {
 		return RunOps.stop()
 	end,
 	["run.wait_ready"] = RunOps.waitReady,
+	["run.multiplayer"] = RunOps.multiplayer,
 
 	["runtime.exec"] = function(params)
 		return Exec.run(params.source, params.timeoutMs or 10000)
@@ -76,7 +80,98 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["view.viewport_info"] = function()
 		return InputOps.viewportInfo()
 	end,
+	["view.screenshot"] = Capture.screenshot,
 }
+
+--[[
+	Applies a sequence of edits under one undo waypoint.
+
+	The steps call the ordinary handlers, so a batched create is exactly a
+	create — the same validation, the same change draft, the same result shape.
+	Their own attempts to open a recording decline harmlessly, because Studio
+	allows only one at a time and the outer one is already open; that is what
+	collapses a hundred edits into a single Ctrl+Z rather than a hundred.
+
+	Drafts are gathered from every step and returned together. The journal still
+	files them one per mutation: the user reviews and reverts changes, and a
+	batch is a transport detail they never asked about.
+]]
+local function runBatch(params: any): any
+	local operations = params.operations or {}
+	local stopOnError = params.stopOnError ~= false
+
+	local steps = {}
+	local instances = {}
+	local drafts = {}
+	local applied = 0
+	local failed = 0
+	local skipped = 0
+
+	local _, undoLabel = History.record(string.format("Apply %d edit(s)", #operations), function()
+		for index, entry in ipairs(operations) do
+			local handler = HANDLERS[entry.op]
+
+			if handler == nil then
+				table.insert(steps, {
+					index = index - 1,
+					op = entry.op,
+					status = "failed",
+					instances = {},
+					error = Errors.new("INVALID_PARAMS", string.format("Unknown operation %q", tostring(entry.op)), { op = entry.op }),
+				})
+				failed += 1
+			else
+				local ok, result = pcall(handler, entry.params or {})
+
+				if ok then
+					local produced = result.instances or {}
+					table.insert(steps, { index = index - 1, op = entry.op, status = "ok", instances = produced, error = Value.NIL })
+					table.move(produced, 1, #produced, #instances + 1, instances)
+
+					for _, draft in ipairs(result.changes or {}) do
+						table.insert(drafts, draft)
+					end
+
+					applied += 1
+				else
+					table.insert(
+						steps,
+						{ index = index - 1, op = entry.op, status = "failed", instances = {}, error = Errors.coerce(result) }
+					)
+					failed += 1
+				end
+			end
+
+			-- Reported rather than dropped: the caller asked for a sequence, and
+			-- where the sequence stopped is most of what they need to fix it.
+			if failed > 0 and stopOnError then
+				for rest = index + 1, #operations do
+					table.insert(steps, {
+						index = rest - 1,
+						op = operations[rest].op,
+						status = "skipped",
+						instances = {},
+						error = Value.NIL,
+					})
+					skipped += 1
+				end
+				break
+			end
+		end
+	end)
+
+	return {
+		instances = instances,
+		undoLabel = undoLabel,
+		steps = steps,
+		applied = applied,
+		failed = failed,
+		skipped = skipped,
+		changes = drafts,
+	}
+end
+
+HANDLERS["dm.batch"] = runBatch
 
 --[[
 	Runs one command and always returns a result envelope, never raises.
@@ -127,18 +222,30 @@ function Commands.capabilities(): { string }
 		table.insert(available, "runtime.exec")
 	end
 
+	-- Probed by constructing the VirtualInput, not by naming a service. The old
+	-- check asked whether VirtualInputManager could be fetched — which is always
+	-- true, and told us nothing about whether its methods were callable, which
+	-- they were not. Every key and click this session accepted went nowhere.
 	if InputBridge.isAvailable() then
 		table.insert(available, "input.virtual")
-		-- Play is driven through the same virtual input path as everything else.
-		table.insert(available, "playtest.play")
 	end
 
-	local canRun = pcall(function()
-		return game:GetService("RunService").Run ~= nil
-	end)
+	-- Play and Run are one capability: both are StudioTestService methods, so a
+	-- build with one has the other. They were reported separately back when Play
+	-- went through a mechanism that could not work.
+	local canPlay, canMultiplayer = RunOps.capabilities()
 
-	if canRun then
+	if canPlay then
+		table.insert(available, "playtest.play")
 		table.insert(available, "playtest.run")
+	end
+
+	if canMultiplayer then
+		table.insert(available, "playtest.multiplayer")
+	end
+
+	if Capture.isAvailable() then
+		table.insert(available, "view.screenshot")
 	end
 
 	table.insert(available, "output.capture")

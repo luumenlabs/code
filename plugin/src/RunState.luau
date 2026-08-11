@@ -13,6 +13,7 @@ local RunService = game:GetService("RunService")
 
 local Changes = require(script.Parent.Changes)
 local Handles = require(script.Parent.Handles)
+local RenderMonitor = require(script.Parent.RenderMonitor)
 
 local RunState = {}
 
@@ -75,6 +76,22 @@ function RunState.isReady(requireCharacter: boolean?): boolean
 	return character ~= nil and character:FindFirstChildOfClass("Humanoid") ~= nil
 end
 
+--[[
+	True when this peer is one DataModel of several.
+
+	Play Solo puts the server and the client in a single DataModel, so a peer
+	that is both is the only one there is. A peer that is one but not the other
+	belongs to a session Studio split across processes — a multiplayer test, or
+	Start Server with players attached — which is exactly when an agent has to
+	care which side it is talking to.
+]]
+local function isSplitSession(running: boolean): boolean
+	if not running then
+		return false
+	end
+	return RunService:IsServer() ~= RunService:IsClient()
+end
+
 function RunState.current(): any
 	local running = RunService:IsRunning()
 
@@ -85,6 +102,11 @@ function RunState.current(): any
 		realm = detectRealm(running),
 		epoch = epoch,
 		ready = RunState.isReady(true),
+		playerCount = #Players:GetPlayers(),
+		multiplayer = isSplitSession(running),
+		-- Reported from every peer so the server can tell an operation that needs
+		-- frames where to send it, and refuse when nowhere can take it.
+		rendering = RenderMonitor.isRendering(),
 	}
 end
 
@@ -108,6 +130,11 @@ end
 	chasing version-specific signals.
 ]]
 function RunState.start()
+	-- Started here because every consumer of the run state reads `rendering`
+	-- from it, and the monitor needs a few frames of history before it can
+	-- answer. Safe in a server peer, where it simply never connects.
+	RenderMonitor.start()
+
 	lastRunning = RunService:IsRunning()
 	-- The epoch is derived from the run state at load: a plugin that starts up
 	-- inside a playtest must not hand out handles that look edit-time.

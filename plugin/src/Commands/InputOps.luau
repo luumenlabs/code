@@ -14,20 +14,34 @@ local Errors = require(script.Parent.Parent.Errors)
 local Handles = require(script.Parent.Parent.Handles)
 local InputBridge = require(script.Parent.Parent.InputBridge)
 local Path = require(script.Parent.Parent.Path)
+local RenderMonitor = require(script.Parent.Parent.RenderMonitor)
 local RunState = require(script.Parent.Parent.RunState)
 
 local InputOps = {}
 
+--[[
+	Every input result says which world it landed in.
+
+	"Delivered" on its own is a claim these operations are not in a position to
+	make, and during a playtest there is more than one DataModel that could have
+	received it. The realm is the part an agent can check against what it
+	expected: a click reported against the server is a click nobody saw.
+]]
+local function stamped(result: any): any
+	result.realm = RunState.current().realm
+	return result
+end
+
 function InputOps.key(params: any): any
-	return InputBridge.key(params.key, params.action or "tap", params.durationMs or 60)
+	return stamped(InputBridge.key(params.key, params.action or "tap", params.durationMs or 60))
 end
 
 function InputOps.text(params: any): any
-	return InputBridge.text(params.text)
+	return stamped(InputBridge.text(params.text))
 end
 
 function InputOps.mouse(params: any): any
-	return InputBridge.mouse(params)
+	return stamped(InputBridge.mouse(params))
 end
 
 local function guiRoot(): Instance
@@ -235,6 +249,7 @@ function InputOps.viewportInfo(): any
 		guiInset = { x = inset.X, y = inset.Y },
 		camera = cameraInfo,
 		realm = RunState.current().realm,
+		rendering = RenderMonitor.isRendering(),
 	}
 end
 

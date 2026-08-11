@@ -1,10 +1,16 @@
 /**
- * Visual observation. Spec sections 17 and 36.
+ * Desktop capture. Spec sections 17 and 36.
  *
- * Roblox exposes no way for a plugin to read the viewport, so screenshots have
- * to come from the desktop. Capture is scoped to the Roblox Studio window
- * rather than the whole screen wherever the platform allows it, which keeps
- * unrelated windows out of the agent's context.
+ * This is the fallback path, not the main one: `view.screenshot` captures the
+ * viewport through CaptureService inside Studio, which sees what the experience
+ * is actually drawing and nothing around it. What is here photographs pixels
+ * already on the screen, so it also catches the ribbon, the Explorer, and
+ * anything sitting on top of Studio.
+ *
+ * It stays because the in-engine path has two real preconditions — the window
+ * has to be drawing, and the place has to allow the Mesh/Image APIs — and
+ * neither is something an agent can fix on its own. A caller that hits one of
+ * those is told to ask for `window` instead.
  *
  * The Electron harness registers a better provider at startup (it can capture
  * an occluded window through the compositor); this platform path is what makes
@@ -22,13 +28,13 @@ import { createLogger } from "../util/logger.js";
 
 const log = createLogger("screenshot");
 
-export interface ScreenshotRequest {
-  source: "studio" | "screen";
+export interface DesktopCaptureRequest {
+  /** "window" is the Roblox Studio window; "screen" is the primary display. */
+  source: "window" | "screen";
   maxWidth: number;
-  format: "png" | "jpeg";
 }
 
-export type ScreenshotProvider = (request: ScreenshotRequest) => Promise<ScreenshotResult>;
+export type DesktopCaptureProvider = (request: DesktopCaptureRequest) => Promise<ScreenshotResult>;
 
 const WINDOWS_CAPTURE = String.raw`
 $ErrorActionPreference = 'Stop'
@@ -47,11 +53,10 @@ public class LuuCodeWin {
 $source = '__SOURCE__'
 $maxWidth = __MAXWIDTH__
 $outputPath = '__OUTPUT__'
-$format = '__FORMAT__'
 
 $bounds = $null
 
-if ($source -eq 'studio') {
+if ($source -eq 'window') {
   $process = Get-Process -Name 'RobloxStudioBeta','RobloxStudio' -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
 
@@ -97,33 +102,24 @@ if ($maxWidth -gt 0 -and $bitmap.Width -gt $maxWidth) {
   $final = $resized
 }
 
-if ($format -eq 'jpeg') {
-  $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
-  $params = New-Object System.Drawing.Imaging.EncoderParameters(1)
-  $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, 82)
-  $final.Save($outputPath, $codec, $params)
-} else {
-  $final.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)
-}
+$final.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)
 
 Write-Output ("{0}x{1}" -f $final.Width, $final.Height)
 $final.Dispose()
 `;
 
-function tempFile(extension: string): string {
+function tempFile(): string {
   const directory = screenshotDir();
   mkdirSync(directory, { recursive: true });
-  return join(directory, `capture_${randomUUID().slice(0, 8)}.${extension}`);
+  return join(directory, `capture_${randomUUID().slice(0, 8)}.png`);
 }
 
-async function captureWindows(request: ScreenshotRequest): Promise<ScreenshotResult> {
-  const extension = request.format === "jpeg" ? "jpg" : "png";
-  const output = tempFile(extension);
+async function captureWindows(request: DesktopCaptureRequest): Promise<ScreenshotResult> {
+  const output = tempFile();
 
   const script = WINDOWS_CAPTURE.replace("__SOURCE__", request.source)
     .replace("__MAXWIDTH__", String(request.maxWidth))
-    .replace("__OUTPUT__", output.replace(/'/g, "''"))
-    .replace("__FORMAT__", request.format);
+    .replace("__OUTPUT__", output.replace(/'/g, "''"));
 
   let dimensions = "0x0";
 
@@ -145,12 +141,11 @@ async function captureWindows(request: ScreenshotRequest): Promise<ScreenshotRes
   return finalize(output, request, dimensions);
 }
 
-async function captureMac(request: ScreenshotRequest): Promise<ScreenshotResult> {
-  const extension = request.format === "jpeg" ? "jpg" : "png";
-  const output = tempFile(extension);
-  const args = ["-x", "-o", "-t", request.format === "jpeg" ? "jpg" : "png"];
+async function captureMac(request: DesktopCaptureRequest): Promise<ScreenshotResult> {
+  const output = tempFile();
+  const args = ["-x", "-o", "-t", "png"];
 
-  if (request.source === "studio") {
+  if (request.source === "window") {
     try {
       const { stdout } = await osascript(
         'tell application "System Events" to tell process "RobloxStudio" to get {position, size} of window 1',
@@ -181,7 +176,7 @@ async function captureMac(request: ScreenshotRequest): Promise<ScreenshotResult>
   return finalize(output, request, "0x0");
 }
 
-async function finalize(path: string, request: ScreenshotRequest, dimensions: string): Promise<ScreenshotResult> {
+async function finalize(path: string, request: DesktopCaptureRequest, dimensions: string): Promise<ScreenshotResult> {
   let data: Buffer;
 
   try {
@@ -196,15 +191,18 @@ async function finalize(path: string, request: ScreenshotRequest, dimensions: st
 
   return {
     data: data.toString("base64"),
-    mimeType: request.format === "jpeg" ? "image/jpeg" : "image/png",
+    mimeType: "image/png",
     width: Number.isFinite(width) ? (width as number) : 0,
     height: Number.isFinite(height) ? (height as number) : 0,
     capturedAt: Date.now(),
     source: request.source,
+    // A desktop capture photographs a window, not a DataModel, so there is no
+    // realm to report and claiming one would be an invention.
+    realm: null,
   };
 }
 
-export function platformScreenshotProvider(): ScreenshotProvider | null {
+export function platformDesktopCaptureProvider(): DesktopCaptureProvider | null {
   if (process.platform === "win32") return captureWindows;
   if (process.platform === "darwin") return captureMac;
   return null;

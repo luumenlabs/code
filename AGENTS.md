@@ -94,6 +94,35 @@ connection for — and rides it up on the next sync. `SessionRegistry.applyPlace
 accepts a redescription only when the identity matches, so a session can never
 change which game it stands for without reconnecting.
 
+## Playtesting, input, and capture
+
+All three go through a structured Studio API, and each replaced something that
+either drove the user's desktop or silently did nothing. Do not reintroduce
+either kind.
+
+**Playtests are `StudioTestService`.** `ExecutePlayModeAsync`,
+`ExecuteRunModeAsync`, `ExecuteMultiplayerTestAsync`, and `EndTest` are the whole
+surface. Two properties of them shape everything above:
+
+- The `Execute*` calls **yield for the entire life of the session**. The thread
+  that starts a playtest is parked until it ends, so `RunOps` spawns the call and
+  the run state is what reports the outcome.
+- **Starting and stopping are different peers.** Only the edit DataModel can
+  start a session; only the running one can end it. `RunControl` picks the peer
+  per operation through `SessionRegistry.findPeer`, which is also why
+  `sessions.send` takes a `peer`. A request aimed at a named peer never rebinds
+  the chat, because a playtest's connection is transient and following a chat
+  into one would strand it the moment the playtest ended.
+
+**Input is `UserInputService:CreateVirtualInput()`.** It feeds the engine's real
+input pipeline, so the character walks with the game's own controls and clicks
+hit-test against the GUI. Capability is probed by *constructing* the object.
+
+**Capture is `CaptureService` plus `EditableImage`**, read in the plugin and
+encoded to PNG by `core/png.ts`, because Luau has no deflate. The desktop paths
+in `native/screenshot.ts` remain for `source: "window"` and `"screen"` only, and
+nothing falls back to them silently — the two pictures are not the same picture.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.
@@ -233,6 +262,23 @@ These are all real, and all cost time when hit blind.
   exactly this reason. It must be a real executable: the SDK spawns it with no
   shell and, on Windows, no PATHEXT lookup, so a bare `claude` never resolves and
   an npm `claude.cmd` fails with `spawn EINVAL`. See `agents/claudeExecutable.ts`.
+- **`VirtualInputManager` cannot be called from a plugin, and fails in the worst
+  possible way.** Every one of its `Send*Event` methods is RobloxScriptSecurity,
+  so a plugin raises on each. The service itself is fetchable, which is what made
+  this cost months: `isAvailable` asked whether `GetService` worked, said yes,
+  and Luu Code advertised `input.virtual`, accepted every key and click, and
+  delivered none of them. `UserInputService:CreateVirtualInput()` is the callable
+  path. Probe any capability by doing the thing, never by naming the API.
+- **A minimized Studio window keeps running scripts but stops rendering *and*
+  processing input.** Heartbeat carries on at full rate, so it is useless as a
+  signal; `RenderStepped` is what stops. `RenderMonitor` watches frame freshness
+  for exactly this, because without it synthetic input returns success having
+  done nothing and `CaptureService:CaptureScreenshot` never calls its callback at
+  all — it does not fail, it simply never answers.
+- **`AssetService:CreateEditableImageAsync` needs the place's Mesh/Image API
+  permission.** Without it, viewport capture fails at the read step, after the
+  screenshot has already been taken. The error names the Game Settings switch;
+  keep it that way, because nothing else about the failure suggests a setting.
 - **`plugin:SetSetting` is one store for the whole machine.** Not per window, not
   per place. Every open Studio reads back the same value, so nothing persisted
   there can identify a window — that is why the install id is scoped by place

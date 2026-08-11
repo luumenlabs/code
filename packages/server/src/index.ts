@@ -17,9 +17,8 @@ import { RunControl } from "./core/runControl.js";
 import { SessionRegistry } from "./core/sessions.js";
 import { startHttpServer } from "./http/server.js";
 import type { RunningHttpServer } from "./http/server.js";
-import { createNativeInput } from "./native/input.js";
-import { platformScreenshotProvider } from "./native/screenshot.js";
-import type { ScreenshotProvider } from "./native/screenshot.js";
+import { platformDesktopCaptureProvider } from "./native/screenshot.js";
+import type { DesktopCaptureProvider } from "./native/screenshot.js";
 import { createLogger } from "./util/logger.js";
 
 export const SERVER_VERSION = "0.1.0";
@@ -30,11 +29,14 @@ export interface LuuCodeServerOptions {
   port?: number;
   settings?: SettingsStore;
   /**
-   * Overrides the platform screenshot path. The Electron harness passes a
+   * Overrides the platform desktop capture path. The Electron harness passes a
    * compositor-based provider here, which can capture Studio even when it is
    * not the frontmost window. Spec section 22.
+   *
+   * This is the fallback for `view.screenshot`; the default path captures the
+   * viewport through Studio itself and does not come through here.
    */
-  screenshotProvider?: ScreenshotProvider;
+  desktopCaptureProvider?: DesktopCaptureProvider;
 }
 
 export interface LuuCodeServer {
@@ -53,7 +55,7 @@ export interface LuuCodeServer {
   rejectPairing(sessionId: string): boolean;
   /** Drops a Studio session and forgets its pairing. */
   disconnectSession(sessionId: string): void;
-  setScreenshotProvider(provider: ScreenshotProvider | null): void;
+  setDesktopCaptureProvider(provider: DesktopCaptureProvider | null): void;
   close(): Promise<void>;
 }
 
@@ -62,9 +64,8 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
   const bus = new EventBus();
   const output = new OutputStore();
   const changes = new ChangeJournal();
-  const nativeInput = createNativeInput();
 
-  let screenshotProvider: ScreenshotProvider | null = options.screenshotProvider ?? platformScreenshotProvider();
+  let desktopCapture: DesktopCaptureProvider | null = options.desktopCaptureProvider ?? platformDesktopCaptureProvider();
 
   const sessions = new SessionRegistry(
     settings,
@@ -83,7 +84,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     SERVER_VERSION,
   );
 
-  const runControl = new RunControl(sessions, nativeInput);
+  const runControl = new RunControl(sessions);
 
   const dispatcher = new Dispatcher({
     sessions,
@@ -92,8 +93,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     output,
     changes,
     runControl,
-    nativeInput,
-    getScreenshotProvider: () => screenshotProvider,
+    getDesktopCaptureProvider: () => desktopCapture,
   });
 
   sessions.start();
@@ -152,8 +152,8 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
       // deleted ones went with the connection.
       if (changes.dropSession(sessionId)) bus.emit({ type: "changes.dropped", session: sessionId });
     },
-    setScreenshotProvider: (provider) => {
-      screenshotProvider = provider ?? platformScreenshotProvider();
+    setDesktopCaptureProvider: (provider) => {
+      desktopCapture = provider ?? platformDesktopCaptureProvider();
     },
     close: async () => {
       sessions.stop();
@@ -166,4 +166,4 @@ export { SettingsStore } from "./config/settings.js";
 export { readClientAuth } from "./core/auth.js";
 export { MCP_TOOLS } from "./mcp/tools.js";
 export { createMcpServer } from "./mcp/server.js";
-export type { ScreenshotProvider, ScreenshotRequest } from "./native/screenshot.js";
+export type { DesktopCaptureProvider, DesktopCaptureRequest } from "./native/screenshot.js";

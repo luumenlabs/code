@@ -80,7 +80,7 @@ export function CommandPalette({
         icon: SquareTerminal,
         group: "Actions",
         disabled: !place,
-        run: close(() => void harness.run("view.screenshot", { source: "studio" })),
+        run: close(() => void harness.run("view.screenshot", {})),
       },
       {
         id: "clear-output",

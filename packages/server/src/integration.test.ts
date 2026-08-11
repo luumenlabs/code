@@ -46,7 +46,20 @@ class FakePlugin {
     "input.virtual",
     "playtest.run",
     "playtest.play",
+    "playtest.multiplayer",
+    "view.screenshot",
   ];
+
+  /**
+   * Overrides the realm this peer reports.
+   *
+   * Studio runs the plugin separately in each DataModel a playtest creates, so
+   * a real session has an edit peer and a running one at the same time. Tests
+   * that care which peer a command reached need to build that shape.
+   */
+  realmOverride: "edit" | "server" | "client" | null = null;
+  /** False stands in for a minimized Studio window, which drops input. */
+  rendering = true;
 
   constructor(
     private readonly port: number,
@@ -133,10 +146,27 @@ class FakePlugin {
       running: this.running,
       edit: !this.running,
       mode: this.running ? "play" : null,
-      realm: this.running ? "client" : "edit",
+      realm: this.realmOverride ?? (this.running ? "client" : "edit"),
       epoch: this.running ? 1 : 0,
       ready: this.running,
+      playerCount: this.running ? 1 : 0,
+      multiplayer: false,
+      rendering: this.rendering,
     };
+  }
+
+  /** Pushes the current run state up without waiting for the parked poll. */
+  async pushState(): Promise<void> {
+    await this.post("/studio/sync", {
+      sessionId: this.sessionId,
+      endpointId: this.endpointId,
+      token: this.token,
+      wait: false,
+      results: [],
+      events: [],
+      run: this.runState(),
+      capabilities: this.capabilities,
+    });
   }
 
   /** Runs the poll loop until stop() is called. */
@@ -786,6 +816,292 @@ describe("change journal", () => {
 
     const listed = (await server.execute("changes.list", { chat: "thread-failed" })) as any;
     expect(listed.records).toHaveLength(0);
+  });
+});
+
+/**
+ * Playtesting is driven entirely by StudioTestService, and the peer a request
+ * reaches is part of the operation rather than a preference: only the edit peer
+ * can start a session and only a running peer can end one. Nothing in this path
+ * may touch the desktop.
+ */
+describe("playtest", () => {
+  it("starts a playtest through the edit peer and waits for it to come up", async () => {
+    plugin = await connectPlugin();
+
+    let startedWith: unknown = null;
+    plugin.on("run.start", (params) => {
+      startedWith = params;
+      // The real plugin returns before the transition lands: ExecutePlayModeAsync
+      // does not come back until the playtest is over.
+      setTimeout(() => {
+        plugin.running = true;
+        void plugin.pushState();
+      }, 30);
+      return plugin.runState();
+    });
+    plugin.start();
+
+    const state = (await server.execute("run.start", { mode: "play", timeoutMs: 3000 })) as any;
+
+    expect(startedWith).toMatchObject({ mode: "play" });
+    expect(state.running).toBe(true);
+    expect(state.ready).toBe(true);
+
+    plugin.running = false;
+    await plugin.pushState();
+  });
+
+  it("sends the stop to the running peer, not the one that started it", async () => {
+    const edit = await connectPlugin();
+    edit.on("run.stop", () => {
+      throw new Error("stop reached the edit peer, which has no session to end");
+    });
+    edit.start();
+
+    // A second connection on the same window, the way Studio's playtest
+    // DataModel appears: same install and window id, a realm of its own.
+    const play = new FakePlugin(server.port, (edit as any).installId, (edit as any).windowId, 123);
+    play.running = true;
+    play.realmOverride = "client";
+
+    const hello = await play.hello(edit.token);
+    expect(hello.body.status).toBe("connected");
+    play.sessionId = hello.body.sessionId;
+    play.token = hello.body.token;
+    play.endpointId = hello.body.endpointId;
+
+    let stopped = false;
+    play.on("run.stop", () => {
+      stopped = true;
+      play.running = false;
+      return play.runState();
+    });
+    play.start();
+
+    await server.execute("run.stop", { timeoutMs: 3000 });
+
+    expect(stopped).toBe(true);
+    play.stop();
+  });
+
+  /**
+   * The old path swallowed this. A refusal from Studio meant "fall back to
+   * pressing the shortcut through the operating system", so a genuine problem
+   * became a keystroke into whatever had focus and the agent was told the stop
+   * had worked.
+   */
+  it("surfaces a refusal from Studio instead of working around it", async () => {
+    plugin = await connectPlugin();
+    plugin.running = true;
+    plugin.start();
+    await plugin.pushState();
+
+    plugin.on("run.stop", () => {
+      throw new Error("EndTest was refused");
+    });
+
+    await expect(server.execute("run.stop", { timeoutMs: 1500 })).rejects.toMatchObject({ code: "INTERNAL" });
+
+    plugin.running = false;
+  });
+
+  it("refuses to start a playtest while one is already running", async () => {
+    plugin = await connectPlugin();
+    plugin.running = true;
+    plugin.start();
+    await plugin.pushState();
+
+    await expect(server.execute("run.start", { mode: "play" })).rejects.toMatchObject({
+      code: "PLAYTEST_ALREADY_RUNNING",
+    });
+
+    plugin.running = false;
+  });
+});
+
+describe("realm-targeted exec", () => {
+  it("runs the code in the realm the caller named", async () => {
+    const edit = await connectPlugin();
+    edit.on("runtime.exec", () => ({ value: { $t: "String", v: "edit" }, output: [], realm: "edit", elapsedMs: 1 }));
+    edit.start();
+
+    const play = new FakePlugin(server.port, (edit as any).installId, (edit as any).windowId, 123);
+    play.running = true;
+    play.realmOverride = "server";
+
+    const hello = await play.hello(edit.token);
+    play.sessionId = hello.body.sessionId;
+    play.token = hello.body.token;
+    play.endpointId = hello.body.endpointId;
+    play.on("runtime.exec", () => ({ value: { $t: "String", v: "server" }, output: [], realm: "server", elapsedMs: 1 }));
+    play.start();
+
+    const onServer = (await server.execute("runtime.exec", { source: "return 1", realm: "server" })) as any;
+    expect(onServer.realm).toBe("server");
+
+    const onEdit = (await server.execute("runtime.exec", { source: "return 1", realm: "edit" })) as any;
+    expect(onEdit.realm).toBe("edit");
+
+    play.stop();
+  });
+
+  it("reports a realm that is not connected rather than answering from another", async () => {
+    plugin = await connectPlugin();
+    plugin.on("runtime.exec", () => ({ value: null, output: [], realm: "edit", elapsedMs: 1 }));
+    plugin.start();
+
+    await expect(server.execute("runtime.exec", { source: "return 1", realm: "client" })).rejects.toMatchObject({
+      code: "RUNTIME_CONTEXT_UNAVAILABLE",
+    });
+  });
+});
+
+describe("batched edits", () => {
+  it("validates every step before any of them runs", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.batch", () => {
+      throw new Error("an invalid batch should never reach Studio");
+    });
+    plugin.start();
+
+    await expect(
+      server.execute("dm.batch", {
+        operations: [
+          { op: "dm.create", params: { className: "Part", parent: "game.Workspace" } },
+          { op: "dm.rename", params: { target: "game.Workspace.Part" } },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+  });
+
+  it("refuses an operation that has no business in a batch", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    await expect(
+      server.execute("dm.batch", { operations: [{ op: "run.start", params: { mode: "play" } }] }),
+    ).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+  });
+
+  /**
+   * The step that did land is a real edit, and the operation it belongs to
+   * fails. Both have to be true at once: the agent must not read a half-applied
+   * batch as a success, and the user must still be able to see and undo the half
+   * that happened.
+   */
+  it("fails the operation when a step failed, but still journals what landed", async () => {
+    plugin = await connectPlugin();
+    plugin.on("dm.batch", () => ({
+      instances: [],
+      undoLabel: "Apply 2 edit(s)",
+      steps: [
+        { index: 0, op: "dm.rename", status: "ok", instances: [], error: null },
+        {
+          index: 1,
+          op: "dm.rename",
+          status: "failed",
+          instances: [],
+          error: { code: "TARGET_NOT_FOUND", message: "game.Workspace.Missing does not exist" },
+        },
+      ],
+      applied: 1,
+      failed: 1,
+      skipped: 0,
+      changes: [
+        {
+          kind: "rename",
+          target: { handle: "@b1", path: "game.Workspace.Renamed", name: "Renamed", className: "Part", childCount: 0 },
+          parentPath: "game.Workspace",
+          summary: "Renamed Part to Renamed",
+          revertable: true,
+        },
+      ],
+    }));
+    plugin.start();
+
+    await expect(
+      server.execute(
+        "dm.batch",
+        {
+          operations: [
+            { op: "dm.rename", params: { target: "game.Workspace.Part", name: "Renamed" } },
+            { op: "dm.rename", params: { target: "game.Workspace.Missing", name: "Gone" } },
+          ],
+        },
+        { chat: "batch-thread" },
+      ),
+    ).rejects.toMatchObject({ code: "TARGET_NOT_FOUND", details: { applied: 1 } });
+
+    const journal = (await server.execute("changes.list", { chat: "batch-thread" })) as any;
+    expect(journal.records).toHaveLength(1);
+    expect(journal.records[0].summary).toBe("Renamed Part to Renamed");
+  });
+});
+
+describe("script search", () => {
+  it("passes the search to Studio and summarises what came back", async () => {
+    plugin = await connectPlugin();
+    plugin.on("script.grep", (params) => ({
+      files: [
+        {
+          instance: { handle: "@s1", path: "game.ServerScriptService.Shop", name: "Shop", className: "Script", childCount: 0 },
+          matches: [{ line: 12, column: 5, text: `  ${params.pattern}:FireServer()`, before: [], after: [] }],
+          matchCount: 1,
+        },
+      ],
+      matchCount: 1,
+      scriptsSearched: 40,
+      unreadable: 0,
+      truncated: false,
+    }));
+    plugin.start();
+
+    const result = (await server.execute("script.grep", { pattern: "BuyItem" })) as any;
+
+    expect(result.matchCount).toBe(1);
+    expect(result.files[0].matches[0].line).toBe(12);
+  });
+});
+
+describe("viewport capture", () => {
+  it("encodes the pixels Studio read back as a PNG", async () => {
+    plugin = await connectPlugin();
+
+    // Two pixels of solid red, which is the smallest thing that exercises the
+    // stride and the row filter without asserting on compressed bytes.
+    const rgba = Buffer.from([255, 0, 0, 255, 255, 0, 0, 255]);
+    plugin.on("view.screenshot", () => ({
+      pixels: rgba.toString("base64"),
+      width: 2,
+      height: 1,
+      realm: "edit",
+    }));
+    plugin.start();
+
+    const shot = (await server.execute("view.screenshot", {})) as any;
+
+    expect(shot.source).toBe("viewport");
+    expect(shot.realm).toBe("edit");
+    expect(shot.mimeType).toBe("image/png");
+    expect(shot.width).toBe(2);
+    expect(Buffer.from(shot.data, "base64").subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  });
+
+  it("will not capture a viewport from a window that is not drawing", async () => {
+    plugin = await connectPlugin();
+    plugin.rendering = false;
+    plugin.on("view.screenshot", () => {
+      throw new Error("capture was attempted against a window with no frames");
+    });
+    plugin.start();
+    await plugin.pushState();
+
+    await expect(server.execute("view.screenshot", {})).rejects.toMatchObject({ code: "SCREENSHOT_FAILED" });
+
+    plugin.rendering = true;
   });
 });
 
