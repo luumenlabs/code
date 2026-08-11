@@ -92,6 +92,18 @@ export interface Harness {
    * be the wrong answer to "why does my Baseplate look like that".
    */
   changes: ChangeRecord[];
+  /**
+   * What this conversation changed, as stored with its transcript.
+   *
+   * Kept apart from `changes` rather than merged into it, because the two
+   * answer different questions. `changes` is the live journal of the Studio
+   * window the chat is working in — every chat's edits, revertable, and gone
+   * the moment that window is. This is the chat's own history, read back from
+   * disk, and it survives closing the app, opening another place, and Studio
+   * being shut down. A record in both is the same record; a record only here
+   * can be read but not put back.
+   */
+  history: ChangeRecord[];
   /** Change ids currently being put back, so their rows can say so. */
   reverting: string[];
   /**
@@ -133,6 +145,7 @@ export function useHarness(): Harness {
   const [versions, setVersions] = useState<VersionStatus | null>(null);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({});
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
+  const [history, setHistory] = useState<ChangeRecord[]>([]);
   const [reverting, setReverting] = useState<string[]>([]);
 
   // Transcript entries name the conversation they belong to, and several may be
@@ -147,6 +160,7 @@ export function useHarness(): Harness {
     setThreads(next.threads);
     setActiveThreadId(next.thread?.id ?? null);
     setTimeline(next.thread?.items ?? []);
+    setHistory(next.thread?.changes ?? []);
     setAgentStates(next.agentStates);
     setSelection(next.modelSelection);
     setSettings(next.settings);
@@ -181,13 +195,31 @@ export function useHarness(): Harness {
     }
   }, []);
 
-  /** Insert or replace by id, keeping the list in the order things happened. */
+  /**
+   * Insert or replace by id, keeping the list in the order things happened.
+   *
+   * Applied to the stored copy as well as the live one. The main process is
+   * already writing the same records to the thread file, and re-reading that
+   * file to learn what we were just handed would be a round trip to disk for
+   * something already in the message.
+   */
   const mergeChanges = useCallback((incoming: ChangeRecord[]) => {
-    setChanges((current) => {
-      const byId = new Map(current.map((record) => [record.id, record]));
-      for (const record of incoming) byId.set(record.id, record);
-      return [...byId.values()].sort((left, right) => left.at - right.at);
-    });
+    const merge =
+      (records: ChangeRecord[]) =>
+      (current: ChangeRecord[]): ChangeRecord[] => {
+        const byId = new Map(current.map((record) => [record.id, record]));
+        for (const record of records) byId.set(record.id, record);
+        return [...byId.values()].sort((left, right) => left.at - right.at);
+      };
+
+    setChanges(merge(incoming));
+
+    // Only this chat's own, because the journal covers every conversation in
+    // the window and the transcript on screen is one of them. A record with no
+    // chat came from an external MCP client; the main process files those
+    // against whichever conversation is open, and so does this.
+    const mine = incoming.filter((record) => record.chat === null || record.chat === openThreadId.current);
+    if (mine.length > 0) setHistory(merge(mine));
   }, []);
 
   const applyModel = useCallback((selection: ModelSelection) => {
@@ -374,6 +406,7 @@ export function useHarness(): Harness {
     setActiveThreadId(null);
     // A draft has no stored transcript to replay, and the model carries over.
     setTimeline([]);
+    setHistory([]);
     await window.luuCode.newThread();
   }, []);
 
@@ -387,6 +420,7 @@ export function useHarness(): Harness {
       if (!thread) return;
 
       setTimeline(thread.items);
+      setHistory(thread.changes ?? []);
       setActiveThreadId(thread.id);
       setSelection(thread.modelSelection);
       await refresh();
@@ -411,6 +445,7 @@ export function useHarness(): Harness {
       setThreads(index);
       if (activeThreadId === id) {
         setTimeline([]);
+        setHistory([]);
         setActiveThreadId(index.activeThreadId);
       }
       await refresh();
@@ -445,6 +480,7 @@ export function useHarness(): Harness {
     agentStates,
     runBusy,
     changes,
+    history,
     reverting,
     revert,
     pendingPairing,

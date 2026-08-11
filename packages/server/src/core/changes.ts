@@ -7,11 +7,19 @@
  * so the app can show the user what an agent changed and offer to put any of it
  * back.
  *
- * Held in memory, deliberately. A record is only meaningful next to the live
- * DataModel it describes: the handles resolve there, the copy of a deleted
- * subtree is held by that plugin, and the conflict check compares against that
- * place as it is now. Writing the list to disk would produce a panel full of
- * buttons that cannot work, which is worse than an empty one that says why.
+ * Held in memory, deliberately. A *revertable* record is only meaningful next
+ * to the live DataModel it describes: the handles resolve there, the copy of a
+ * deleted subtree is held by that plugin, and the conflict check compares
+ * against that place as it is now. Persisting this list would produce a panel
+ * full of buttons that cannot work, which is worse than an empty one that says
+ * why.
+ *
+ * The diff is not the same thing, and it does outlive the window. The app keeps
+ * its own copy against the conversation that asked for it — see
+ * `Thread.changes` in `packages/app/src/shared/threads.ts` — so a transcript
+ * read back tomorrow still shows what was done, with no Revert on it. Both
+ * halves are needed: this one to put something back, that one to read it. Do
+ * not resolve the apparent duplication by moving either into the other.
  *
  * The records never reach the agent. The dispatcher takes them out of the result
  * on the way past — see `takeChanges`.

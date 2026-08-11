@@ -6,6 +6,7 @@
  * away the work, and each thread remembers the coding agent's own session id so
  * a reopened conversation can genuinely be resumed rather than faked.
  */
+import type { ChangeRecord } from "@luumen/code-protocol";
 import type { AgentId, TranscriptEntry } from "./agent.js";
 
 /**
@@ -83,6 +84,24 @@ export interface Thread extends ThreadSummary {
   /** Model and options this conversation is using. */
   modelSelection: import("./models.js").ModelSelection | null;
   items: TranscriptEntry[];
+  /**
+   * What this conversation changed, kept for reading rather than for reverting.
+   *
+   * The server's journal is in memory and per Studio window, because that is
+   * what a revert needs: the handles resolve in that DataModel, the copy of a
+   * deleted subtree is held by that plugin, and the conflict check compares
+   * against that place as it is now. Close the app or open another place and
+   * all of that is gone — correctly.
+   *
+   * The diff is not like that. "What did the agent do to my game an hour ago"
+   * is a question about the transcript, and a transcript that keeps the
+   * sentence but throws away the diff has kept the least useful half. So the
+   * records are copied here as they happen and read back with the conversation.
+   * A record that is no longer in the live journal renders exactly the same and
+   * offers no Revert, which is the honest state rather than a button that
+   * would fail.
+   */
+  changes?: ChangeRecord[];
 }
 
 export interface ThreadIndex {

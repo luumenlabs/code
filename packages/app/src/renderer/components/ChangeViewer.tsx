@@ -15,7 +15,7 @@
  * dock keep the unified view, which is the one that survives a narrow column.
  */
 import * as React from "react";
-import { ArrowLeft, Columns2, Loader2, Rows2, Undo2 } from "lucide-react";
+import { ArrowLeft, Columns2, History, Loader2, Rows2, Undo2 } from "lucide-react";
 import type { ChangeRecord } from "@luumen/code-protocol";
 import { isPending } from "@luumen/code-protocol";
 import { ChangeDiff } from "@/components/ChangeDiff";
@@ -28,10 +28,19 @@ import type { Harness } from "@/state";
 export function ChangeViewer({
   record,
   harness,
+  live,
   onClose,
 }: {
   record: ChangeRecord;
   harness: Harness;
+  /**
+   * Whether the Studio window that made this is still connected.
+   *
+   * False for a change read back from the thread file. The diff is the same
+   * document either way — reverting is the part that needs a live DataModel to
+   * write back into and a copy of the subtree to write.
+   */
+  live: boolean;
   onClose: () => void;
 }): React.JSX.Element {
   const [split, setSplit] = React.useState(true);
@@ -99,6 +108,13 @@ export function ChangeViewer({
 
         {reverted ? (
           <span className="shrink-0 text-[11.5px] text-muted-foreground/70">Reverted</span>
+        ) : !live ? (
+          <Hint label="Putting a change back needs the Studio window it was made in. That session has ended, so this is here to read.">
+            <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground/70">
+              <History className="size-3.5" />
+              Earlier session
+            </span>
+          </Hint>
         ) : record.revertable ? (
           <Button
             variant="outline"

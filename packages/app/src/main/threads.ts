@@ -12,6 +12,7 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import type { ChangeRecord, InstanceSnapshot } from "@luumen/code-protocol";
 import type { AgentId, TranscriptEntry } from "../shared/agent.js";
 import type { PlaceRef, Project, Thread, ThreadIndex, ThreadSummary } from "../shared/threads.js";
 import { UNKNOWN_PROJECT_NAME, projectIdentity, titleFrom } from "../shared/threads.js";
@@ -19,6 +20,20 @@ import { UNKNOWN_PROJECT_NAME, projectIdentity, titleFrom } from "../shared/thre
 const FLUSH_DELAY_MS = 400;
 /** Guards against a runaway agent writing an unbounded transcript. */
 const MAX_ITEMS = 4_000;
+
+/**
+ * How much of a conversation's diff history is kept, and why there are two
+ * numbers rather than one.
+ *
+ * Records are wildly uneven. A property write is a few hundred bytes; a script
+ * rewrite carries both versions of the file, and the plugin lets that reach
+ * half a megabyte on each side. A count alone would let twenty script edits
+ * put ten megabytes in one thread file, and a byte budget alone would let a
+ * thousand tiny records pile up unnoticed. Whichever is hit first evicts from
+ * the front, so what survives is always the most recent work.
+ */
+const MAX_CHANGES = 500;
+const MAX_CHANGE_BYTES = 6 * 1024 * 1024;
 
 export class ThreadStore {
   private readonly root: string;
@@ -278,6 +293,42 @@ export class ThreadStore {
     this.touch(id);
   }
 
+  /**
+   * Keeps a copy of what the agent changed, alongside the transcript that
+   * asked for it.
+   *
+   * Upserted by id rather than appended, because the same record comes back
+   * once it has been reverted — and a stored copy still claiming to be pending
+   * would put a Revert button on something already put back. Order is by when
+   * the change happened, not by when it arrived: a revert notification is not
+   * a reason for a record to jump to the end of the list.
+   *
+   * A batch that says nothing new schedules no write. The journal resends
+   * records the app already holds — on a reconnect, and on every revert — and
+   * rewriting a thread file to store bytes identical to the ones in it is the
+   * kind of work that turns a busy agent into disk churn.
+   */
+  recordChanges(id: string, records: ChangeRecord[]): boolean {
+    const thread = this.threads.get(id);
+    if (!thread || records.length === 0) return false;
+
+    const byId = new Map((thread.changes ?? []).map((record) => [record.id, record]));
+    let moved = false;
+
+    for (const record of records) {
+      const existing = byId.get(record.id);
+      if (existing && existing.revertedAt === record.revertedAt) continue;
+      byId.set(record.id, record);
+      moved = true;
+    }
+
+    if (!moved) return false;
+
+    thread.changes = trimChanges([...byId.values()].sort((left, right) => left.at - right.at));
+    this.touch(id);
+    return true;
+  }
+
   setMeta(
     id: string,
     patch: Partial<Pick<Thread, "agent" | "agentSessionId" | "placeName" | "title" | "modelSelection">>,
@@ -395,4 +446,53 @@ export class ThreadStore {
       }
     }
   }
+}
+
+/**
+ * Drops the oldest records until the archive is within both budgets.
+ *
+ * Weighed rather than serialised. `JSON.stringify` on the whole archive runs on
+ * every mutating operation the agent performs, and the answer is dominated by
+ * the two or three text fields a record can carry anyway — script source and a
+ * deleted subtree's snapshot. An estimate that is cheap and slightly generous
+ * is the right shape of wrong for a budget whose only job is to stop a thread
+ * file growing without bound.
+ */
+function trimChanges(records: ChangeRecord[]): ChangeRecord[] {
+  let kept = records.length > MAX_CHANGES ? records.slice(records.length - MAX_CHANGES) : records;
+
+  let total = 0;
+  for (const record of kept) total += weigh(record);
+  if (total <= MAX_CHANGE_BYTES) return kept;
+
+  // Oldest first: the newest change is the one the user is looking at.
+  let from = 0;
+  while (from < kept.length - 1 && total > MAX_CHANGE_BYTES) {
+    total -= weigh(kept[from]!);
+    from += 1;
+  }
+
+  kept = kept.slice(from);
+  return kept;
+}
+
+/** Roughly what a record costs on disk. The text is all that really counts. */
+function weigh(record: ChangeRecord): number {
+  // Everything a record carries that is not text: paths, names, values, ids.
+  let bytes = 512;
+
+  if (record.source) {
+    bytes += (record.source.before?.length ?? 0) + record.source.after.length;
+  }
+
+  if (record.snapshot) bytes += weighSnapshot(record.snapshot);
+
+  return bytes;
+}
+
+function weighSnapshot(node: InstanceSnapshot): number {
+  // Bounded by the plugin at 120 nodes, so this cannot run away.
+  let bytes = 256 + (node.source?.length ?? 0);
+  for (const child of node.children) bytes += weighSnapshot(child);
+  return bytes;
 }

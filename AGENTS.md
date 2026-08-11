@@ -146,6 +146,13 @@ Four things about it are load-bearing:
   live DataModel they describe. Disconnecting a window drops its history, and an
   edit/run transition releases the held copies, because an edit-time instance
   must not be restored into a running world.
+- **The diff outlives the journal, in a second copy.** Reverting needs a live
+  place; reading does not, and a transcript that keeps "Changed the source of
+  Shop" and throws away the diff has kept the wrong half. So the app archives
+  records against the conversation that asked for them — `Thread.changes`,
+  written by `ThreadStore.recordChanges`, bounded by count and by bytes. A
+  record the live journal no longer holds renders identically and offers no
+  Revert. The duplication is the design; do not collapse it.
 
 Reverting is not `Ctrl+Z`. Studio's undo stack is linear and shared with the
 user's own edits; "take back that one thing the agent did an hour ago" is not a

@@ -97,7 +97,15 @@ export function App(): React.JSX.Element {
   const showDock = dockOpen && !settingsOpen;
   const fitted = fitPanels({ available, sidebar: sidebarWidth, dock: showDock ? dockWidth : 0 });
 
-  const viewed = viewing ? (harness.changes.find((record) => record.id === viewing) ?? null) : null;
+  // The live journal first, because it is the copy that knows whether the
+  // change has since been put back; the thread's own history behind it, so a
+  // diff stays readable after the Studio window that made it has gone.
+  const viewed = viewing
+    ? (harness.changes.find((record) => record.id === viewing) ??
+      harness.history.find((record) => record.id === viewing) ??
+      null)
+    : null;
+  const viewedIsLive = viewed !== null && harness.changes.some((record) => record.id === viewed.id);
 
   const sessions = harness.snapshot?.status.sessions ?? [];
   const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
@@ -169,7 +177,12 @@ export function App(): React.JSX.Element {
             ) : (
               <>
                 {viewed ? (
-                  <ChangeViewer record={viewed} harness={harness} onClose={() => setViewing(null)} />
+                  <ChangeViewer
+                    record={viewed}
+                    harness={harness}
+                    live={viewedIsLive}
+                    onClose={() => setViewing(null)}
+                  />
                 ) : (
                   <main className="flex min-h-0 min-w-0 flex-1 flex-col">
                     <Transcript

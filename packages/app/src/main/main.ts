@@ -12,7 +12,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createLuuCodeServer } from "@luumen/code-server";
 import type { LuuCodeServer } from "@luumen/code-server";
-import type { PermissionGroup, ServerEvent } from "@luumen/code-protocol";
+import type { ChangeRecord, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
 import { PluginInstaller } from "./plugin.js";
@@ -458,6 +458,34 @@ async function bootstrap(): Promise<void> {
       if (active && !active.placeName) {
         requireThreads().setMeta(active.id, { placeName: event.session.place.name });
       }
+    }
+
+    /**
+     * The diff outlives the journal that produced it.
+     *
+     * The server's copy is in memory and per Studio window, because that is
+     * what reverting needs. Reading is a different question: "what did the
+     * agent do to my game" belongs to the transcript, and a transcript that
+     * keeps the sentence and loses the diff has kept the wrong half. So a copy
+     * goes to the conversation that asked for it — filed the same way the
+     * activity row above it is, since a change made by an external MCP client
+     * carries no chat and belongs in front of whoever is looking.
+     */
+    if (event.type === "changes") {
+      const store = requireThreads();
+      const active = store.active()?.id ?? null;
+      const byThread = new Map<string, ChangeRecord[]>();
+
+      for (const record of event.records) {
+        const owner = record.chat ?? active;
+        if (!owner) continue;
+
+        const bucket = byThread.get(owner);
+        if (bucket) bucket.push(record);
+        else byThread.set(owner, [record]);
+      }
+
+      for (const [threadId, records] of byThread) store.recordChanges(threadId, records);
     }
 
     /**

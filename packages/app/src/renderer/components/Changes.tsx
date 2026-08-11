@@ -22,6 +22,7 @@ import {
   CircleAlert,
   FileCode2,
   FilePlus2,
+  History,
   Loader2,
   Maximize2,
   Move,
@@ -267,12 +268,15 @@ function ChangeList({
   harness,
   outcomes,
   onRevert,
+  live,
   defaultOpen,
 }: {
   records: ChangeRecord[];
   harness: Harness;
   outcomes: Outcomes;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
+  /** Ids still in the live journal. Absent means every record is live. */
+  live?: ReadonlySet<string>;
   /** Whether the diffs start open. See `TurnChanges`. */
   defaultOpen?: boolean;
 }): React.JSX.Element {
@@ -285,6 +289,7 @@ function ChangeList({
           harness={harness}
           outcome={outcomes[record.id]}
           onRevert={onRevert}
+          stale={live !== undefined && !live.has(record.id)}
           showPath={records.length > 1}
           defaultOpen={defaultOpen}
         />
@@ -298,6 +303,7 @@ function ChangeRow({
   harness,
   outcome,
   onRevert,
+  stale,
   showPath,
   defaultOpen,
 }: {
@@ -305,6 +311,8 @@ function ChangeRow({
   harness: Harness;
   outcome: RevertOutcome | undefined;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
+  /** Read back from the thread file: the diff is real, the revert is gone. */
+  stale?: boolean;
   showPath?: boolean;
   defaultOpen?: boolean;
 }): React.JSX.Element {
@@ -369,6 +377,11 @@ function ChangeRow({
         <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : reverted ? (
         <span className="shrink-0 pr-1 text-[11px] text-muted-foreground/70">Reverted</span>
+      ) : stale ? (
+        // No button and no explanation on the row: the section above says why
+        // once, which is the right number of times for something that is true
+        // of everything under it.
+        <History className="mr-1 size-3.5 shrink-0 text-muted-foreground/40" />
       ) : record.revertable ? (
         <Hint label="Revert">
           <button
@@ -406,7 +419,7 @@ function ChangeRow({
         row
       )}
 
-      <RowNote record={record} outcome={outcome} busy={busy} onRevert={onRevert} />
+      {!stale && <RowNote record={record} outcome={outcome} busy={busy} onRevert={onRevert} />}
     </div>
   );
 }
@@ -541,21 +554,45 @@ function TurnChangeList({
 }): React.JSX.Element | null {
   const { outcomes, run } = useRevert(harness);
 
+  /**
+   * The turn's changes, live where they still are and stored where they are not.
+   *
+   * The live journal wins on a record they both hold: it is the one that knows
+   * whether the change has since been put back. Everything else is read back
+   * from the thread file — the same diff, minus the ability to revert it.
+   */
   const records = React.useMemo(() => {
     const wanted = new Set(activityIds);
-    return harness.changes.filter((record) => wanted.has(record.activityId));
-  }, [harness.changes, activityIds]);
+    const live = new Set(harness.changes.map((record) => record.id));
+
+    return [
+      ...harness.changes.filter((record) => wanted.has(record.activityId)),
+      ...harness.history.filter((record) => wanted.has(record.activityId) && !live.has(record.id)),
+    ].sort((left, right) => left.at - right.at);
+  }, [harness.changes, harness.history, activityIds]);
+
+  const live = React.useMemo(() => new Set(harness.changes.map((record) => record.id)), [harness.changes]);
 
   if (records.length === 0) return null;
 
-  const pending = records.filter(isPending);
+  const pending = records.filter((record) => isPending(record) && live.has(record.id));
+  const allReverted = records.every((record) => !isPending(record));
+  // Nothing here can be put back, and not because it already has been.
+  const stale = !allReverted && records.every((record) => !live.has(record.id));
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
         <span>{records.length === 1 ? "1 change" : `${records.length} changes`}</span>
         <Stats stats={sum(records)} />
-        {pending.length === 0 && <span className="text-muted-foreground/70">· reverted</span>}
+        {allReverted && <span className="text-muted-foreground/70">· reverted</span>}
+        {stale && (
+          <Hint label="Putting a change back needs the Studio window it was made in. That session has ended, so this is here to read.">
+            <span className="text-muted-foreground/70 underline decoration-dotted underline-offset-2">
+              · from an earlier session
+            </span>
+          </Hint>
+        )}
 
         <span className="flex-1" />
 
@@ -580,6 +617,7 @@ function TurnChangeList({
         harness={harness}
         outcomes={outcomes}
         onRevert={run}
+        live={live}
         defaultOpen={records.length <= 2}
       />
     </div>
