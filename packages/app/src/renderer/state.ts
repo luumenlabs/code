@@ -222,12 +222,23 @@ export function useHarness(): Harness {
     if (mine.length > 0) setHistory(merge(mine));
   }, []);
 
-  const applyModel = useCallback((selection: ModelSelection) => {
-    // Optimistic: the picker should settle on the value the user just clicked,
-    // not a round trip later. The main process writes the same value.
-    setSelection(selection);
-    void window.luuCode.applyModel(selection).then(setSelection).catch(() => undefined);
-  }, []);
+  const applyModel = useCallback(
+    (selection: ModelSelection) => {
+      // Optimistic: the picker should settle on the value the user just
+      // clicked, not a round trip later. The main process writes the same
+      // value — and when it refuses, because a chat is fixed to the provider
+      // it started with, the chip goes back to what is actually running rather
+      // than showing a model this conversation will never use.
+      const previous = modelSelection;
+
+      setSelection(selection);
+      void window.luuCode
+        .applyModel(selection)
+        .then(setSelection)
+        .catch(() => setSelection(previous));
+    },
+    [modelSelection],
+  );
 
   /**
    * Insert or replace by id, so an updated activity replaces its own row.

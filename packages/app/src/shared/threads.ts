@@ -146,6 +146,27 @@ export function archivedThreads(index: ThreadIndex): ThreadSummary[] {
   return index.threads.filter((thread) => thread.archived).sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
+/**
+ * The provider a conversation is fixed to, or null while it is still a draft.
+ *
+ * A chat belongs to the provider that started it, for the whole of its life. No
+ * agent can pick up a session another one created — the id is theirs, the
+ * context is in their process — so switching mid-chat could only ever mean
+ * silently throwing away everything the agent knows about the place and
+ * starting again under the same transcript. That used to be allowed with a
+ * notice explaining the loss, which is not a trade anyone would take knowingly.
+ * It is refused instead, and the picker greys the rest out rather than letting
+ * the click happen and then apologising for it.
+ *
+ * A thread only exists once its first message has been sent, so a draft is
+ * unlocked and the choice stays free right up until the conversation is real.
+ * Starting another chat is one click and costs this one nothing.
+ */
+export function lockedProvider(index: ThreadIndex | null, threadId: string | null): AgentId | null {
+  if (!threadId) return null;
+  return index?.threads.find((thread) => thread.id === threadId)?.agent ?? null;
+}
+
 export function relativeTime(timestamp: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
 

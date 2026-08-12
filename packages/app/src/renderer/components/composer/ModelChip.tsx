@@ -35,6 +35,7 @@ import {
   withOption,
 } from "../../../shared/models.js";
 import type { ModelInfo, ModelSelection, OptionDescriptor } from "../../../shared/models.js";
+import { lockedProvider } from "../../../shared/threads.js";
 import type { FavouriteSelection } from "../../../shared/settings.js";
 import type { AgentId, AgentInfo } from "../../../shared/agent.js";
 import type { Harness } from "@/state";
@@ -54,6 +55,20 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   // Stars live in settings, so they survive a restart like any other preference.
   const favourites = harness.settings.favourites;
+
+  /**
+   * The provider this conversation started on, once it has started.
+   *
+   * Everything belonging to another one is shown and disabled rather than
+   * hidden: which models exist does not change because of which chat is open,
+   * and a list that quietly loses two thirds of itself reads as a bug. Greyed
+   * out with a reason reads as a rule.
+   */
+  const locked = lockedProvider(harness.threads, harness.activeThreadId);
+  const blocked = React.useCallback(
+    (provider: AgentId): boolean => locked !== null && locked !== provider,
+    [locked],
+  );
 
   // The star is filled only when the current model *and* its current settings
   // are the ones that were saved.
@@ -98,6 +113,20 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   const showingFavourites = rail === "favorites" && !searching;
 
+  /**
+   * Favourites this chat can actually use.
+   *
+   * Favourites stay reachable while a chat is locked — a star is often the
+   * fastest way to change reasoning level on the model you are already on —
+   * but the other providers' stars are left out rather than listed and
+   * refused. A star whose model is no longer in the catalogue has no provider
+   * to check, so it goes with them.
+   */
+  const visibleFavourites = React.useMemo(() => {
+    if (!locked) return favourites;
+    return favourites.filter((favourite) => models.find((model) => model.slug === favourite.model)?.provider === locked);
+  }, [favourites, locked, models]);
+
   const visible = React.useMemo(() => {
     // Searching spans every provider: the rail is a filter, not a scope.
     if (searching) return models.filter(matches);
@@ -117,11 +146,13 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   const choose = React.useCallback(
     (model: ModelInfo) => {
+      if (blocked(model.provider)) return;
+
       // Selecting the model selects the CLI behind it, on that model's
       // defaults. The picker stays open: its settings are right there.
       apply(createSelection(model.provider, model.slug));
     },
-    [apply],
+    [apply, blocked],
   );
 
   React.useEffect(() => {
@@ -130,7 +161,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
       const index = Number.parseInt(event.key, 10) - 1;
       const model = current[index];
-      if (!Number.isInteger(index) || !model) return;
+      if (!Number.isInteger(index) || !model || blocked(model.provider)) return;
 
       // A shortcut is someone who already knows what they want, so this one
       // does close.
@@ -141,7 +172,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [choose, current]);
+  }, [blocked, choose, current]);
 
   /**
    * Stars the whole setup, or removes the one it matches.
@@ -175,6 +206,9 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
   const activeAgent = active ? agentFor(active.provider) : undefined;
   const unavailable = active !== undefined && activeAgent !== undefined && !activeAgent.installed;
+
+  /** Said the same way wherever a locked-out thing is hovered. */
+  const LOCKED_LABEL = "Start a new chat to switch providers";
   const summary = describeOptions(selection);
   const info = findModel(selection?.model);
 
@@ -213,7 +247,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
           {!searching && (
             <div className="flex w-12 shrink-0 flex-col gap-1 border-r bg-muted/30 p-1">
               <RailButton label="Favourites" active={rail === "favorites"} onClick={() => setRail("favorites")}>
-                <Star className={cn("size-4", favourites.length > 0 && "fill-current")} />
+                <Star className={cn("size-4", visibleFavourites.length > 0 && "fill-current")} />
               </RailButton>
 
               <div className="mx-1 border-b" aria-hidden />
@@ -221,14 +255,21 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
               {providers.map((provider) => {
                 const agent = agentFor(provider);
                 const missing = agent !== undefined && !agent.installed;
+                const shut = blocked(provider);
+
+                const label = shut ? LOCKED_LABEL : missing ? `${agent?.label} is not installed` : PROVIDER_LABEL[provider];
 
                 return (
-                  <Hint key={provider} label={missing ? `${agent?.label} is not installed` : PROVIDER_LABEL[provider]}>
+                  <Hint key={provider} label={label}>
                     <RailButton
                       label={PROVIDER_LABEL[provider]}
                       active={rail === provider}
-                      dimmed={missing}
-                      onClick={() => setRail(provider)}
+                      dimmed={missing || shut}
+                      shut={shut}
+                      onClick={() => {
+                        if (shut) return;
+                        setRail(provider);
+                      }}
                     >
                       <ProviderIcon provider={provider} className="size-4.5" />
                     </RailButton>
@@ -254,11 +295,11 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
             <div className="max-h-[300px] min-h-[180px] overflow-y-auto p-1">
               {showingFavourites &&
-                favourites.map((favourite) => (
+                visibleFavourites.map((favourite) => (
                   <FavouriteRow
                     key={favourite.id}
                     favourite={favourite}
-                    model={models.find((model) => model.slug === favourite.model)}
+                    model={models.find((entry) => entry.slug === favourite.model)}
                     active={selectionKey(favourite) === currentKey}
                     onChoose={() => apply({ model: favourite.model, options: favourite.options })}
                     onRemove={(event) => removeStar(favourite.id, event)}
@@ -273,13 +314,16 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                     index={searching ? -1 : index}
                     active={selection?.model === model.slug}
                     agent={agentFor(model.provider)}
+                    blockedReason={blocked(model.provider) ? LOCKED_LABEL : null}
                     onChoose={() => choose(model)}
                   />
                 ))}
 
-              {showingFavourites && favourites.length === 0 && (
+              {showingFavourites && visibleFavourites.length === 0 && (
                 <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted-foreground">
-                  No favourites yet. Star a model to save it with its settings.
+                  {locked && favourites.length > 0
+                    ? "No favourites for this provider."
+                    : "No favourites yet. Star a model to save it with its settings."}
                 </p>
               )}
 
@@ -311,10 +355,19 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                     index={-1}
                     active={selection?.model === model.slug}
                     agent={agentFor(model.provider)}
+                    blockedReason={blocked(model.provider) ? LOCKED_LABEL : null}
                     onChoose={() => choose(model)}
                   />
                 ))}
             </div>
+
+            {/* Said once, plainly, rather than left to be inferred from a list
+                of things that will not click. */}
+            {locked && (
+              <p className="border-t px-2.5 py-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                {LOCKED_LABEL}
+              </p>
+            )}
 
             {harness.modelProblem && (
               <p className="border-t px-2.5 py-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
@@ -454,21 +507,28 @@ function RailButton({
   label,
   active,
   dimmed,
+  shut,
   onClick,
   children,
 }: {
   label: string;
   active: boolean;
   dimmed?: boolean;
+  /** Locked out of this chat: it stays visible, and it does not open. */
+  shut?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <button
       aria-label={label}
+      aria-disabled={shut}
       onClick={onClick}
       className={cn(
-        "relative grid aspect-square w-full place-items-center rounded-md transition-colors hover:bg-accent",
+        "relative grid aspect-square w-full place-items-center rounded-md transition-colors",
+        // Not `disabled`: the browser would swallow the hover, and the tooltip
+        // is the only thing saying why the click did nothing.
+        shut ? "cursor-not-allowed" : "hover:bg-accent",
         dimmed && "opacity-45",
       )}
     >
@@ -528,21 +588,30 @@ function ModelRow({
   index,
   active,
   agent,
+  blockedReason,
   onChoose,
 }: {
   model: ModelInfo;
   index: number;
   active: boolean;
   agent: AgentInfo | undefined;
+  /** Why this cannot be picked from the open chat, or null when it can. */
+  blockedReason: string | null;
   onChoose: () => void;
 }): React.JSX.Element {
   const missing = agent !== undefined && !agent.installed;
+  const shut = blockedReason !== null;
 
   const row = (
     <button
       onClick={onChoose}
       data-active={active}
-      className={cn("row flex w-full items-center gap-2 px-2 py-1.5 text-left", missing && "opacity-55")}
+      aria-disabled={shut}
+      className={cn(
+        "row flex w-full items-center gap-2 px-2 py-1.5 text-left",
+        missing && "opacity-55",
+        shut && "cursor-not-allowed opacity-45",
+      )}
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13.5px] font-medium">{model.name}</span>
@@ -555,7 +624,8 @@ function ModelRow({
 
       {active && <Check className="size-3 shrink-0 text-primary" />}
 
-      {!active && index >= 0 && index < 9 && (
+      {/* No shortcut is advertised for a row that will not take one. */}
+      {!active && !shut && index >= 0 && index < 9 && (
         <kbd className="shrink-0 rounded border px-1 py-px font-mono text-[10.5px] text-muted-foreground">
           Ctrl+{index + 1}
         </kbd>
@@ -563,6 +633,9 @@ function ModelRow({
     </button>
   );
 
+  // The lock is the first thing worth saying: it is the reason the click did
+  // nothing, and it outranks both a missing CLI and the model's own blurb.
+  if (shut) return <Hint label={blockedReason}>{row}</Hint>;
   if (missing) return <Hint label={`${agent?.label} is not installed. ${agent?.installHint ?? ""}`}>{row}</Hint>;
   if (model.description) return <Hint label={model.description}>{row}</Hint>;
 

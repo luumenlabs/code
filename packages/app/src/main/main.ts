@@ -745,13 +745,12 @@ function registerIpc(): void {
    * one to make. Picking a model also picks the CLI behind it: a GPT model
    * means Codex, a Claude model means Claude Code.
    *
-   * Staying on the same CLI changes the model on the live session, so the
-   * conversation carries on. Changing CLI cannot: the other one has no way to
-   * continue a session it did not create. That ends this chat's session and
-   * clears the stored id — handing a Codex id to Claude Code is what used to
-   * make switching provider mid-chat look impossible — and the transcript says
-   * so, because losing the agent's context without being told is worse than
-   * being refused.
+   * Staying on the same provider changes the model on the live session, so the
+   * conversation carries on. Changing provider cannot: the other one has no way
+   * to continue a session it did not create. It is refused here as well as
+   * greyed out in the picker — the UI is where the rule is explained, not where
+   * it is enforced, and a stale window must not be able to strand a chat on an
+   * agent that has never seen it. See `lockedProvider` in `shared/threads.ts`.
    */
   ipcMain.handle("apply-model", async (_event, selection: ModelSelection) => {
     const model = findModel(selection.model);
@@ -761,24 +760,17 @@ function registerIpc(): void {
     const manager = requireAgents();
     const active = store.active();
 
+    // Checked before anything is written: a refused switch has to leave both
+    // this conversation and the next new chat exactly as they were.
+    if (active?.agent && active.agent !== model.provider) {
+      throw new Error(
+        `This chat is running on ${AGENT_LABEL[active.agent]}, and ${AGENT_LABEL[model.provider]} cannot continue a conversation it did not start. Start a new chat to use ${model.name}.`,
+      );
+    }
+
     draftSelection = selection;
 
     if (!active) return selection;
-
-    const switching = active.agent !== null && active.agent !== model.provider;
-
-    if (switching) {
-      await manager.stop(active.id);
-      store.setMeta(active.id, { agentSessionId: null });
-
-      record(active.id, {
-        kind: "notice",
-        id: `n_switch_${Date.now().toString(36)}`,
-        at: Date.now(),
-        tone: "info",
-        text: `Switched to ${AGENT_LABEL[model.provider]}. The transcript stays, but it starts fresh — ${AGENT_LABEL[active.agent!]} cannot hand over its context.`,
-      });
-    }
 
     store.setMeta(active.id, { agent: model.provider, modelSelection: selection });
     manager.setModelSelection(active.id, selection);
