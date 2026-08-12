@@ -7,6 +7,8 @@
  */
 import * as React from "react";
 import {
+  Blocks,
+  Bot,
   Brain,
   Camera,
   Check,
@@ -15,12 +17,18 @@ import {
   CircleX,
   Copy,
   Eye,
+  FileText,
+  FolderTree,
   Gamepad2,
+  Globe,
+  ListTodo,
   Loader2,
   MonitorPlay,
   Pencil,
   ScrollText,
+  Search,
   SquareTerminal,
+  Terminal,
   Wrench,
 } from "lucide-react";
 import type { ActivityEvent } from "@luumen/code-protocol";
@@ -31,8 +39,24 @@ import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { describeTool } from "@/components/toolSummary";
+import type { ToolGlyph } from "@/components/toolSummary";
 import { cn } from "@/lib/utils";
 import type { TimelineItem } from "@/state";
+
+/** One glyph per kind of work, so a turn can be skimmed down the left edge. */
+const TOOL_ICON: Record<ToolGlyph, React.ElementType> = {
+  read: FileText,
+  edit: Pencil,
+  shell: Terminal,
+  search: Search,
+  files: FolderTree,
+  web: Globe,
+  plan: ListTodo,
+  agent: Bot,
+  mcp: Blocks,
+  tool: Wrench,
+};
 
 const CATEGORY: Record<ActivityEvent["category"], { label: string; icon: React.ElementType; tone: string }> = {
   inspect: { label: "Inspect", icon: Eye, tone: "text-sky-400/90" },
@@ -583,9 +607,22 @@ function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.E
  * you can select and copy — when a tool misbehaves, the exact arguments and the
  * exact output are the only things worth having, and a truncated preview of
  * either is the same as nothing.
+ *
+ * The line itself is a verb and its object — "Edit · ModelChip.tsx" — for the
+ * same reason a Roblox operation is a sentence about the game. This row used to
+ * be the raw tool id followed by as much JSON as fitted, which made a turn of
+ * eight calls into eight lines of near-identical `{"replace_all":false,...` with
+ * the filename cut off at the right edge: the one thing you were looking for
+ * was the one thing that never fitted. `describeTool` does the reduction.
+ *
+ * No border either. A run of bordered cards reads as a stack of separate
+ * objects, when what it is is a list of small things one agent did in a row;
+ * the hover state is enough to say a line is a control.
  */
 function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; busy: boolean }): React.JSX.Element {
   const input = format(item.input);
+  const summary = describeTool(item.name, item.input);
+  const Icon = TOOL_ICON[summary.icon];
   // Only spin while there is a turn that could still answer. A CLI that never
   // sends a result for a call — and they differ on this — would otherwise leave
   // a row spinning for the rest of the conversation, and for every conversation
@@ -599,30 +636,55 @@ function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; b
           with three of them unreadable — the mark in front says the same thing
           without shouting it. The reason folds away underneath, in the same
           place the successful call keeps its result. */}
-      <div className="group/row flex flex-col rounded-lg border bg-card/40 transition-colors">
+      <div
+        className={cn(
+          "group/row flex flex-col rounded-lg transition-colors hover:bg-muted/40",
+          item.isError && "bg-destructive/5",
+        )}
+      >
         {/* The copy button sits beside the disclosure rather than inside it: a
             button nested in a button is neither valid nor clickable, and this
             row is the one people reach for when a tool has misbehaved. */}
-        <div className="flex items-center gap-1 pr-1.5">
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-2.5 text-left text-[12.5px] text-muted-foreground">
+        <div className="flex items-center gap-1 pr-1">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 pl-2 text-left">
             {item.isError ? (
               <CircleX className="size-3.5 shrink-0 text-destructive" />
             ) : (
-              <Wrench className="size-3.5 shrink-0" />
+              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             )}
-            <span className="shrink-0 font-mono text-foreground/80">{item.name}</span>
-            <span className="min-w-0 flex-1 truncate font-mono opacity-70">{truncate(input, 110)}</span>
 
-            {pending && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
+            <span className="shrink-0 text-[13px] font-medium">{summary.label}</span>
 
-            <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+            {summary.detail && (
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
+                {truncate(summary.detail, 120)}
+              </span>
+            )}
+
+            <span className="flex-1" />
+
+            {pending ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+            ) : (
+              item.result !== null &&
+              !item.isError && <Check className="size-3 shrink-0 text-[var(--success)] opacity-60" />
+            )}
+
+            <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
           </CollapsibleTrigger>
 
           <CopyButton value={() => toolText(item)} label="Copy" />
         </div>
 
         <CollapsibleContent>
-          <div className="flex flex-col gap-2 border-t px-2.5 py-2">
+          {/* Indented to the label rather than the icon, so an open call sits
+              under the line that named it instead of restarting the margin. */}
+          <div className="mt-0.5 mb-1 ml-[22px] flex flex-col gap-2 border-l pl-2.5">
+            {/* The raw name is here rather than in the line above: it is what
+                you need when you are debugging the tool, and noise when you are
+                reading what the agent did. */}
+            <div className="font-mono text-[11px] text-muted-foreground">{item.name}</div>
+
             <Block label="Call" value={input} />
             {item.result !== null && (
               <Block
@@ -660,70 +722,124 @@ function Block({ label, value, tone }: { label: string; value: string; tone?: "e
   );
 }
 
+/**
+ * A Roblox operation — one line, like everything else the agent did.
+ *
+ * This used to grow downwards: a title, then the detail under it, then the
+ * error and its hint, then the instances it touched. Read one at a time that is
+ * generous; read as a turn — and a turn is twenty of them — it is a wall, and
+ * the shape of the work is lost in it. Everything below the line now folds
+ * away, so a turn is a list you can run your eye down and open the one row you
+ * care about.
+ *
+ * The screenshot is the exception, and stays where it happened. It is not
+ * detail about the operation, it is the thing the operation produced and the
+ * reason the user asked for it — spec sections 7 and 33 put it in the
+ * conversation deliberately, and hiding it behind a disclosure would make the
+ * transcript tidier by making it less useful.
+ */
 function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element {
   const meta = CATEGORY[activity.category];
   const Icon = meta.icon;
   const failed = activity.status === "error";
 
+  // The line's own summary. A failure leads with its code, because that is the
+  // word worth seeing before deciding whether to open anything.
+  const summary = failed ? (activity.error?.code ?? "Failed") : (activity.detail ?? "");
+
+  const foldable =
+    (activity.detail !== null && activity.detail.length > 0) ||
+    activity.error !== null ||
+    activity.instances.length > 0;
+
   return (
-    <div className="group/row rounded-lg border bg-card/60 px-3 py-2 transition-colors">
-      <div className="flex items-center gap-2">
-        {/* Same rule as a tool row: the mark in front carries the failure, so a
-            run of them stays readable. The detail is in the message below. */}
-        {failed ? (
-          <CircleX className="size-3.5 shrink-0 text-destructive" />
-        ) : (
-          <Icon className={cn("size-3.5 shrink-0", meta.tone)} />
-        )}
-        {/* Selectable, like everything else the agent produced. A Roblox
-            operation is still a tool call, and "which instance did it touch"
-            is a question you answer by copying the line out. */}
-        <span className="selectable min-w-0 flex-1 truncate text-[13.5px] font-medium">{activity.title}</span>
+    <Collapsible>
+      <div className="group/row flex flex-col rounded-lg bg-card/60 transition-colors hover:bg-card">
+        <div className="flex items-center gap-1 pr-1">
+          <CollapsibleTrigger
+            disabled={!foldable}
+            className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-2.5 text-left"
+          >
+            {/* Same rule as a tool row: the mark in front carries the failure,
+                so a run of them stays readable. */}
+            {failed ? (
+              <CircleX className="size-3.5 shrink-0 text-destructive" />
+            ) : (
+              <Icon className={cn("size-3.5 shrink-0", meta.tone)} />
+            )}
 
-        {activity.origin === "mcp" && <Badge variant="outline">external agent</Badge>}
+            <span className="min-w-0 shrink truncate text-[13.5px] font-medium">{activity.title}</span>
 
-        {activity.status === "running" && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
-        {activity.status === "ok" && <CircleCheck className="size-3.5 shrink-0 text-[var(--success)] opacity-60" />}
+            {summary && (
+              <span className={cn("min-w-0 flex-1 truncate text-[12px]", failed ? "font-mono text-destructive" : "text-muted-foreground")}>
+                {summary}
+              </span>
+            )}
 
-        <CopyButton value={() => activityText(activity)} label="Copy" className="-mr-1" />
-      </div>
+            <span className="flex-1" />
 
-      {activity.detail && !failed && (
-        <div className="selectable mt-1 pl-[22px] text-[12.5px] text-muted-foreground">{activity.detail}</div>
-      )}
+            {/* Only a call with no conversation in this app is external. Every
+                Roblox operation reaches the server over MCP, including this
+                app's own agent's, so testing the origin alone put the badge on
+                every row in the transcript and told the user nothing. */}
+            {activity.chat === null && <Badge variant="outline">external agent</Badge>}
 
-      {activity.error && (
-        <div className="selectable mt-1.5 pl-[22px]">
-          <div className="text-[12.5px] leading-relaxed text-destructive">
-            <span className="font-mono text-[11.5px] opacity-80">{activity.error.code}</span> {activity.error.message}
+            {activity.status === "running" && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+            {activity.status === "ok" && <CircleCheck className="size-3.5 shrink-0 text-[var(--success)] opacity-60" />}
+
+            {foldable && (
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+            )}
+          </CollapsibleTrigger>
+
+          <CopyButton value={() => activityText(activity)} label="Copy" />
+        </div>
+
+        <CollapsibleContent>
+          <div className="mt-0.5 mb-1.5 ml-[22px] flex flex-col gap-1.5 border-l pl-2.5">
+            {/* Selectable, like everything else the agent produced. "Which
+                instance did it touch" is a question you answer by copying the
+                line out. */}
+            {activity.detail && (
+              <div className="selectable text-[12.5px] leading-relaxed text-muted-foreground">{activity.detail}</div>
+            )}
+
+            {activity.error && (
+              <div className="selectable">
+                <div className="text-[12.5px] leading-relaxed text-destructive">
+                  <span className="font-mono text-[11.5px] opacity-80">{activity.error.code}</span>{" "}
+                  {activity.error.message}
+                </div>
+                {activity.error.hint && (
+                  <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{activity.error.hint}</div>
+                )}
+              </div>
+            )}
+
+            {activity.instances.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {activity.instances.slice(0, 8).map((instance) => (
+                  <code
+                    key={instance.handle}
+                    className="selectable rounded bg-muted px-1.5 py-px font-mono text-[11.5px] text-muted-foreground"
+                  >
+                    {instance.path}
+                  </code>
+                ))}
+              </div>
+            )}
           </div>
-          {activity.error.hint && (
-            <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{activity.error.hint}</div>
-          )}
-        </div>
-      )}
+        </CollapsibleContent>
 
-      {activity.image && (
-        <img
-          className="mt-2.5 w-full rounded-md border"
-          src={`data:${activity.image.mimeType};base64,${activity.image.data}`}
-          alt="Studio screenshot"
-        />
-      )}
-
-      {activity.category === "edit" && activity.instances.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1 pl-[22px]">
-          {activity.instances.slice(0, 4).map((instance) => (
-            <code
-              key={instance.handle}
-              className="selectable rounded bg-muted px-1.5 py-px font-mono text-[11.5px] text-muted-foreground"
-            >
-              {instance.path}
-            </code>
-          ))}
-        </div>
-      )}
-    </div>
+        {activity.image && (
+          <img
+            className="mx-2.5 mt-1 mb-2.5 rounded-md border"
+            src={`data:${activity.image.mimeType};base64,${activity.image.data}`}
+            alt="Studio screenshot"
+          />
+        )}
+      </div>
+    </Collapsible>
   );
 }
 

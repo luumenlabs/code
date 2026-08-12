@@ -68,7 +68,7 @@ local function multiplayerState(): any
 
 	-- Only the running server peer can see who actually joined; the edit peer
 	-- knows how many were asked for and nothing more.
-	if RunService:IsRunning() and RunService:IsServer() then
+	if RunState.isRunning() and RunService:IsServer() then
 		for _, player in ipairs(Players:GetPlayers()) do
 			table.insert(connected, { name = player.Name, userId = player.UserId, displayName = player.DisplayName })
 		end
@@ -103,7 +103,7 @@ end
 	issued — the call that does the work does not return until the test is over.
 ]]
 function RunOps.start(params: any): any
-	if RunService:IsRunning() then
+	if RunState.isRunning() then
 		Errors.throw(
 			"PLAYTEST_ALREADY_RUNNING",
 			"A playtest is already running",
@@ -173,7 +173,7 @@ end
 	DataModel, which is why the server routes this to the running peer.
 ]]
 function RunOps.stop(): any
-	if not RunService:IsRunning() then
+	if not RunState.isRunning() then
 		return RunState.current()
 	end
 
@@ -196,7 +196,7 @@ function RunOps.stop(): any
 end
 
 function RunOps.waitReady(params: any): any
-	if not RunService:IsRunning() then
+	if not RunState.isRunning() then
 		Errors.throw("PLAYTEST_NOT_RUNNING", "Nothing is running to wait for", { state = RunState.current() }, "Start a playtest first.")
 	end
 
@@ -211,7 +211,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function startMultiplayer(params: any): any
-	if RunService:IsRunning() then
+	if RunState.isRunning() then
 		Errors.throw(
 			"PLAYTEST_ALREADY_RUNNING",
 			"A multiplayer test has to be started from the edit DataModel",
@@ -268,7 +268,7 @@ local function startMultiplayer(params: any): any
 end
 
 local function addPlayers(params: any): any
-	if not RunService:IsRunning() or not RunService:IsServer() then
+	if not RunState.isRunning() or not RunService:IsServer() then
 		Errors.throw(
 			"RUNTIME_CONTEXT_UNAVAILABLE",
 			"Players can only be added from the running server DataModel",
@@ -310,7 +310,7 @@ local function addPlayers(params: any): any
 end
 
 local function leaveClient(): any
-	if not RunService:IsRunning() or RunService:IsServer() then
+	if not RunState.isRunning() or RunService:IsServer() then
 		Errors.throw("RUNTIME_CONTEXT_UNAVAILABLE", "A client can only leave from its own DataModel", { realm = RunState.current().realm })
 	end
 
@@ -345,7 +345,7 @@ local function leaveClient(): any
 end
 
 local function endMultiplayer(params: any): any
-	if not RunService:IsRunning() or not RunService:IsServer() then
+	if not RunState.isRunning() or not RunService:IsServer() then
 		Errors.throw(
 			"RUNTIME_CONTEXT_UNAVAILABLE",
 			"A multiplayer test can only be ended from the running server DataModel",

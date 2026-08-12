@@ -21,6 +21,44 @@ local epoch = 0
 local lastRunning: boolean? = nil
 local listeners: { (any) -> () } = {}
 
+--[[
+	Is the experience up in this DataModel?
+
+	`RunService:IsRunning()` is the direct answer, and when it says yes it is
+	believed. It has been caught saying no with a playtest plainly running —
+	`{ running = false, playerCount = 1, realm = "edit" }`, reported from a
+	DataModel with a player standing in it. Nothing downstream survives that:
+	the server starts a playtest and then waits for a peer to say `running`,
+	so every `run.start` sat there until it timed out while Studio played the
+	game, and the state it reported blamed the edit realm for it.
+
+	So the flag is corroborated with facts about this DataModel rather than
+	trusted alone. A `Player` cannot exist without a session — `Players` is
+	empty in edit and there is no way to put anything in it — and a DataModel
+	that is a server but not a client, or the reverse, is one half of a split
+	runtime, which edit never is. Either one means the simulation is up
+	whatever the flag says.
+
+	The gap left is Run mode in a Studio that also mis-reports the flag: no
+	players, one combined DataModel, nothing to corroborate with. That has not
+	been seen, and inventing a signal for it would mean guessing.
+]]
+local function detectRunning(): boolean
+	if RunService:IsRunning() then
+		return true
+	end
+
+	if Players.LocalPlayer ~= nil or #Players:GetPlayers() > 0 then
+		return true
+	end
+
+	return RunService:IsServer() ~= RunService:IsClient()
+end
+
+function RunState.isRunning(): boolean
+	return detectRunning()
+end
+
 local function detectRealm(running: boolean): string
 	if not running then
 		return "edit"
@@ -58,7 +96,7 @@ end
 	character in Play, or simply a running server in Run.
 ]]
 function RunState.isReady(requireCharacter: boolean?): boolean
-	if not RunService:IsRunning() then
+	if not detectRunning() then
 		return false
 	end
 
@@ -93,7 +131,7 @@ local function isSplitSession(running: boolean): boolean
 end
 
 function RunState.current(): any
-	local running = RunService:IsRunning()
+	local running = detectRunning()
 
 	return {
 		running = running,
@@ -135,7 +173,7 @@ function RunState.start()
 	-- answer. Safe in a server peer, where it simply never connects.
 	RenderMonitor.start()
 
-	lastRunning = RunService:IsRunning()
+	lastRunning = detectRunning()
 	-- The epoch is derived from the run state at load: a plugin that starts up
 	-- inside a playtest must not hand out handles that look edit-time.
 	epoch = lastRunning and 1 or 0
@@ -144,7 +182,7 @@ function RunState.start()
 	task.spawn(function()
 		while true do
 			task.wait(0.25)
-			local running = RunService:IsRunning()
+			local running = detectRunning()
 			if running ~= lastRunning then
 				lastRunning = running
 				epoch += 1
@@ -154,6 +192,12 @@ function RunState.start()
 				-- restore an edit-time instance into a running world, or the
 				-- reverse.
 				Changes.release()
+				-- The viewport the frames were coming from belongs to the
+				-- DataModel that has just been replaced. Judging the new one by
+				-- the old one's clock reports a window that is drawing the
+				-- playtest as not drawing at all, and that reading is what
+				-- refuses input and screenshots for the rest of the session.
+				RenderMonitor.rearm()
 				emit()
 			end
 		end

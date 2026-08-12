@@ -5,7 +5,8 @@
  * what the user sees have to be the same thing, and having two builders would
  * guarantee they eventually diverge.
  */
-import type { ServerEvent } from "@luumen/code-protocol";
+import { OPS, toolNameFor } from "@luumen/code-protocol";
+import type { Op, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 
 /**
@@ -20,6 +21,36 @@ import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js
  */
 function isRobloxTool(name: string): boolean {
   return name.includes("luu-code") || /(^|__)studio_[a-z_]+$/.test(name);
+}
+
+/**
+ * The operation an MCP tool name stands for.
+ *
+ * Built from the protocol's own table rather than by string surgery, so an op
+ * renamed in `commands.ts` cannot leave a stale guess here. The CLI may present
+ * the tool as `mcp__luu-code__studio_start_playtest` or as bare
+ * `studio_start_playtest`, so the last segment is what is matched.
+ */
+const OP_BY_TOOL = new Map<string, Op>(
+  OPS.flatMap((op) => {
+    const tool = toolNameFor(op);
+    return tool ? [[tool, op] as const] : [];
+  }),
+);
+
+function opForTool(name: string): Op | null {
+  const last = name.split("__").filter(Boolean).at(-1) ?? name;
+  return OP_BY_TOOL.get(last) ?? null;
+}
+
+/**
+ * What the thread already holds, for the two questions this builder has to ask
+ * about entries it did not create.
+ */
+export interface TranscriptView {
+  byId(id: string): TranscriptEntry | null;
+  /** Whether a Roblox operation for `op` has already been filed since `since`. */
+  hasActivity(op: Op, since: number): boolean;
 }
 
 export interface TranscriptSink {
@@ -48,10 +79,20 @@ function nextId(prefix: string): string {
  * Bounded, because a CLI that never reports a result for a call would otherwise
  * grow this for the life of the process.
  */
-const SUPPRESSED_LIMIT = 200;
-const suppressed = new Map<string, { name: string; input: unknown }>();
+/**
+ * How far before the call an activity may have started and still be its own.
+ *
+ * The two clocks are the app's and the server's, and the operation is filed as
+ * it begins while the tool call is recorded as the CLI reports it — a few
+ * hundred milliseconds either way is ordinary. A second is wide enough to
+ * absorb that and far narrower than the gap between two calls in a turn.
+ */
+const ACTIVITY_SLACK_MS = 1_000;
 
-function remember(id: string, call: { name: string; input: unknown }): void {
+const SUPPRESSED_LIMIT = 200;
+const suppressed = new Map<string, { name: string; input: unknown; at: number }>();
+
+function remember(id: string, call: { name: string; input: unknown; at: number }): void {
   if (suppressed.size >= SUPPRESSED_LIMIT) {
     const oldest = suppressed.keys().next().value;
     if (oldest !== undefined) suppressed.delete(oldest);
@@ -69,7 +110,7 @@ export function userEntry(text: string, attachments: Attachment[] = []): Transcr
   };
 }
 
-export function fromAgentEvent(event: AgentEvent, existing: (id: string) => TranscriptEntry | null): TranscriptEntry | null {
+export function fromAgentEvent(event: AgentEvent, view: TranscriptView): TranscriptEntry | null {
   switch (event.type) {
     case "assistant":
       return { kind: "assistant", id: event.id, at: Date.now(), text: event.text };
@@ -79,7 +120,7 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
 
     case "tool-use":
       if (isRobloxTool(event.name)) {
-        remember(event.id, { name: event.name, input: event.input });
+        remember(event.id, { name: event.name, input: event.input, at: Date.now() });
         return null;
       }
 
@@ -94,18 +135,33 @@ export function fromAgentEvent(event: AgentEvent, existing: (id: string) => Tran
       };
 
     case "tool-result": {
-      const previous = existing(event.id);
+      const previous = view.byId(event.id);
       if (previous && previous.kind === "tool") return { ...previous, result: event.text, isError: event.isError };
 
       const call = suppressed.get(event.id);
       suppressed.delete(event.id);
 
-      // A Roblox tool has no row of its own, by design — its work appears as
-      // the operation it performed. But a call that fails performs nothing, so
-      // it produces no operation either, and without this the whole thing
-      // vanishes: the user sees the agent say it could not reach Studio, with
-      // nothing in the transcript to say why.
-      //
+      /**
+       * A Roblox tool has no row of its own, by design — its work appears as
+       * the operation it performed. But a call that fails before it reaches
+       * Studio performs nothing, so it produces no operation either, and
+       * without this the whole thing vanishes: the user sees the agent say it
+       * could not reach Studio, with nothing in the transcript to say why.
+       *
+       * Unless the operation *did* happen and failed there, which is the
+       * common case and the one this used to double up: the server files the
+       * failure as an activity, in Roblox language with the code and the hint,
+       * and then this added a second row for the same event carrying the same
+       * error in tool ids. A turn that retried a playtest three times showed
+       * six failures for three attempts, and the transcript was as wide as the
+       * duplication.
+       *
+       * The op is what tells them apart, taken from the protocol's own table
+       * rather than matched on wording.
+       */
+      const op = call ? opForTool(call.name) : null;
+      if (op && call && view.hasActivity(op, call.at - ACTIVITY_SLACK_MS)) return null;
+
       // It surfaces as the tool row it would have been rather than as a notice.
       // A notice is a banner — full width, red, unfoldable — and a turn that
       // retries a call three times painted the conversation in them. The row

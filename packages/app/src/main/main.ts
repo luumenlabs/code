@@ -531,7 +531,14 @@ async function bootstrap(): Promise<void> {
         store.setMeta(threadId, { agentSessionId: event.sessionId });
       }
 
-      const entry = fromAgentEvent(event, (id) => thread.items.find((item) => item.id === id) ?? null);
+      const entry = fromAgentEvent(event, {
+        byId: (id) => thread.items.find((item) => item.id === id) ?? null,
+        // Read from the thread rather than tracked here: the operation is filed
+        // by the server's own event, so the transcript is the only place that
+        // knows whether one arrived.
+        hasActivity: (op, since) =>
+          thread.items.some((item) => item.kind === "activity" && item.activity.op === op && item.at >= since),
+      });
       if (entry) record(threadId, entry);
     },
     onStates: (states) => broadcast("agent-states", states),

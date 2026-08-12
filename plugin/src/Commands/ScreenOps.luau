@@ -37,7 +37,7 @@ local function defaultRoot(): Instance
 		end
 	end
 
-	if RunService:IsRunning() and RunService:IsServer() and not RunService:IsClient() then
+	if RunState.isRunning() and RunService:IsServer() and not RunService:IsClient() then
 		Errors.throw(
 			"RUNTIME_CONTEXT_UNAVAILABLE",
 			"The server DataModel has no on-screen interface to read",

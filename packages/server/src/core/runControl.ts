@@ -129,9 +129,27 @@ export class RunControl {
     const state = await this.waitFor(target, (current) => current.running, params.timeoutMs);
 
     if (!state.running) {
-      throw new LuuCodeError("STUDIO_TIMEOUT", `The playtest did not start within ${params.timeoutMs}ms.`, {
-        details: { state, mode: params.mode },
-        hint: "Studio may still be loading the place. Check Studio, then try again.",
+      /**
+       * Say what was actually observed, not what was assumed.
+       *
+       * "The playtest did not start" is a claim about Studio, and it has been
+       * wrong: the game was playing on screen while every peer kept reporting
+       * edit, so the agent read the timeout as a refusal and went looking for a
+       * reason in the place. What this knows is narrower and more useful —
+       * Studio accepted the request and no connected DataModel ever said it was
+       * running — so that is what it says, with the peers it heard from.
+       */
+      throw new LuuCodeError("STUDIO_TIMEOUT", `No Studio DataModel reported a running playtest within ${params.timeoutMs}ms.`, {
+        details: {
+          state,
+          mode: params.mode,
+          peers: this.sessions.peers(target).map((peer) => ({
+            realm: peer.realm,
+            running: peer.run.running,
+            players: peer.run.playerCount ?? null,
+          })),
+        },
+        hint: "Look at Studio. If the place is not playing, it may still be loading — try again. If it is playing, the playtest is up but Luu Code cannot see it, and the Studio plugin is probably out of date.",
       });
     }
 

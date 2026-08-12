@@ -16,6 +16,7 @@ local STALE_SECONDS = 1.0
 
 local lastFrame = 0
 local watching = false
+local connection: RBXScriptConnection? = nil
 
 --[[
 	RenderStepped only exists where there is a render loop. Connecting it throws
@@ -30,7 +31,7 @@ function RenderMonitor.start()
 	end
 
 	local ok = pcall(function()
-		RunService.RenderStepped:Connect(function()
+		connection = RunService.RenderStepped:Connect(function()
 			lastFrame = os.clock()
 		end)
 	end)
@@ -39,6 +40,35 @@ function RenderMonitor.start()
 		watching = true
 		lastFrame = os.clock()
 	end
+end
+
+--[[
+	Starts the clock again, for a DataModel that has just been replaced.
+
+	An edit/run transition hands the window to a different DataModel. The old
+	connection may keep firing, may stop, or may have died with the world it
+	belonged to — and either way the frame clock from before the transition says
+	nothing about the one drawing now. Held against the new session, a stale
+	clock reads as "the window is not drawing", which refuses input and
+	screenshots for the whole playtest: the two things most worth having in one.
+
+	The reconnect is what makes it honest rather than optimistic. A window that
+	really is minimized produces no frames on the new connection either, and the
+	monitor says so a second later.
+]]
+function RenderMonitor.rearm()
+	if connection then
+		pcall(function()
+			(connection :: RBXScriptConnection):Disconnect()
+		end)
+		connection = nil
+	end
+
+	watching = false
+	RenderMonitor.start()
+
+	-- A fresh clock, so the transition itself is never counted as a stall.
+	lastFrame = os.clock()
 end
 
 function RenderMonitor.isWatching(): boolean

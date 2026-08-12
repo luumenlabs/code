@@ -12,11 +12,11 @@
 ]]
 
 local GuiService = game:GetService("GuiService")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Errors = require(script.Parent.Errors)
 local RenderMonitor = require(script.Parent.RenderMonitor)
+local RunState = require(script.Parent.RunState)
 
 local InputBridge = {}
 
@@ -72,7 +72,7 @@ end
 	restores the window and one that concludes the game's keybinds are broken.
 ]]
 local function requireDeliverable()
-	if not RunService:IsRunning() then
+	if not RunState.isRunning() then
 		Errors.throw(
 			"PLAYTEST_NOT_RUNNING",
 			"Input can only be delivered while the experience is running",
