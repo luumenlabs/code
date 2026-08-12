@@ -145,8 +145,14 @@ export function fitPanels(input: {
   };
 }
 
-/** Small, fast models — a title is not worth a frontier model's time. */
-export const DEFAULT_TITLE_MODEL: Record<AgentId, string> = {
+/**
+ * Small, fast models — a title is not worth a frontier model's time.
+ *
+ * Ollama has no entry because there is no slug to name: which models exist is
+ * whatever the user has pulled. Its default is resolved from the discovered
+ * catalogue instead, so a machine with one local model uses that one.
+ */
+export const DEFAULT_TITLE_MODEL: Partial<Record<AgentId, string>> = {
   claude: "claude-haiku-4-5",
   codex: "gpt-5.6-luna",
 };
@@ -156,9 +162,12 @@ export const DEFAULT_TITLE_MODEL: Record<AgentId, string> = {
  *
  * Codex first: GPT-5.6-Luna is the cheapest of the small models to run for a
  * one-line answer and it comes back fastest, so it gets the job whenever Codex
- * is installed. Claude Code's Haiku takes over when it is not.
+ * is installed. Claude Code's Haiku takes over when it is not. Ollama is last
+ * because a title is a throwaway call and a local model is the slowest way to
+ * get one — but it is still better than an unnamed thread on a machine that
+ * has nothing else.
  */
-export const TITLE_PROVIDER_ORDER: AgentId[] = ["codex", "claude"];
+export const TITLE_PROVIDER_ORDER: AgentId[] = ["codex", "claude", "ollama"];
 
 /** The CLI that names threads on this machine, given what is installed. */
 export function autoTitleProvider(installed: AgentId[]): AgentId | null {

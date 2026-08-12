@@ -35,7 +35,15 @@ interface PackageSpec {
   native: { command: string; owns: (path: string) => boolean } | null;
 }
 
-const PACKAGES: Record<AgentId, PackageSpec> = {
+/**
+ * Only the providers this app could sensibly update.
+ *
+ * Ollama is missing on purpose: it is not an npm package, it updates itself,
+ * and the version that matters for a local model is the daemon's — which the
+ * user manages the same way they manage the models. Telling them to run
+ * `npm i -g` at it would be a wrong answer confidently given.
+ */
+const PACKAGES: Partial<Record<AgentId, PackageSpec>> = {
   claude: {
     npm: "@anthropic-ai/claude-code",
     brew: "claude-code",
@@ -126,8 +134,7 @@ function locate(command: string): string | null {
  * it is both the most common install and the one with the least distinctive
  * path — `~/AppData/Roaming/npm` on Windows, but a bare `/usr/bin` elsewhere.
  */
-function updateCommand(id: AgentId, command: string | null): string {
-  const spec = PACKAGES[id];
+function updateCommand(spec: PackageSpec, command: string | null): string {
   const npm = `npm install -g ${spec.npm}@latest`;
 
   const path = command ? locate(command) : null;
@@ -148,8 +155,9 @@ function updateCommand(id: AgentId, command: string | null): string {
 /**
  * Adds "is there a newer one, and how would you get it" to what discovery found.
  *
- * Both agents are asked at once, and a missing CLI is skipped — there is no
- * version to compare and the install hint already covers it.
+ * Every provider is asked at once. A missing CLI is skipped — there is no
+ * version to compare and the install hint already covers it — and so is one
+ * this app does not install, which is left exactly as discovery found it.
  *
  * `force` comes from the Refresh button, which is the one place the user has
  * explicitly asked to check again; serving it an hour-old answer would make the
@@ -161,12 +169,13 @@ export async function withUpdateAdvisory(
 ): Promise<AgentInfo[]> {
   return Promise.all(
     agents.map(async (agent) => {
-      if (!agent.installed) return agent;
+      const spec = PACKAGES[agent.id];
+      if (!agent.installed || !spec) return agent;
 
       return {
         ...agent,
-        latestVersion: await latestVersion(PACKAGES[agent.id].npm, force),
-        updateCommand: updateCommand(agent.id, agent.command),
+        latestVersion: await latestVersion(spec.npm, force),
+        updateCommand: updateCommand(spec, agent.command),
       };
     }),
   );

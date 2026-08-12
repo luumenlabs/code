@@ -20,6 +20,7 @@ import { discoverModels } from "./catalog.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
 import { discoverAgents } from "./discovery.js";
+import { OLLAMA_VARIANT } from "./ollama.js";
 import { withUpdateAdvisory } from "./updates.js";
 
 export interface AgentManagerOptions {
@@ -192,7 +193,12 @@ export class AgentManager {
       });
     }
 
-    const adapter: AgentAdapter = options.agent === "claude" ? new ClaudeAdapter() : new CodexAdapter();
+    // Ollama is the Codex CLI pointed at the daemon on this machine, so it is
+    // the same adapter with a different backend rather than one of its own.
+    const adapter: AgentAdapter =
+      options.agent === "claude"
+        ? new ClaudeAdapter()
+        : new CodexAdapter(options.agent === "ollama" ? OLLAMA_VARIANT : undefined);
 
     this.sessions.set(key, {
       adapter,

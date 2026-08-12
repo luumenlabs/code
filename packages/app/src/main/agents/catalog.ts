@@ -12,6 +12,7 @@ import type { AgentInfo } from "../../shared/agent.js";
 import { CLAUDE_MODELS, CODEX_FALLBACK_MODELS, compareVersions } from "../../shared/models.js";
 import type { ModelInfo, OptionChoice, OptionDescriptor } from "../../shared/models.js";
 import { JsonLineReader, spawnAgent } from "./adapter.js";
+import { discoverOllamaModels } from "./ollama.js";
 
 /** Codex's own labels for reasoning levels; anything new passes through. */
 const EFFORT_LABELS: Record<string, string> = {
@@ -277,20 +278,25 @@ export function claudeModelsFor(version: string | null): ModelInfo[] {
   }).map(({ minCliVersion: _drop, ...model }) => model);
 }
 
-/** Models the installed CLIs currently offer, plus why Codex's list is stale. */
+/** Models the installed providers currently offer, plus why Codex's list is stale. */
 export async function discoverModels(agents: AgentInfo[]): Promise<CatalogResult> {
   const claude = agents.find((agent) => agent.id === "claude");
   const codex = agents.find((agent) => agent.id === "codex");
+  const ollama = agents.find((agent) => agent.id === "ollama");
 
   const claudeModels = claude?.installed ? claudeModelsFor(claude.version) : [];
 
-  const codexResult =
+  // Asked together: the local daemon answers in milliseconds and Codex takes
+  // seconds, and there is no reason for the fast one to wait behind it.
+  const [codexResult, ollamaModels] = await Promise.all([
     codex?.installed && codex.command
-      ? await discoverCodexModels(codex.command)
-      : { models: [] as ModelInfo[], problem: null };
+      ? discoverCodexModels(codex.command)
+      : Promise.resolve({ models: [] as ModelInfo[], problem: null }),
+    ollama?.installed ? discoverOllamaModels() : Promise.resolve([] as ModelInfo[]),
+  ]);
 
   return {
-    models: [...claudeModels, ...codexResult.models],
+    models: [...claudeModels, ...codexResult.models, ...ollamaModels],
     problem: codexResult.problem,
   };
 }

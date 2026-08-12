@@ -213,13 +213,20 @@ export function nextId(prefix: string): string {
 
 /**
  * Common exit handling: a non-zero exit that produced no output almost always
- * means the CLI is not authenticated, which is worth saying outright.
+ * means the CLI cannot reach the model — usually because it is not signed in,
+ * which is worth saying outright. The hint is the caller's because the reason
+ * differs: a hosted provider wants credentials, a local one wants a daemon.
  */
-export function describeExit(id: AgentId, code: number | null, stderr: string): string {
+export function describeExit(
+  label: string,
+  code: number | null,
+  stderr: string,
+  hint = "Run it once in a terminal to check that it is signed in.",
+): string {
   const trimmed = stderr.trim();
 
   if (trimmed.length > 0) return trimmed;
-  if (code === 0) return `${id} exited.`;
+  if (code === 0) return `${label} exited.`;
 
-  return `${id} exited with code ${code ?? "unknown"}. Run it once in a terminal to check that it is signed in.`;
+  return `${label} exited with code ${code ?? "unknown"}. ${hint}`;
 }

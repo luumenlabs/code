@@ -13,7 +13,7 @@
 
 Luu Code hands your coding agent the keys to your open place. It reads the DataModel, edits scripts, presses Play, watches the output, clicks around the running game, takes screenshots, and fixes what it broke — while you watch.
 
-You bring Claude Code or Codex. Luu Code brings Studio. No credits, no API key, no AI of its own.
+You bring Claude Code, Codex, or a model on your own machine through Ollama. Luu Code brings Studio. No credits, no API key, no AI of its own.
 
 ## What the agent can do
 
@@ -33,6 +33,8 @@ You bring Claude Code or Codex. Luu Code brings Studio. No credits, no API key, 
 1. **[Download Luu Code](https://github.com/luumenlabs/code/releases/latest)** and run the installer — Windows.
 2. Open **Settings → Updates**, press **Install** next to the Studio plugin, and restart Studio. The app carries the matching plugin, so there is no `.rbxm` to hunt down.
 3. Have **Claude Code** or **Codex** installed and signed in. Luu Code drives whichever you have.
+
+Running models locally? Pull one that supports tool calling in **Ollama** and it appears in the model picker beside the rest. Ollama models are run by the Codex CLI, so keep that installed too.
 
 Prefer to install the plugin yourself? `LuuCode.rbxm` is attached to every release; drop it in Studio's **Plugins** tab → **Plugins Folder**.
 

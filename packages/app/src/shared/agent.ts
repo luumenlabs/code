@@ -7,7 +7,15 @@
  * running. Spec sections 6 and 38.
  */
 
-export type AgentId = "claude" | "codex";
+/**
+ * A provider, which is also the thing that runs the session.
+ *
+ * `ollama` is the odd one: it is a provider the user picks models from, but the
+ * process behind it is still the Codex CLI, pointed at the daemon on this
+ * machine. See `main/agents/ollama.ts` for why that is the honest arrangement
+ * rather than a shortcut.
+ */
+export type AgentId = "claude" | "codex" | "ollama";
 
 export interface AgentInfo {
   id: AgentId;

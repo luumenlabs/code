@@ -15,11 +15,44 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Attachment } from "../../shared/agent.js";
+import type { AgentId, Attachment } from "../../shared/agent.js";
 import type { ModelSelection } from "../../shared/models.js";
 import { JsonLineReader, describeExit, extensionFor, nextId, spawnAgent } from "./adapter.js";
 import { withBriefing } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
+
+/**
+ * Which backend a Codex session talks to.
+ *
+ * The CLI is the same either way — `codex exec`, the same JSON stream, the same
+ * MCP wiring, the same interrupt. What differs between OpenAI's models and the
+ * ones on the user's own machine is which provider Codex is pointed at, and
+ * that is two config overrides. So Ollama is a variant of this adapter rather
+ * than an adapter of its own: a second copy of this file would drift the first
+ * time Codex's event shape moved, and it has moved several times already.
+ */
+export interface CodexVariant {
+  /** The provider this session is filed under, and the rail it appears on. */
+  id: AgentId;
+  /** What to call it in a sentence the user reads. */
+  label: string;
+  /** Overrides that decide which backend serves the model. */
+  overrides: string[];
+  /** What to suggest when the CLI exits without saying why. */
+  exitHint: string;
+  /**
+   * Advisory lines the CLI reports as errors but which the user cannot act on.
+   * Kept deliberately narrow: anything not matched here is still shown.
+   */
+  benign?: RegExp;
+}
+
+export const CODEX_VARIANT: CodexVariant = {
+  id: "codex",
+  label: "Codex",
+  overrides: [],
+  exitHint: "Run it once in a terminal to check that it is signed in.",
+};
 
 /**
  * A TOML string, preferring the literal form.
@@ -119,7 +152,11 @@ function failed(item: Record<string, any>): boolean {
 }
 
 export class CodexAdapter implements AgentAdapter {
-  readonly id = "codex" as const;
+  readonly id: AgentId;
+
+  constructor(private readonly variant: CodexVariant = CODEX_VARIANT) {
+    this.id = variant.id;
+  }
 
   private options: StartOptions | null = null;
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -162,8 +199,8 @@ export class CodexAdapter implements AgentAdapter {
 
   async send(text: string, attachments: Attachment[] = []): Promise<void> {
     const options = this.options;
-    if (!options) throw new Error("Codex is not running.");
-    if (this.child) throw new Error("Codex is still working on the previous message.");
+    if (!options) throw new Error(`${this.variant.label} is not running.`);
+    if (this.child) throw new Error(`${this.variant.label} is still working on the previous message.`);
 
     // Config overrides rather than a config file, so the user's own
     // ~/.codex/config.toml is never rewritten by Luu Code.
@@ -172,6 +209,9 @@ export class CodexAdapter implements AgentAdapter {
     const tier = selection?.options.find((entry) => entry.id === "serviceTier")?.value;
 
     const overrides = [
+      // Which backend serves the model. Empty for Codex's own; for Ollama it is
+      // the provider pointing at the daemon on this machine.
+      ...this.variant.overrides,
       /**
        * Nobody is here to approve anything.
        *
@@ -258,7 +298,7 @@ export class CodexAdapter implements AgentAdapter {
     });
 
     child.on("error", (error) => {
-      options.onEvent({ type: "error", message: `Could not start Codex: ${error.message}` });
+      options.onEvent({ type: "error", message: `Could not start ${this.variant.label}: ${error.message}` });
       options.onEvent({ type: "state", state: "error" });
       this.child = null;
     });
@@ -268,7 +308,10 @@ export class CodexAdapter implements AgentAdapter {
       this.child = null;
 
       if (code !== 0) {
-        options.onEvent({ type: "error", message: describeExit("codex", code, this.stderr) });
+        options.onEvent({
+          type: "error",
+          message: describeExit(this.variant.label, code, this.stderr, this.variant.exitHint),
+        });
         options.onEvent({ type: "state", state: "error" });
         return;
       }
@@ -362,7 +405,13 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     if (kind === "error" || kind === "stream_error") {
-      emit({ type: "error", message: String(item.message ?? item.error ?? "Codex reported an error") });
+      const message = String(item.message ?? item.error ?? `${this.variant.label} reported an error`);
+
+      // Some of what the CLI calls an error is a note about itself rather than
+      // something that went wrong with the turn, and it repeats every turn.
+      if (this.variant.benign?.test(message)) return;
+
+      emit({ type: "error", message });
     }
   }
 }

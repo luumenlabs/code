@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { AgentId, AgentInfo } from "../../shared/agent.js";
+import { describeOllama } from "./ollama.js";
 
 const run = promisify(execFile);
 
@@ -103,8 +104,16 @@ async function resolve(spec: AgentSpec): Promise<AgentInfo> {
   };
 }
 
+/**
+ * Every provider, in the order they are offered.
+ *
+ * Ollama is not a CLI, so it is not a spec: there is nothing on PATH to run
+ * `--version` against. It is a daemon that either answers or does not, and the
+ * Codex CLI is what drives it, so it is resolved after the two that are specs.
+ */
 export async function discoverAgents(): Promise<AgentInfo[]> {
-  return Promise.all(SPECS.map(resolve));
+  const clis = await Promise.all(SPECS.map(resolve));
+  return [...clis, await describeOllama(clis.find((agent) => agent.id === "codex"))];
 }
 
 export function agentSpec(id: AgentId): AgentSpec | undefined {

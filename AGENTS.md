@@ -3,8 +3,8 @@
 Luu Code hands an existing coding agent the keys to an open Roblox Studio place:
 read the DataModel, edit scripts, press Play, read the output, click around the
 running game, take screenshots. It drives **Claude Code** or **Codex** — whichever
-the user already has installed and signed in. It ships no model, holds no API key,
-and never asks for one.
+the user already has installed and signed in — or a model from their own
+**Ollama**. It ships no model, holds no API key, and never asks for one.
 
 Everything runs on `127.0.0.1`. Nothing leaves the machine.
 
@@ -59,6 +59,17 @@ transcript renders in Roblox language rather than tool ids.
 Which model the user picks decides which CLI runs — there is no separate agent
 picker. Codex models are discovered live from `codex app-server`; Claude models
 are declared in `src/shared/models.ts` and gated on the installed CLI version.
+
+**Ollama is a provider, not a third CLI.** Its models are discovered from the
+daemon's own `/api/tags` — which models exist is a fact about the machine — and
+the session is run by the Codex CLI pointed at Ollama with
+`-c model_provider='ollama'`, so it is `CodexAdapter` with a different
+`CodexVariant` rather than an adapter of its own. Writing a real Ollama adapter
+would mean this app running its own tool loop, which is the line the harness
+does not cross. Two consequences worth knowing: Ollama needs the Codex CLI
+installed (`AgentInfo.command` for it *is* Codex's path), and a model that
+cannot call tools is left out of the catalogue, because every single thing an
+agent does here is a tool call. See `src/main/agents/ollama.ts`.
 
 **One agent session per chat, all running at once.** `AgentManager` keys sessions
 by thread id, and every agent event carries the thread it came from. Opening a

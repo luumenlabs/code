@@ -14,9 +14,13 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentInfo } from "../../shared/agent.js";
+import { defaultModelFor } from "../../shared/models.js";
 import { DEFAULT_TITLE_MODEL, autoTitleProvider } from "../../shared/settings.js";
 import type { AppSettings } from "../../shared/settings.js";
 import { spawnAgent } from "./adapter.js";
+import { CODEX_VARIANT } from "./codex.js";
+import type { CodexVariant } from "./codex.js";
+import { OLLAMA_VARIANT } from "./ollama.js";
 
 /**
  * Adapted from the rules T3 Code uses, minus the git-centric guidance: Luu Code
@@ -76,14 +80,18 @@ export async function generateTitle(
 ): Promise<string | null> {
   if (!agent.command) return null;
 
-  const model = settings.titleGeneration.model ?? DEFAULT_TITLE_MODEL[agent.id];
+  // A local provider has no small model of its own to name: whatever the user
+  // pulled is what there is, so the catalogue answers when the table cannot.
+  const model = settings.titleGeneration.model ?? DEFAULT_TITLE_MODEL[agent.id] ?? defaultModelFor(agent.id)?.slug;
+  if (!model) return null;
+
   const prompt = `${PROMPT}\n\nUser message:\n${message.slice(0, 8_000)}`;
 
   try {
     const raw =
       agent.id === "claude"
         ? await runClaude(agent.command, model, prompt, cwd)
-        : await runCodex(agent.command, model, prompt, cwd);
+        : await runCodex(agent.command, model, prompt, cwd, agent.id === "ollama" ? OLLAMA_VARIANT : CODEX_VARIANT);
 
     return sanitize(raw);
   } catch {
@@ -118,10 +126,23 @@ async function runClaude(command: string, model: string, prompt: string, cwd: st
 }
 
 /**
- * Codex writes its structured answer to a file rather than stdout, so the
- * schema and the output both go through a scratch directory.
+ * Codex writes its answer to a file rather than stdout, so the schema and the
+ * output both go through a scratch directory.
+ *
+ * The same command names an Ollama model, with two things left off. A schema is
+ * one: structured output is a hosted-provider feature, and asking a local model
+ * for it fails the call rather than the formatting. Reasoning effort is the
+ * other, for the same reason. `sanitize` already copes with a plain line, which
+ * is what comes back instead.
  */
-async function runCodex(command: string, model: string, prompt: string, cwd: string): Promise<string> {
+async function runCodex(
+  command: string,
+  model: string,
+  prompt: string,
+  cwd: string,
+  variant: CodexVariant,
+): Promise<string> {
+  const local = variant.id !== "codex";
   const directory = mkdtempSync(join(tmpdir(), "luu-title-"));
   const schemaPath = join(directory, "schema.json");
   const outputPath = join(directory, "title.json");
@@ -140,10 +161,8 @@ async function runCodex(command: string, model: string, prompt: string, cwd: str
         "read-only",
         "--model",
         model,
-        "--config",
-        "model_reasoning_effort='low'",
-        "--output-schema",
-        schemaPath,
+        ...variant.overrides,
+        ...(local ? [] : ["--config", "model_reasoning_effort='low'", "--output-schema", schemaPath]),
         "--output-last-message",
         outputPath,
         "-",
@@ -153,6 +172,8 @@ async function runCodex(command: string, model: string, prompt: string, cwd: str
     );
 
     const written = readFileSync(outputPath, "utf8").trim();
+    if (local) return written;
+
     return String((JSON.parse(written) as { title?: unknown }).title ?? "");
   } finally {
     rmSync(directory, { recursive: true, force: true });

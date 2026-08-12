@@ -153,8 +153,11 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
    * "Automatic" only raises the question it was trying to avoid.
    */
   const autoProvider = autoTitleProvider(installed) ?? "codex";
-  const autoSlug = DEFAULT_TITLE_MODEL[autoProvider];
-  const autoLabel = `${models.find((model) => model.slug === autoSlug)?.name ?? autoSlug} · default`;
+  // A local provider names no model of its own — whichever one is pulled is the
+  // one it would use, so the catalogue answers for it.
+  const autoSlug =
+    DEFAULT_TITLE_MODEL[autoProvider] ?? candidates.find((model) => model.provider === autoProvider)?.slug;
+  const autoLabel = `${models.find((model) => model.slug === autoSlug)?.name ?? autoSlug ?? "None"} · default`;
 
   // The model implies the CLI, here as everywhere else: picking GPT means Codex
   // runs the call, picking Claude means Claude Code does.

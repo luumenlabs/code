@@ -64,6 +64,7 @@ function requirePlace(): PlaceRef {
 const AGENT_LABEL: Record<import("../shared/agent.js").AgentId, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  ollama: "Ollama",
 };
 
 // Resolved from the app root rather than the module path: the main process is
