@@ -13,7 +13,7 @@
  */
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { ChangeRecord, InstanceSnapshot, RbxValue, ValueChange } from "@luumen/code-protocol";
-import { formatValue } from "@luumen/code-protocol";
+import { formatValue, isPending } from "@luumen/code-protocol";
 
 export interface ChangeDocument {
   /** Shown as the filename in the diff header. */
@@ -119,10 +119,235 @@ export function changeDocument(record: ChangeRecord): ChangeDocument | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bundles: the change a run of records adds up to
+// ---------------------------------------------------------------------------
+
+/**
+ * Records that describe the same thing, and can therefore be read as one.
+ *
+ * A `create` and a `source` are different operations on the same document — the
+ * file — and comparing the first one's before with the last one's after gives
+ * the change the file actually underwent. A `rename` is not: its document is a
+ * line of Luau saying what the instance is called, and folding that into a
+ * script's diff would produce a comparison between two unrelated things.
+ *
+ * So records merge within a family and never across one.
+ */
+type Family = "document" | ChangeRecord["kind"];
+
+function family(kind: ChangeRecord["kind"]): Family {
+  return kind === "create" || kind === "source" || kind === "delete" ? "document" : kind;
+}
+
+export interface ChangeBundle {
+  /** Stable for the same instance, family, and revert state. */
+  key: string;
+  /** Oldest first, and never empty. */
+  records: ChangeRecord[];
+  /** The one the row draws its icon from. */
+  kind: ChangeRecord["kind"];
+}
+
+/**
+ * Changes, as the changes they add up to.
+ *
+ * An agent that writes a script and then fixes a line in it has performed two
+ * operations and made one change, and the transcript was showing the two: a
+ * create whose diff is the whole file, followed by an edit whose diff is a line
+ * of it. Nobody reviews that. What they want is the file, as it now stands,
+ * against what was there before — which is the first record's before and the
+ * last record's after.
+ *
+ * Grouped by instance rather than by adjacency: a turn that edits A, then B,
+ * then A again made two changes, not three, and the row for A belongs where A
+ * was first touched.
+ *
+ * Revert state is part of the key, which is what keeps the merge honest. Put
+ * one record of a bundle back and the row splits in two — what has been undone
+ * and what still stands — because a cumulative diff of a half-reverted run
+ * would describe a place that does not exist.
+ */
+export function bundleChanges(records: ChangeRecord[]): ChangeBundle[] {
+  const bundles = new Map<string, ChangeBundle>();
+
+  for (const record of records) {
+    const instance = record.target.handle || record.target.path;
+    const key = `${instance}|${family(record.kind)}|${isPending(record) ? "live" : "reverted"}`;
+
+    const existing = bundles.get(key);
+    if (existing) {
+      existing.records.push(record);
+      existing.kind = dominant(existing.kind, record.kind);
+      continue;
+    }
+
+    bundles.set(key, { key, records: [record], kind: record.kind });
+  }
+
+  return [...bundles.values()];
+}
+
+/**
+ * Which kind names the bundle.
+ *
+ * A file that was created and then edited was created — that is the fact worth
+ * the icon, and the edits are how it reached its final state. A file that was
+ * created and then deleted is a delete, for the same reason: it is the outcome.
+ */
+function dominant(current: ChangeRecord["kind"], next: ChangeRecord["kind"]): ChangeRecord["kind"] {
+  if (current === "delete" || next === "delete") return "delete";
+  if (current === "create" || next === "create") return "create";
+  return next;
+}
+
+/**
+ * A bundle from records named explicitly, for the viewer.
+ *
+ * The row has already decided what belongs together and passed its ids along;
+ * re-deriving that here would re-split the run the moment one of its records
+ * was put back, and quietly show half of the diff the user opened.
+ */
+export function bundleFrom(records: ChangeRecord[]): ChangeBundle | null {
+  const first = records[0];
+  if (!first) return null;
+
+  return {
+    key: records.map((record) => record.id).join("|"),
+    records,
+    kind: records.reduce<ChangeRecord["kind"]>((current, record) => dominant(current, record.kind), first.kind),
+  };
+}
+
+export function bundleDocument(bundle: ChangeBundle): ChangeDocument | null {
+  const records = bundle.records;
+  const first = records[0]!;
+  const last = records[records.length - 1]!;
+
+  if (records.length === 1) return changeDocument(first);
+
+  const leaf = last.target.name || last.target.path;
+
+  switch (family(first.kind)) {
+    case "document": {
+      const before = changeDocument(first);
+      const after = changeDocument(last);
+      if (!before && !after) return null;
+
+      return {
+        name: (after ?? before)!.name,
+        before: before ? before.before : null,
+        after: after ? after.after : null,
+      };
+    }
+
+    case "properties":
+      return sides(leaf, mergeValues(records.map((record) => record.properties ?? [])), "");
+
+    case "attributes":
+      return sides(leaf, mergeValues(records.map((record) => record.attributes ?? [])), "Attributes.");
+
+    case "tags": {
+      const added = new Set<string>();
+      const removed = new Set<string>();
+
+      for (const record of records) {
+        for (const tag of record.tags?.added ?? []) {
+          added.add(tag);
+          removed.delete(tag);
+        }
+        for (const tag of record.tags?.removed ?? []) {
+          removed.add(tag);
+          added.delete(tag);
+        }
+      }
+
+      return {
+        name: `${leaf}.luau`,
+        before: renderTags([...removed].sort()),
+        after: renderTags([...added].sort()),
+      };
+    }
+
+    case "rename":
+      if (!first.renamed || !last.renamed) return null;
+      return {
+        name: `${leaf}.luau`,
+        before: `Name = ${quote(first.renamed.before)}\n`,
+        after: `Name = ${quote(last.renamed.after)}\n`,
+      };
+
+    case "reparent":
+      if (!first.moved || !last.moved) return null;
+      return {
+        name: `${leaf}.luau`,
+        before: `Parent = ${first.moved.before}\n`,
+        after: `Parent = ${last.moved.after}\n`,
+      };
+
+    default:
+      return changeDocument(last);
+  }
+}
+
+/**
+ * One entry per name: where it started, and where it ended up.
+ *
+ * `Anchored` set twice in a turn is one property with one before and one after.
+ * Listing it twice is the per-operation view again, in miniature.
+ */
+function mergeValues(lists: ValueChange[][]): ValueChange[] {
+  const merged = new Map<string, ValueChange>();
+
+  for (const list of lists) {
+    for (const value of list) {
+      const existing = merged.get(value.name);
+      // The earliest `before` is the one that was there before the turn; the
+      // latest `after` is what is there now.
+      merged.set(value.name, existing ? { ...existing, after: value.after } : value);
+    }
+  }
+
+  return [...merged.values()];
+}
+
 /** True when there is a document worth opening the row for. */
-export function hasDocument(record: ChangeRecord): boolean {
-  const document = changeDocument(record);
+export function hasDocument(bundle: ChangeBundle): boolean {
+  const document = bundleDocument(bundle);
   return document !== null && (document.before !== null || document.after !== null);
+}
+
+/**
+ * What the row calls a bundle.
+ *
+ * Built from the merged data rather than from the last record, so a turn that
+ * set `Anchored` and then `CanCollide` reads as both rather than as the one it
+ * happened to finish on.
+ */
+export function bundleLabel(bundle: ChangeBundle): ChangeLabel {
+  const records = bundle.records;
+  const last = records[records.length - 1]!;
+
+  if (records.length === 1) return changeLabel(last);
+
+  const leaf = last.target.name || last.target.path;
+
+  switch (family(last.kind)) {
+    case "document":
+      return { name: `${leaf}.luau`, detail: null };
+
+    case "properties":
+      return { name: leaf, detail: names(mergeValues(records.map((r) => r.properties ?? [])).map((v) => v.name)) };
+
+    case "attributes":
+      return {
+        name: leaf,
+        detail: names(mergeValues(records.map((r) => r.attributes ?? [])).map((v) => `@${v.name}`)),
+      };
+
+    default:
+      return changeLabel(last);
+  }
 }
 
 export function changeLabel(record: ChangeRecord): ChangeLabel {
@@ -194,19 +419,33 @@ const MAX_DIFFED = 400_000;
 const COUNTED = new Map<string, ChangeStats>();
 
 export function changeStats(record: ChangeRecord): ChangeStats {
-  const cached = COUNTED.get(record.id);
+  return remembered(record.id, () => changeDocument(record));
+}
+
+/**
+ * The counts for the merged change, which are not the sum of the parts.
+ *
+ * A line written by the create and then rewritten by the edit is one added
+ * line, and adding the two records' own counts would report it as two added
+ * and one removed — a bigger diff than the one on screen.
+ */
+export function bundleStats(bundle: ChangeBundle): ChangeStats {
+  return remembered(bundle.records.map((record) => record.id).join("|"), () => bundleDocument(bundle));
+}
+
+function remembered(key: string, build: () => ChangeDocument | null): ChangeStats {
+  const cached = COUNTED.get(key);
   if (cached) return cached;
 
-  const stats = count(record);
+  const stats = count(build());
   // A guard against a session that never ends, not a policy: the next render
   // pays for the handful of rows actually on screen and the map refills.
   if (COUNTED.size > 1_000) COUNTED.clear();
-  COUNTED.set(record.id, stats);
+  COUNTED.set(key, stats);
   return stats;
 }
 
-function count(record: ChangeRecord): ChangeStats {
-  const document = changeDocument(record);
+function count(document: ChangeDocument | null): ChangeStats {
   if (!document) return NOTHING;
 
   const { name, before, after } = document;

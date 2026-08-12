@@ -11,8 +11,8 @@
  */
 import * as React from "react";
 import { MultiFileDiff } from "@pierre/diffs/react";
-import type { ChangeRecord } from "@luumen/code-protocol";
-import { changeDocument, lineCount } from "@/components/changeDocument";
+import { bundleDocument, lineCount } from "@/components/changeDocument";
+import type { ChangeBundle } from "@/components/changeDocument";
 import { cn } from "@/lib/utils";
 
 /**
@@ -79,17 +79,19 @@ function useThemeType(): "dark" | "light" {
 }
 
 export function ChangeDiff({
-  record,
+  bundle,
   split,
   className,
 }: {
-  record: ChangeRecord;
+  /** Every record the row stands for, so the diff is the one they add up to. */
+  bundle: ChangeBundle;
   /** Side-by-side. Only worth it when there is room for two columns. */
   split?: boolean;
   className?: string;
 }): React.JSX.Element | null {
   const themeType = useThemeType();
-  const document = React.useMemo(() => changeDocument(record), [record]);
+  const document = React.useMemo(() => bundleDocument(bundle), [bundle]);
+  const reason = bundle.records[bundle.records.length - 1]?.reason ?? null;
 
   const longest = document ? Math.max(lineCount(document.before ?? ""), lineCount(document.after ?? "")) : 0;
 
@@ -112,7 +114,7 @@ export function ChangeDiff({
   if (!document) {
     return (
       <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-        {record.reason ?? "Nothing to show."}
+        {reason ?? "Nothing to show."}
       </p>
     );
   }
@@ -122,7 +124,7 @@ export function ChangeDiff({
   if (before === null && after === null) {
     return (
       <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-        {record.reason ?? "No copy of this was kept."}
+        {reason ?? "No copy of this was kept."}
       </p>
     );
   }

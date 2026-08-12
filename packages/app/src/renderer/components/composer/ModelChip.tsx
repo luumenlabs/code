@@ -82,20 +82,29 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
     return seen;
   }, [models]);
 
-  const [rail, setRail] = React.useState<Rail>("claude");
+  /**
+   * Which rail is open, and where it goes back to.
+   *
+   * Null means the user has not picked one yet, and until they do the picker
+   * opens on the provider they are actually using. Once they have, it stays
+   * there — closing a menu is not a request to be sent back to the beginning,
+   * and someone working out of their favourites was being returned to the
+   * provider list on every single open.
+   *
+   * Held in component state rather than in settings: this is where you were a
+   * moment ago, not a preference about how the app should behave.
+   */
+  const [chosenRail, setChosenRail] = React.useState<Rail | null>(null);
 
-  // Read through a ref so starring a setup does not re-run this: the star is a
-  // bookmark, not a navigation, and yanking the list out from under the click
-  // loses the user's place.
-  const openingRail = React.useRef<Rail | undefined>(undefined);
-  openingRail.current = active?.provider ?? providers[0];
+  const fallbackRail: Rail = active?.provider ?? providers[0] ?? "claude";
 
-  // Opens on the provider you are actually using. Favourites are one click
-  // away on the rail, but they are a shortcut, not where you are.
-  React.useEffect(() => {
-    if (!open) return;
-    setRail(openingRail.current ?? "claude");
-  }, [open]);
+  // A remembered provider rail the open chat cannot use is not somewhere to
+  // land: the lock happened after the rail was chosen, and the models on it
+  // are all greyed out. Favourites are never blocked — they are filtered.
+  const rail: Rail =
+    chosenRail === null || (chosenRail !== "favorites" && blocked(chosenRail)) ? fallbackRail : chosenRail;
+
+  const setRail = setChosenRail;
 
   const searching = query.trim().length > 0;
 
@@ -160,8 +169,23 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
       if (!event.ctrlKey || event.metaKey || event.shiftKey) return;
 
       const index = Number.parseInt(event.key, 10) - 1;
+      if (!Number.isInteger(index)) return;
+
+      // Ctrl+N means "the Nth thing in front of me", and on the favourites rail
+      // that is a favourite. Now that the rail is remembered, someone who works
+      // out of their stars would otherwise have lost the shortcut entirely.
+      if (showingFavourites) {
+        const favourite = visibleFavourites[index];
+        if (!favourite) return;
+
+        event.preventDefault();
+        apply({ model: favourite.model, options: favourite.options });
+        setOpen(false);
+        return;
+      }
+
       const model = current[index];
-      if (!Number.isInteger(index) || !model || blocked(model.provider)) return;
+      if (!model || blocked(model.provider)) return;
 
       // A shortcut is someone who already knows what they want, so this one
       // does close.
@@ -172,7 +196,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [blocked, choose, current]);
+  }, [apply, blocked, choose, current, showingFavourites, visibleFavourites]);
 
   /**
    * Stars the whole setup, or removes the one it matches.

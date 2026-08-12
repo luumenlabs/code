@@ -34,8 +34,8 @@ import {
 import type { ChangeRecord, RevertOutcome } from "@luumen/code-protocol";
 import { groupChanges, isPending } from "@luumen/code-protocol";
 import { ChangeDiff } from "@/components/ChangeDiff";
-import { changeLabel, changeStats, hasDocument } from "@/components/changeDocument";
-import type { ChangeStats } from "@/components/changeDocument";
+import { bundleChanges, bundleLabel, bundleStats, hasDocument } from "@/components/changeDocument";
+import type { ChangeBundle, ChangeStats } from "@/components/changeDocument";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/misc";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -104,12 +104,18 @@ function useRevert(harness: Harness): {
 // Counts
 // ---------------------------------------------------------------------------
 
+/**
+ * Counted over the merged changes, not the records.
+ *
+ * The header has to agree with the rows under it, and the rows show what each
+ * instance ended up with rather than what every operation did on the way.
+ */
 function sum(records: ChangeRecord[]): ChangeStats {
   let added = 0;
   let removed = 0;
 
-  for (const record of records) {
-    const stats = changeStats(record);
+  for (const bundle of bundleChanges(records)) {
+    const stats = bundleStats(bundle);
     added += stats.added;
     removed += stats.removed;
   }
@@ -239,14 +245,8 @@ function InstanceGroup({
       </div>
 
       <div className="flex flex-col">
-        {records.map((record) => (
-          <ChangeRow
-            key={record.id}
-            record={record}
-            harness={harness}
-            outcome={outcomes[record.id]}
-            onRevert={onRevert}
-          />
+        {bundleChanges(records).map((bundle) => (
+          <ChangeRow key={bundle.key} bundle={bundle} harness={harness} outcomes={outcomes} onRevert={onRevert} />
         ))}
       </div>
     </div>
@@ -269,7 +269,6 @@ function ChangeList({
   outcomes,
   onRevert,
   live,
-  defaultOpen,
 }: {
   records: ChangeRecord[];
   harness: Harness;
@@ -277,54 +276,70 @@ function ChangeList({
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
   /** Ids still in the live journal. Absent means every record is live. */
   live?: ReadonlySet<string>;
-  /** Whether the diffs start open. See `TurnChanges`. */
-  defaultOpen?: boolean;
 }): React.JSX.Element {
+  const bundles = bundleChanges(records);
+
   return (
     <div className="flex flex-col rounded-lg border bg-card/40">
-      {records.map((record) => (
+      {bundles.map((bundle) => (
         <ChangeRow
-          key={record.id}
-          record={record}
+          key={bundle.key}
+          bundle={bundle}
           harness={harness}
-          outcome={outcomes[record.id]}
+          outcomes={outcomes}
           onRevert={onRevert}
-          stale={live !== undefined && !live.has(record.id)}
-          showPath={records.length > 1}
-          defaultOpen={defaultOpen}
+          stale={live !== undefined && bundle.records.every((record) => !live.has(record.id))}
+          showPath={bundles.length > 1}
         />
       ))}
     </div>
   );
 }
 
+/**
+ * One instance's change, however many operations it took.
+ *
+ * The row stands for a bundle rather than a record: reverting it puts every
+ * operation in it back, newest first, and the diff is the one they add up to.
+ * A record that has already gone back is in a bundle of its own, so the two
+ * halves of a partly-reverted run never share a row.
+ */
 function ChangeRow({
-  record,
+  bundle,
   harness,
-  outcome,
+  outcomes,
   onRevert,
   stale,
   showPath,
-  defaultOpen,
 }: {
-  record: ChangeRecord;
+  bundle: ChangeBundle;
   harness: Harness;
-  outcome: RevertOutcome | undefined;
+  outcomes: Outcomes;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
   /** Read back from the thread file: the diff is real, the revert is gone. */
   stale?: boolean;
   showPath?: boolean;
-  defaultOpen?: boolean;
 }): React.JSX.Element {
-  const Icon = KIND_ICON[record.kind];
-  const reverted = !isPending(record);
-  const busy = harness.reverting.includes(record.id);
-  const label = changeLabel(record);
-  const stats = changeStats(record);
+  const records = bundle.records;
+  // The newest is what the row is about: its path is where the instance is now,
+  // and its summary is the last thing that happened to it.
+  const record = records[records.length - 1]!;
+
+  const Icon = KIND_ICON[bundle.kind];
+  const reverted = records.every((entry) => !isPending(entry));
+  const busy = records.some((entry) => harness.reverting.includes(entry.id));
+  const label = bundleLabel(bundle);
+  const stats = bundleStats(bundle);
   const open = useOpenChange();
   // Cheap: whether there is a document, not what the diff of it looks like.
   // The diffing itself happens in ChangeDiff, and only once the row is open.
-  const detail = React.useMemo(() => hasDocument(record), [record]);
+  const detail = React.useMemo(() => hasDocument(bundle), [bundle]);
+
+  // Everything in the bundle goes back together, and whatever the last attempt
+  // said about any of it is what the note under the row reports.
+  const pending = records.filter(isPending);
+  const outcome = records.map((entry) => outcomes[entry.id]).find((entry) => entry !== undefined);
+  const revertable = pending.length > 0 && pending.every((entry) => entry.revertable);
 
   /* The plugin's sentence, kept where a sentence belongs: on hover, for the one
      time in fifty that "what exactly did this do" is the question. */
@@ -365,7 +380,7 @@ function ChangeRow({
         <Hint label="Open over the chat">
           <button
             type="button"
-            onClick={() => open?.(record.id)}
+            onClick={() => open?.(records.map((entry) => entry.id))}
             className="shrink-0 rounded p-1 text-muted-foreground/45 transition-colors group-hover/row:text-muted-foreground hover:text-foreground"
           >
             <Maximize2 className="size-3.5" />
@@ -382,12 +397,12 @@ function ChangeRow({
         // once, which is the right number of times for something that is true
         // of everything under it.
         <History className="mr-1 size-3.5 shrink-0 text-muted-foreground/40" />
-      ) : record.revertable ? (
-        <Hint label="Revert">
+      ) : revertable ? (
+        <Hint label={pending.length > 1 ? `Revert all ${pending.length}` : "Revert"}>
           <button
             type="button"
             disabled={harness.reverting.length > 0}
-            onClick={() => void onRevert([record])}
+            onClick={() => void onRevert(pending)}
             className="shrink-0 rounded p-1 text-muted-foreground/45 transition-colors group-hover/row:text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <Undo2 className="size-3.5" />
@@ -400,7 +415,12 @@ function ChangeRow({
   return (
     <div className="border-t first:border-t-0">
       {detail ? (
-        <Collapsible className="group/change" defaultOpen={defaultOpen}>
+        /* Closed, always. A diff that opens itself decides for the user that
+           this is the thing they came to read, and it is wrong as often as it
+           is right — a turn's rows would unfold under the answer they were
+           still reading, and the scroll position went with them. Opening one
+           is a click; closing five that opened themselves is five. */
+        <Collapsible className="group/change">
           {row}
           <CollapsibleContent>
             <div className="px-2.5 pb-2">
@@ -410,7 +430,7 @@ function ChangeRow({
                 </code>
               )}
               <div className="max-h-[420px] overflow-auto rounded-md">
-                <ChangeDiff record={record} />
+                <ChangeDiff bundle={bundle} />
               </div>
             </div>
           </CollapsibleContent>
@@ -419,7 +439,7 @@ function ChangeRow({
         row
       )}
 
-      {!stale && <RowNote record={record} outcome={outcome} busy={busy} onRevert={onRevert} />}
+      {!stale && <RowNote pending={pending} outcome={outcome} busy={busy} onRevert={onRevert} />}
     </div>
   );
 }
@@ -434,22 +454,27 @@ function ChangeRow({
  * under every change holding a Revert link that now lives on the row itself.
  */
 function RowNote({
-  record,
+  pending,
   outcome,
   busy,
   onRevert,
 }: {
-  record: ChangeRecord;
+  /** The records under this row that are still applied. */
+  pending: ChangeRecord[];
   outcome: RevertOutcome | undefined;
   busy: boolean;
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
 }): React.JSX.Element | null {
-  if (!isPending(record)) return null;
+  if (pending.length === 0) return null;
 
-  if (!record.revertable) {
+  // One of the operations cannot go back, so neither can the row: putting some
+  // of a run back would leave the instance in a state nothing describes.
+  const stuck = pending.find((record) => !record.revertable);
+
+  if (stuck) {
     return (
       <p className="px-2.5 pb-2 pl-[30px] text-[11.5px] leading-relaxed text-muted-foreground">
-        {record.reason ?? "This change cannot be put back."}
+        {stuck.reason ?? "This change cannot be put back."}
       </p>
     );
   }
@@ -476,7 +501,7 @@ function RowNote({
         <button
           type="button"
           disabled={busy}
-          onClick={() => void onRevert([record], true)}
+          onClick={() => void onRevert(pending, true)}
           className="mt-1 ml-[18px] text-[11.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
         >
           Revert anyway
@@ -492,8 +517,14 @@ function RowNote({
 
 interface ChangesContextValue {
   harness: Harness;
-  /** Opens one change over the conversation, in place of the transcript. */
-  open: (id: string) => void;
+  /**
+   * Opens one change over the conversation, in place of the transcript.
+   *
+   * Every record behind the row, not just one of them: what the viewer shows
+   * has to be the same diff the row was showing, and that diff is the run of
+   * operations added together.
+   */
+  open: (ids: string[]) => void;
 }
 
 /**
@@ -513,14 +544,14 @@ export function ChangesProvider({
   children,
 }: {
   harness: Harness;
-  onOpen: (id: string) => void;
+  onOpen: (ids: string[]) => void;
   children: React.ReactNode;
 }): React.JSX.Element {
   const value = React.useMemo(() => ({ harness, open: onOpen }), [harness, onOpen]);
   return <ChangesContext.Provider value={value}>{children}</ChangesContext.Provider>;
 }
 
-function useOpenChange(): ((id: string) => void) | null {
+function useOpenChange(): ((ids: string[]) => void) | null {
   return React.useContext(ChangesContext)?.open ?? null;
 }
 
@@ -536,8 +567,9 @@ function useOpenChange(): ((id: string) => void) | null {
  * a turn the user is actually being asked to approve.
  *
  * So it sits at the top of the turn instead, next to the answer, where a pull
- * request would put its files. Nothing folds it away, and the diffs inside are
- * already open when there are few enough of them to read.
+ * request would put its files. Nothing folds the list away — the rows inside it
+ * are closed until asked, which is the opposite trade and the right one: the
+ * list is what you need to see, and a diff is what you choose to read.
  */
 export function TurnChanges({ activityIds }: { activityIds: string[] }): React.JSX.Element | null {
   const context = React.useContext(ChangesContext);
@@ -609,17 +641,7 @@ function TurnChangeList({
         )}
       </div>
 
-      {/* Two is the point where opening everything stops being help. A turn
-          that rewrote one script should show it without being asked; a turn
-          that touched nine instances should show nine rows. */}
-      <ChangeList
-        records={records}
-        harness={harness}
-        outcomes={outcomes}
-        onRevert={run}
-        live={live}
-        defaultOpen={records.length <= 2}
-      />
+      <ChangeList records={records} harness={harness} outcomes={outcomes} onRevert={run} live={live} />
     </div>
   );
 }

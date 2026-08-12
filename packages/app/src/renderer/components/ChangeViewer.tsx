@@ -16,22 +16,23 @@
  */
 import * as React from "react";
 import { ArrowLeft, Columns2, History, Loader2, Rows2, Undo2 } from "lucide-react";
-import type { ChangeRecord } from "@luumen/code-protocol";
 import { isPending } from "@luumen/code-protocol";
 import { ChangeDiff } from "@/components/ChangeDiff";
-import { changeLabel, changeStats } from "@/components/changeDocument";
+import { bundleLabel, bundleStats } from "@/components/changeDocument";
+import type { ChangeBundle } from "@/components/changeDocument";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
 
 export function ChangeViewer({
-  record,
+  bundle,
   harness,
   live,
   onClose,
 }: {
-  record: ChangeRecord;
+  /** The row's whole run of operations, so this shows the diff it showed. */
+  bundle: ChangeBundle;
   harness: Harness;
   /**
    * Whether the Studio window that made this is still connected.
@@ -44,10 +45,17 @@ export function ChangeViewer({
   onClose: () => void;
 }): React.JSX.Element {
   const [split, setSplit] = React.useState(true);
-  const label = changeLabel(record);
-  const stats = changeStats(record);
-  const reverted = !isPending(record);
-  const busy = harness.reverting.includes(record.id);
+
+  const records = bundle.records;
+  // The newest carries the path the instance is at now, and the sentence for
+  // the last thing done to it.
+  const record = records[records.length - 1]!;
+  const pending = records.filter(isPending);
+
+  const label = bundleLabel(bundle);
+  const stats = bundleStats(bundle);
+  const reverted = pending.length === 0;
+  const busy = records.some((entry) => harness.reverting.includes(entry.id));
 
   // The one keyboard habit worth keeping from the dialog this replaced.
   React.useEffect(() => {
@@ -115,13 +123,15 @@ export function ChangeViewer({
               Earlier session
             </span>
           </Hint>
-        ) : record.revertable ? (
+        ) : pending.every((entry) => entry.revertable) ? (
           <Button
             variant="outline"
             size="sm"
             className="text-muted-foreground"
             disabled={busy || harness.reverting.length > 0}
-            onClick={() => void harness.revert([record.id])}
+            // Every operation behind the diff, newest first — the same thing
+            // the row's own button does.
+            onClick={() => void harness.revert(pending.map((entry) => entry.id))}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Undo2 />}
             Revert
@@ -130,7 +140,7 @@ export function ChangeViewer({
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        <ChangeDiff record={record} split={split} className="border-0" />
+        <ChangeDiff bundle={bundle} split={split} className="border-0" />
       </div>
     </main>
   );

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ChangesProvider } from "@/components/Changes";
 import { ChangeViewer } from "@/components/ChangeViewer";
+import { bundleFrom } from "@/components/changeDocument";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { PairingDialog } from "@/components/PairingDialog";
@@ -31,8 +32,13 @@ export function App(): React.JSX.Element {
    * thread is switched, the journal is reloaded — and a copy kept here would go
    * on showing a change that is no longer in it. Looking it up each render
    * means the viewer closes by itself when the thing it was showing is gone.
+   *
+   * A list of them, because a row is every operation that went into one
+   * instance's change and the viewer shows the same diff the row did. Records
+   * that have since gone are dropped on the way through; when none are left,
+   * so is the viewer.
    */
-  const [viewing, setViewing] = React.useState<string | null>(null);
+  const [viewing, setViewing] = React.useState<string[] | null>(null);
 
   // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
   React.useEffect(() => {
@@ -100,12 +106,16 @@ export function App(): React.JSX.Element {
   // The live journal first, because it is the copy that knows whether the
   // change has since been put back; the thread's own history behind it, so a
   // diff stays readable after the Studio window that made it has gone.
-  const viewed = viewing
-    ? (harness.changes.find((record) => record.id === viewing) ??
-      harness.history.find((record) => record.id === viewing) ??
-      null)
-    : null;
-  const viewedIsLive = viewed !== null && harness.changes.some((record) => record.id === viewed.id);
+  const viewedRecords = (viewing ?? []).flatMap((id) => {
+    const record = harness.changes.find((entry) => entry.id === id) ?? harness.history.find((entry) => entry.id === id);
+    return record ? [record] : [];
+  });
+
+  const viewed = bundleFrom(viewedRecords);
+  // Reverting needs the window that made it, and one record of a run being
+  // gone from the journal is enough to make the whole row unrevertable.
+  const viewedIsLive =
+    viewed !== null && viewedRecords.every((record) => harness.changes.some((entry) => entry.id === record.id));
 
   const sessions = harness.snapshot?.status.sessions ?? [];
   const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
@@ -178,7 +188,7 @@ export function App(): React.JSX.Element {
               <>
                 {viewed ? (
                   <ChangeViewer
-                    record={viewed}
+                    bundle={viewed}
                     harness={harness}
                     live={viewedIsLive}
                     onClose={() => setViewing(null)}
