@@ -49,6 +49,11 @@ export interface SessionOptions {
   modelSelection: ModelSelection | null;
   /** The CLI's own id from a previous run, when it can genuinely be resumed. */
   resumeSessionId?: string | null;
+  /**
+   * Reads the place's rules. Called only when a session is actually started,
+   * so reusing a live one costs no Studio round trip.
+   */
+  projectRules?: () => Promise<string | null>;
 }
 
 interface Session {
@@ -209,10 +214,12 @@ export class AgentManager {
     this.announce();
 
     const mcp = this.mcpServerSpec(key);
+    const projectRules = options.projectRules ? await options.projectRules() : null;
 
     await adapter.start({
       command: info.command,
       cwd: options.cwd,
+      projectRules,
       ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
       ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
       mcp,

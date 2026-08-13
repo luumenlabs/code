@@ -648,6 +648,19 @@ const testRunParams = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Project rules
+// ---------------------------------------------------------------------------
+
+const rulesGetParams = z.object({});
+
+const rulesSetParams = z.object({
+  text: z
+    .string()
+    .max(64000)
+    .describe("The whole rules document, as plain text. This replaces what is there; read it first if you are adding to it."),
+});
+
+// ---------------------------------------------------------------------------
 // Changes
 // ---------------------------------------------------------------------------
 
@@ -1138,6 +1151,23 @@ export const COMMANDS = {
     summary: "Run the place's TestService suite and report each result.",
   },
 
+  "rules.get": {
+    params: rulesGetParams,
+    executor: "studio",
+    permission: "inspect",
+    capability: "inspect.scripts",
+    mutates: false,
+    summary: "Read the rules the place carries for coding agents.",
+  },
+  "rules.set": {
+    params: rulesSetParams,
+    executor: "studio",
+    permission: "edit",
+    capability: "edit.scripts",
+    mutates: true,
+    summary: "Write the rules the place carries for coding agents.",
+  },
+
   "changes.list": {
     params: changesListParams,
     executor: "server",
@@ -1237,6 +1267,9 @@ export const TOOL_NAMES = {
   "perf.count": "studio_census",
 
   "test.run": "studio_run_tests",
+
+  "rules.get": "studio_project_rules",
+  "rules.set": "studio_write_project_rules",
 
   // Read and written by the app's own review panel. An agent has the change
   // journal stripped out of its results by design, so none of this is a tool it
@@ -1731,6 +1764,15 @@ export interface CommandResults {
     timedOut: boolean;
     elapsedMs: number;
   };
+
+  "rules.get": {
+    present: boolean;
+    path: string | null;
+    text: string | null;
+    /** Class name of whatever else holds the document's path, or null if free. */
+    conflict: string | null;
+  };
+  "rules.set": MutationResult & { lineCount: number; created: boolean };
 
   "changes.list": { records: ChangeRecord[]; total: number; truncated: boolean };
   "changes.revert": { outcomes: RevertOutcome[]; reverted: number };

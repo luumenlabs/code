@@ -7,7 +7,17 @@
  * code. Spec sections 21 and 25.
  */
 import { randomUUID } from "node:crypto";
-import { BATCHABLE_OPS, COMMANDS, LuuCodeError, isOp, isSilent, refuseTool, toolNameFor } from "@luumen/code-protocol";
+import {
+  BATCHABLE_OPS,
+  COMMANDS,
+  LuuCodeError,
+  isOp,
+  isSilent,
+  refuseTool,
+  toolNameFor,
+  unwrapRules,
+  wrapRules,
+} from "@luumen/code-protocol";
 import type {
   ActivityEvent,
   BatchStep,
@@ -330,6 +340,25 @@ export class Dispatcher {
           limit: params.limit as number,
           includeReverted: params.includeReverted as boolean,
         });
+
+      // The document's storage format is the protocol's, not Studio's, so the
+      // plugin moves a script source and the wrapper is put on and taken off
+      // here. Fields are read defensively: a plugin too old to know the
+      // operation is the same answer as a place with no rules.
+      case "rules.get": {
+        const answer = (await this.sendToStudio(op, params, context)) as Record<string, unknown>;
+        const source = typeof answer.source === "string" ? answer.source : null;
+
+        return {
+          present: source !== null,
+          path: typeof answer.path === "string" ? answer.path : null,
+          text: source === null ? null : unwrapRules(source),
+          conflict: typeof answer.conflict === "string" ? answer.conflict : null,
+        };
+      }
+
+      case "rules.set":
+        return this.sendToStudio(op, { source: wrapRules(params.text as string) }, context);
 
       case "changes.revert":
         return this.revert(params.ids as string[], params.force === true, context);

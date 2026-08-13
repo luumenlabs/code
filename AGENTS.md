@@ -175,6 +175,36 @@ says only whether the build can profile, and the peer that receives the request
 raises `PLAYTEST_NOT_RUNNING`. Same reasoning applies to anything else tempted
 to gate on run state at the server.
 
+## Project rules
+
+A place carries its own instructions for agents, as a ModuleScript at
+`TestService.AGENTS`. There is no working tree to keep an AGENTS.md in, so the
+document lives in the DataModel: it saves into the place file, syncs over Team
+Create, and round-trips through Rojo, which is what makes a rule written once
+reach everyone who opens the game.
+
+The path is fixed and nothing is searched for. A script named AGENTS elsewhere
+in the tree is the user's own. TestService hosts it because nothing else puts
+anything there and nothing under it replicates to a player.
+
+Three things about it are load-bearing:
+
+- **The document is a ModuleScript, so its source has to compile.** The text is
+  stored wrapped as `return [==[ ... ]==]`, put on and taken off by
+  `wrapRules`/`unwrapRules` in `packages/protocol/src/rules.ts`. Raw markdown
+  there would be flagged by Studio's Script Analysis and would fail the syntax
+  check every write returns. Source that is not wrapped is read as it stands,
+  so a hand-written document still works.
+- **`rules.get` uses `FindService`, `rules.set` uses `GetService`.** Reading is a
+  read, and `GetService` would insert a TestService into a place that does not
+  have one. A non-ModuleScript holding the name comes back as `conflict` rather
+  than as no rules, and refuses the write rather than creating a sibling.
+- **The rules are read once, when a session starts.** `briefingFor` composes
+  them into the harness briefing for both adapters; `SessionOptions.projectRules`
+  is a callback so reusing a live session costs no Studio round trip. A session
+  already running keeps the text it opened with, and an edit reaches the next
+  one.
+
 ## Adding an operation
 
 Operations are defined once and flow outward.

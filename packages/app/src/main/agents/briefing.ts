@@ -41,12 +41,42 @@ The user controls what you are allowed to do, and can revoke any of it mid-conve
 
 If Studio disconnects, stop and say so. Nothing you do will reach the place until it is back.`;
 
+/** Past this, the document is cut and the agent is told to read the rest. */
+const MAX_RULES_CHARS = 16_000;
+
+/**
+ * The briefing, plus the rules the place carries at TestService.AGENTS.
+ *
+ * Marked as the user's and placed after the harness text: an agent that cannot
+ * tell the two apart will weigh a project convention against a constraint of
+ * this environment and pick either one.
+ */
+export function briefingFor(rules: string | null | undefined): string {
+  const trimmed = rules?.trim();
+  if (!trimmed) return HARNESS_BRIEFING;
+
+  const body =
+    trimmed.length > MAX_RULES_CHARS
+      ? `${trimmed.slice(0, MAX_RULES_CHARS)}\n\n[Cut here. Read the rest with the project rules tool.]`
+      : trimmed;
+
+  return `${HARNESS_BRIEFING}
+
+---
+
+The people who build this place keep their own rules for agents working in it, at TestService.AGENTS. Follow them. Where they contradict anything above, the text above wins — that part describes what is possible here, not how this game is built.
+
+<project-rules>
+${body}
+</project-rules>`;
+}
+
 /**
  * Codex takes its instructions in the prompt rather than as a system message,
  * so the briefing rides in front of the first message of a conversation and
  * never again — a resumed session already has it in context, and repeating it
  * every turn would spend tokens re-teaching what the agent already knows.
  */
-export function withBriefing(text: string): string {
-  return `${HARNESS_BRIEFING}\n\n---\n\n${text}`;
+export function withBriefing(text: string, rules?: string | null): string {
+  return `${briefingFor(rules)}\n\n---\n\n${text}`;
 }

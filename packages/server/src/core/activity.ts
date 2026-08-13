@@ -23,9 +23,10 @@ const CATEGORIES: Record<string, Category> = {
   changes: "edit",
   perf: "inspect",
   test: "runtime",
+  rules: "inspect",
 };
 
-const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create", "script.replace"];
+const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create", "script.replace", "rules.set"];
 
 export function categoryFor(op: Op): Category {
   // Reading the journal is a read, whatever its namespace suggests.
@@ -193,6 +194,11 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     case "test.run":
       return "Running the tests";
 
+    case "rules.get":
+      return "Reading the project rules";
+    case "rules.set":
+      return "Writing the project rules";
+
     case "view.screenshot":
       return params.source === "viewport" || params.source === undefined ? "Capturing the viewport" : "Capturing the Studio window";
 
@@ -337,6 +343,11 @@ export function detailFor(op: Op, result: unknown): string | null {
       return `${Math.round(data.fps)} fps, worst frame ${(data.frameTime?.worst * 1000).toFixed(1)}ms`;
     case "perf.count":
       return `${data.total} instances, ${data.parts} parts, ${data.scripts} scripts`;
+    case "rules.get":
+      if (data.present) return `${String(data.text ?? "").split("\n").length} lines`;
+      return data.conflict ? `blocked by a ${String(data.conflict)}` : "none set";
+    case "rules.set":
+      return data.created ? `created, ${data.lineCount} lines` : `${data.lineCount} lines`;
     case "test.run": {
       const parts = [`${data.passed} passed`];
       if (data.failed > 0) parts.push(`${data.failed} failed`);

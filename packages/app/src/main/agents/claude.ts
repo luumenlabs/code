@@ -17,7 +17,7 @@ import type { Attachment } from "../../shared/agent.js";
 import type { ModelSelection } from "../../shared/models.js";
 import { agentEnvironment, nextId } from "./adapter.js";
 import { resolveClaudeExecutable } from "./claudeExecutable.js";
-import { HARNESS_BRIEFING } from "./briefing.js";
+import { briefingFor } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
 type SdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
@@ -149,7 +149,7 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(model ? { model } : {}),
       // The preset carries how Claude Code works; the append carries where it
       // is. Without the second half it reasons about the game as files.
-      systemPrompt: { type: "preset", preset: "claude_code", append: HARNESS_BRIEFING },
+      systemPrompt: { type: "preset", preset: "claude_code", append: briefingFor(options.projectRules) },
       ...(sdkEffort(effort) ? { effort: sdkEffort(effort) } : {}),
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
       ...(this.sessionId ? { resume: this.sessionId } : {}),

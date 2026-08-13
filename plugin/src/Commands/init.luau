@@ -22,6 +22,7 @@ local DebugOps = require(script.DebugOps)
 local InputOps = require(script.InputOps)
 local NetworkOps = require(script.NetworkOps)
 local PerfOps = require(script.PerfOps)
+local RulesOps = require(script.RulesOps)
 local RunOps = require(script.RunOps)
 local ScreenOps = require(script.ScreenOps)
 local ScriptOps = require(script.ScriptOps)
@@ -101,6 +102,11 @@ local HANDLERS: { [string]: (any) -> any } = {
 	["perf.count"] = PerfOps.count,
 
 	["test.run"] = TestOps.run,
+
+	["rules.get"] = function()
+		return RulesOps.get()
+	end,
+	["rules.set"] = RulesOps.set,
 }
 
 --[[

@@ -1187,6 +1187,61 @@ describe("script writes", () => {
   });
 });
 
+describe("project rules", () => {
+  it("hands back the text without the wrapper Studio stores it in", async () => {
+    plugin = await connectPlugin();
+    plugin.on("rules.get", () => ({
+      present: true,
+      path: "TestService.AGENTS",
+      source: "return [==[\nCombat lives under ReplicatedStorage.\n]==]\n",
+      conflict: { $t: "Nil" },
+    }));
+    plugin.start();
+
+    const result = (await server.execute("rules.get", {})) as any;
+
+    expect(result).toEqual({
+      present: true,
+      path: "TestService.AGENTS",
+      text: "Combat lives under ReplicatedStorage.",
+      conflict: null,
+    });
+  });
+
+  it("wraps the text into compilable source on the way in", async () => {
+    plugin = await connectPlugin();
+    let written = "";
+    plugin.on("rules.set", (params) => {
+      written = params.source;
+      return { instances: [], undoLabel: "Create the project rules", lineCount: 3, created: true };
+    });
+    plugin.start();
+
+    const result = (await server.execute("rules.set", { text: "Never touch Workspace." })) as any;
+
+    expect(written).toBe("return [==[\nNever touch Workspace.\n]==]\n");
+    expect(result.created).toBe(true);
+  });
+
+  it("reads a place with no document as no rules rather than failing", async () => {
+    plugin = await connectPlugin();
+    plugin.on("rules.get", () => ({
+      present: false,
+      path: { $t: "Nil" },
+      source: { $t: "Nil" },
+      conflict: "Folder",
+    }));
+    plugin.start();
+
+    const result = (await server.execute("rules.get", {})) as any;
+
+    expect(result.present).toBe(false);
+    expect(result.text).toBeNull();
+    // Distinguishable from an empty TestService: the name is taken.
+    expect(result.conflict).toBe("Folder");
+  });
+});
+
 describe("replacing across scripts", () => {
   it("summarises a dry run without writing anything", async () => {
     plugin = await connectPlugin();
