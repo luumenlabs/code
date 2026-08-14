@@ -72,7 +72,7 @@ async function readRules(chat: string): Promise<AgentRules> {
   const global = requireSettings().current().globalRules.trim();
 
   try {
-    const result = (await requireServer().execute("rules.get", {}, { origin: "internal", chat })) as {
+    const result = (await requireServer().execute("rules.get", {}, { origin: "internal", chat, silent: true })) as {
       text: string | null;
     };
     return { global: global || null, place: result.text };

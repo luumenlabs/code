@@ -47,7 +47,14 @@ export interface LuuCodeServer {
   execute(
     op: Op | string,
     params?: unknown,
-    context?: { origin?: "harness" | "mcp" | "internal"; sessionId?: string; realm?: StudioRealm; chat?: string },
+    context?: {
+      origin?: "harness" | "mcp" | "internal";
+      sessionId?: string;
+      realm?: StudioRealm;
+      chat?: string;
+      /** Keep this call out of the transcript; the app is asking for itself. */
+      silent?: boolean;
+    },
   ): Promise<unknown>;
   status(): SessionStatus;
   capabilities(): CapabilityReport;
@@ -149,6 +156,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
         ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
         ...(context?.realm ? { realm: context.realm } : {}),
         ...(context?.chat ? { chat: context.chat } : {}),
+        ...(context?.silent ? { silent: true } : {}),
       }),
     status: () => sessions.status(),
     capabilities: () => dispatcher.capabilityReport(),

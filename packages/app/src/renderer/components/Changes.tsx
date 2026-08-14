@@ -1,15 +1,15 @@
 /**
  * What was done to the place, and the button that takes it back.
  *
- * Grouped by instance rather than listed by time. A session's changes read as
- * fifteen indistinguishable lines when they are a timeline, and as "three things
- * happened to the Shop" when they are grouped — and the instance is what the
- * user is deciding about anyway.
+ * One row per instance and kind, which is what a bundle already is. An
+ * enclosing card per instance repeated the row's own name and class and cost a
+ * container to say it.
  *
  * The same list appears in two widths: the dock, where it is the session's whole
- * history, and under a turn in the transcript, where it is what that turn did.
- * Both use the components below so a change looks the same and reverts the same
- * wherever it is read.
+ * history and the diffs start open, and under a turn in the transcript, where it
+ * is what that turn did and the whole list is folded away. Both use the
+ * components below so a change looks the same and reverts the same wherever it
+ * is read.
  *
  * A row is a filename, what moved, and `+12 −3`. It used to be the plugin's
  * sentence — "Changed the source of Shop" — which is the right thing to hand an
@@ -32,7 +32,7 @@ import {
   Undo2,
 } from "lucide-react";
 import type { ChangeRecord, RevertOutcome } from "@luumen/code-protocol";
-import { groupChanges, isPending } from "@luumen/code-protocol";
+import { isPending } from "@luumen/code-protocol";
 import { ChangeDiff } from "@/components/ChangeDiff";
 import { bundleChanges, bundleLabel, bundleStats, hasDocument } from "@/components/changeDocument";
 import type { ChangeBundle, ChangeStats } from "@/components/changeDocument";
@@ -147,7 +147,6 @@ function Stats({ stats, className }: { stats: ChangeStats; className?: string })
 
 export function ChangesTab({ harness }: { harness: Harness }): React.JSX.Element {
   const { outcomes, run } = useRevert(harness);
-  const groups = React.useMemo(() => groupChanges(harness.changes), [harness.changes]);
   const pending = React.useMemo(() => harness.changes.filter(isPending), [harness.changes]);
 
   return (
@@ -176,79 +175,14 @@ export function ChangesTab({ harness }: { harness: Harness }): React.JSX.Element
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-2 px-2.5 pb-3">
-          {groups.length === 0 ? (
+        <div className="px-2.5 pb-3">
+          {harness.changes.length === 0 ? (
             <p className="py-2 text-[12.5px] text-muted-foreground">Nothing yet.</p>
           ) : (
-            groups.map((group) => (
-              <InstanceGroup
-                key={group.key}
-                path={group.path}
-                className={group.target.className}
-                records={group.records}
-                harness={harness}
-                outcomes={outcomes}
-                onRevert={run}
-              />
-            ))
+            <ChangeList records={harness.changes} harness={harness} outcomes={outcomes} onRevert={run} startOpen />
           )}
         </div>
       </ScrollArea>
-    </div>
-  );
-}
-
-function InstanceGroup({
-  path,
-  className,
-  records,
-  harness,
-  outcomes,
-  onRevert,
-}: {
-  path: string;
-  className: string;
-  records: ChangeRecord[];
-  harness: Harness;
-  outcomes: Outcomes;
-  onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
-}): React.JSX.Element {
-  const pending = records.filter(isPending);
-  const name = path.split(/[.[]/).pop()?.replace(/["\]]/g, "") ?? path;
-
-  return (
-    <div className="rounded-lg border bg-card/40">
-      <div className="group/row flex items-center gap-1.5 px-2.5 pt-2 pb-1.5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="truncate text-[13px] font-medium">{name}</span>
-            <span className="shrink-0 text-[11.5px] text-muted-foreground">{className}</span>
-          </div>
-          <code className="selectable block truncate font-mono text-[11px] text-muted-foreground/70" title={path}>
-            {path}
-          </code>
-        </div>
-
-        {pending.length > 1 && (
-          <Hint label={`Revert ${pending.length}`}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              disabled={harness.reverting.length > 0}
-              onClick={() => void onRevert(pending)}
-            >
-              <Undo2 />
-            </Button>
-          </Hint>
-        )}
-      </div>
-
-      <div className="flex flex-col">
-        {bundleChanges(records).map((bundle) => (
-          <ChangeRow key={bundle.key} bundle={bundle} harness={harness} outcomes={outcomes} onRevert={onRevert} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -269,6 +203,7 @@ function ChangeList({
   outcomes,
   onRevert,
   live,
+  startOpen,
 }: {
   records: ChangeRecord[];
   harness: Harness;
@@ -276,6 +211,8 @@ function ChangeList({
   onRevert: (records: ChangeRecord[], force?: boolean) => Promise<void>;
   /** Ids still in the live journal. Absent means every record is live. */
   live?: ReadonlySet<string>;
+  /** Start every diff open. The dock is the panel you go to to read them. */
+  startOpen?: boolean;
 }): React.JSX.Element {
   const bundles = bundleChanges(records);
 
@@ -290,8 +227,58 @@ function ChangeList({
           onRevert={onRevert}
           stale={live !== undefined && bundle.records.every((record) => !live.has(record.id))}
           showPath={bundles.length > 1}
+          startOpen={startOpen}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Whether the row has come near the viewport yet.
+ *
+ * The dock opens every diff at once, so a session of thirty would build thirty
+ * before the panel paints. Once seen it stays seen: unmounting on the way past
+ * would collapse the height out from under the scroll position.
+ */
+function useSeen(): [React.RefObject<HTMLDivElement>, boolean] {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [seen, setSeen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (seen) return;
+
+    const element = ref.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
+      },
+      // Built a screen early, so scrolling reaches a diff that is already there.
+      { rootMargin: "400px 0px" },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [seen]);
+
+  return [ref, seen];
+}
+
+/**
+ * The diff, built when it is nearly on screen.
+ *
+ * The placeholder is sized from the line counts so the scrollbar does not jump
+ * when the real thing replaces it.
+ */
+function LazyDiff({ bundle, stats }: { bundle: ChangeBundle; stats: ChangeStats }): React.JSX.Element {
+  const [ref, seen] = useSeen();
+  const estimate = Math.min(420, Math.max(80, (stats.added + stats.removed) * 18));
+
+  return (
+    <div ref={ref} className="max-h-[420px] overflow-auto rounded-md">
+      {seen ? <ChangeDiff bundle={bundle} /> : <div style={{ height: estimate }} />}
     </div>
   );
 }
@@ -311,6 +298,7 @@ function ChangeRow({
   onRevert,
   stale,
   showPath,
+  startOpen,
 }: {
   bundle: ChangeBundle;
   harness: Harness;
@@ -319,6 +307,7 @@ function ChangeRow({
   /** Read back from the thread file: the diff is real, the revert is gone. */
   stale?: boolean;
   showPath?: boolean;
+  startOpen?: boolean;
 }): React.JSX.Element {
   const records = bundle.records;
   // The newest is what the row is about: its path is where the instance is now,
@@ -415,12 +404,10 @@ function ChangeRow({
   return (
     <div className="border-t first:border-t-0">
       {detail ? (
-        /* Closed, always. A diff that opens itself decides for the user that
-           this is the thing they came to read, and it is wrong as often as it
-           is right — a turn's rows would unfold under the answer they were
-           still reading, and the scroll position went with them. Opening one
-           is a click; closing five that opened themselves is five. */
-        <Collapsible className="group/change">
+        /* Closed in the transcript, where a diff unfolding under the answer
+           still being read takes the scroll position with it. The dock is the
+           panel you open to read diffs, so there it starts open. */
+        <Collapsible className="group/change" defaultOpen={startOpen}>
           {row}
           <CollapsibleContent>
             <div className="px-2.5 pb-2">
@@ -429,9 +416,7 @@ function ChangeRow({
                   {record.target.path}
                 </code>
               )}
-              <div className="max-h-[420px] overflow-auto rounded-md">
-                <ChangeDiff bundle={bundle} />
-              </div>
+              <LazyDiff bundle={bundle} stats={stats} />
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -567,9 +552,8 @@ function useOpenChange(): ((ids: string[]) => void) | null {
  * a turn the user is actually being asked to approve.
  *
  * So it sits at the top of the turn instead, next to the answer, where a pull
- * request would put its files. Nothing folds the list away — the rows inside it
- * are closed until asked, which is the opposite trade and the right one: the
- * list is what you need to see, and a diff is what you choose to read.
+ * request would put its files — behind one fold whose header carries the count
+ * and the totals.
  */
 export function TurnChanges({ activityIds }: { activityIds: string[] }): React.JSX.Element | null {
   const context = React.useContext(ChangesContext);
@@ -613,10 +597,17 @@ function TurnChangeList({
   const stale = !allReverted && records.every((record) => !live.has(record.id));
 
   return (
-    <div className="flex flex-col gap-1.5">
+    /* Folded away by default. A turn that touched thirty instances is thirty
+       rows between the answer and the next message, and the count and the
+       totals on the header are what most turns need it to say. */
+    <Collapsible className="group/turn flex flex-col gap-1.5">
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <span>{records.length === 1 ? "1 change" : `${records.length} changes`}</span>
-        <Stats stats={sum(records)} />
+        <CollapsibleTrigger className="flex min-w-0 items-center gap-1.5 transition-colors hover:text-foreground">
+          <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]/turn:rotate-90" />
+          <span>{records.length === 1 ? "1 change" : `${records.length} changes`}</span>
+          <Stats stats={sum(records)} />
+        </CollapsibleTrigger>
+
         {allReverted && <span className="text-muted-foreground/70">· reverted</span>}
         {stale && (
           <Hint label="Putting a change back needs the Studio window it was made in. That session has ended, so this is here to read.">
@@ -641,7 +632,9 @@ function TurnChangeList({
         )}
       </div>
 
-      <ChangeList records={records} harness={harness} outcomes={outcomes} onRevert={run} live={live} />
-    </div>
+      <CollapsibleContent>
+        <ChangeList records={records} harness={harness} outcomes={outcomes} onRevert={run} live={live} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

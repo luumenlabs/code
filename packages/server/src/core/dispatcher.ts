@@ -81,6 +81,11 @@ export interface ExecuteContext {
    * apart. An external MCP client has no chat and sends nothing.
    */
   chat?: string;
+  /**
+   * The app asking on its own behalf, for an operation that is a tool the rest
+   * of the time. Keeps its own bookkeeping out of the transcript.
+   */
+  silent?: boolean;
 }
 
 export interface DispatcherDeps {
@@ -114,7 +119,7 @@ export class Dispatcher {
     }
 
     const spec = COMMANDS[op];
-    const silent = isSilent(op);
+    const silent = isSilent(op) || context.silent === true;
     const params = this.validate(op, rawParams);
 
     this.checkPermission(op);
