@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const home = mkdtempSync(join(tmpdir(), "luu-code-test-"));
 process.env.LUU_CODE_HOME = home;
@@ -17,6 +17,7 @@ process.env.LUU_CODE_LOG = "error";
 const { createLuuCodeServer } = await import("./index.js");
 const { SettingsStore } = await import("./config/settings.js");
 const { detailFor } = await import("./core/activity.js");
+const { unavailableOps } = await import("@luumen/code-protocol");
 type LuuCodeServer = Awaited<ReturnType<typeof createLuuCodeServer>>;
 
 /**
@@ -28,6 +29,8 @@ class FakePlugin {
   endpointId = "";
   token = "";
   running = false;
+  /** Asked Studio to play and still waiting on it, the way the edit peer does. */
+  pendingStart = false;
   private stopped = false;
   private readonly handlers = new Map<string, (params: any) => unknown>();
 
@@ -157,6 +160,7 @@ class FakePlugin {
       playerCount: this.running ? 1 : 0,
       multiplayer: false,
       rendering: this.rendering,
+      pendingStart: this.pendingStart,
     };
   }
 
@@ -550,6 +554,29 @@ describe("command round trips", () => {
     expect(result.properties.PrimaryPart).toBeNull();
   });
 
+  /**
+   * `dm.get` calls this list `properties`, so an agent that read one schema and
+   * generalised sent `properties` here and lost a turn to INVALID_PARAMS. One
+   * concept under two names across neighbouring tools is a trap the caller
+   * cannot see from either end.
+   */
+  it("takes the property list under the name its neighbour uses", async () => {
+    plugin = await connectPlugin();
+
+    let asked: any = null;
+    plugin.on("dm.properties", (params) => {
+      asked = params;
+      return { instance: {}, properties: {}, unreadable: {} };
+    });
+    plugin.start();
+
+    await server.execute("dm.properties", { target: "game.Workspace", properties: ["Name", "Size"] });
+    expect(asked.names).toEqual(["Name", "Size"]);
+
+    await server.execute("dm.properties", { target: "game.Workspace", names: ["Name"] });
+    expect(asked.names).toEqual(["Name"]);
+  });
+
   it("rejects invalid parameters before contacting Studio", async () => {
     plugin = await connectPlugin();
     plugin.start();
@@ -680,6 +707,55 @@ describe("permissions and capabilities", () => {
     await expect(server.execute("input.key", { key: "E" })).rejects.toMatchObject({
       code: "UNSUPPORTED_CAPABILITY",
     });
+  });
+
+  /**
+   * The distinction the tool list turns on.
+   *
+   * A capability the plugin will never report is a tool that fails every time
+   * it is picked, and an agent that picks it goes looking for another way to do
+   * the same job — which for anything Roblox-shaped means writing it by hand
+   * through studio_exec. One that is merely unusable right now is an error
+   * worth reading, and hiding it would look exactly like the user turning it
+   * off.
+   */
+  it("hides a tool this plugin cannot perform and keeps one that is only unusable right now", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    const hidden = unavailableOps(server.capabilities());
+
+    // The fake plugin reports neither, the way a plugin older than the app does.
+    expect(hidden).toContain("assets.insert");
+    expect(hidden).toContain("test.run");
+
+    // It does report input.virtual; nothing is running, which a playtest fixes.
+    expect(hidden).not.toContain("input.key");
+  });
+
+  /**
+   * The failure this replaces sent an agent looking for a Roblox workaround: it
+   * was told the session "did not report this capability", which reads as a
+   * fact about Studio rather than as a plugin that needs reinstalling.
+   */
+  it("names a plugin behind this build rather than blaming Roblox", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    const report = server.capabilities();
+
+    expect(report.plugin?.outdated).toBe(true);
+    expect(report.plugin?.missingCapabilities).toContain("assets.insert");
+    expect(report.capabilities.find((entry) => entry.id === "assets.insert")?.reason).toMatch(/Settings → Updates/);
+  });
+
+  it("does not call a plugin outdated for a capability that depends on the Studio build", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    // The fake reports none of these either, but their absence is a beta switch
+    // or a Studio release, so counting them would flag every install.
+    expect(server.capabilities().plugin?.missingCapabilities).not.toContain("debug.breakpoints");
   });
 });
 
@@ -970,6 +1046,126 @@ describe("playtest", () => {
     await expect(server.execute("run.stop", { timeoutMs: 1500 })).rejects.toMatchObject({ code: "INTERNAL" });
 
     plugin.running = false;
+  });
+
+  /**
+   * The playtest's DataModel is a fresh plugin runtime, so it generates a
+   * window id of its own and by window alone looks like a second Studio
+   * window. Filed that way it got a session to itself, the chat could not see
+   * it, and every playtest ended in STUDIO_TIMEOUT listing only the edit peer.
+   */
+  it("files the playtest's DataModel under the window that asked to play", async () => {
+    const edit = await connectPlugin();
+    edit.on("run.start", () => {
+      edit.pendingStart = true;
+      void edit.pushState();
+
+      // The window id Studio's playtest DataModel would generate: a new one.
+      setTimeout(() => {
+        const play = new FakePlugin(server.port, (edit as any).installId, `window-${Math.random()}`, 456);
+        play.running = true;
+        play.realmOverride = "server";
+
+        void (async () => {
+          const hello = await play.hello(edit.token);
+          play.sessionId = hello.body.sessionId;
+          play.token = hello.body.token;
+          play.endpointId = hello.body.endpointId;
+          play.start();
+          FakePlugin.all.push(play);
+
+          edit.pendingStart = false;
+          await edit.pushState();
+        })();
+      }, 30);
+
+      return edit.runState();
+    });
+    edit.start();
+
+    const state = (await server.execute("run.start", { mode: "play", timeoutMs: 4000 })) as any;
+
+    expect(state.running).toBe(true);
+
+    // One session with two peers, not two sessions holding one each.
+    // The running peer joined the edit peer's session rather than opening one
+    // of its own, which is what makes it visible to the chat that started it.
+    const status = (await server.execute("session.status", {})) as any;
+    const mine = status.sessions.find((entry: any) => entry.id === edit.sessionId);
+
+    expect(mine.endpoints.map((endpoint: any) => endpoint.realm).sort()).toEqual(["edit", "server"]);
+  });
+
+  /**
+   * A playtest's DataModels are destroyed when it ends, and their endpoints
+   * outlive them. `selectEndpoint` prefers a running peer over the edit one, so
+   * a dead client peer went on speaking for a session that was back in edit —
+   * the app, the plugin's panel, and the agent were all told "Playtest ·
+   * client" with Studio plainly sitting in edit mode.
+   */
+  it("stops believing a playtest peer once it has gone quiet", async () => {
+    // The edit peer stops answering while Studio is playing and is eventually
+    // swept, so a long playtest leaves its own peer as the only one in the
+    // session. That peer is what the session then speaks with — and it does not
+    // outlive the playtest.
+    plugin = new FakePlugin(server.port);
+    plugin.running = true;
+    plugin.realmOverride = "client";
+
+    const first = await plugin.hello();
+    plugin.sessionId = first.body.sessionId;
+    expect(server.approvePairing(plugin.sessionId)).toBe(true);
+
+    const paired = await plugin.pair();
+    plugin.token = paired.body.token;
+    plugin.endpointId = paired.body.endpointId;
+    plugin.start();
+
+    const modeNow = async (): Promise<any> => {
+      const status = (await server.execute("session.status", {})) as any;
+      return status.sessions.find((entry: any) => entry.id === plugin.sessionId).run;
+    };
+
+    expect((await modeNow()).running).toBe(true);
+
+    // The playtest ends: that DataModel is destroyed and stops syncing.
+    plugin.stop();
+
+    const realNow = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(realNow + 60_000);
+
+    try {
+      expect((await modeNow()).running).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  /**
+   * The state a playtest lands in when the plugin never loads into it: Studio
+   * is playing on screen, the edit peer is parked in ExecutePlayModeAsync, and
+   * nothing that can call EndTest ever connected.
+   *
+   * This used to send the stop to the parked edit peer, which Studio refuses —
+   * EndTest only works from a running session's server DataModel — so the user
+   * was told a Studio API was unsupported, which is not what went wrong.
+   */
+  it("says the playtest never connected rather than blaming a Studio API", async () => {
+    plugin = await connectPlugin();
+    plugin.pendingStart = true;
+    plugin.on("run.stop", () => {
+      throw new Error("EndTest reached the edit peer, which has no session to end");
+    });
+    plugin.start();
+    await plugin.pushState();
+
+    await expect(server.execute("run.stop", { timeoutMs: 1500 })).rejects.toMatchObject({
+      code: "PLAYTEST_NOT_RUNNING",
+      details: { startPending: true },
+    });
+
+    plugin.pendingStart = false;
+    await plugin.pushState();
   });
 
   it("refuses to start a playtest while one is already running", async () => {

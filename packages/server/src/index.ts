@@ -124,6 +124,9 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     runControl,
     ask,
     getDesktopCaptureProvider: () => desktopCapture,
+    // One release stamps the app, the server, and the plugin, so the server's
+    // own version is what a current plugin should be reporting back.
+    expectedPluginVersion: SERVER_VERSION,
   });
 
   sessions.start();

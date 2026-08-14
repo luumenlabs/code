@@ -62,7 +62,7 @@ export interface ActivityEvent {
   /** Human-readable summary, for example "Changed Source on ServerScriptService.Shop". */
   title: string;
   detail: string | null;
-  category: "inspect" | "edit" | "playtest" | "output" | "runtime" | "visual" | "input";
+  category: "inspect" | "edit" | "playtest" | "output" | "runtime" | "visual" | "input" | "assets";
   startedAt: number;
   finishedAt: number | null;
   status: "running" | "ok" | "error";

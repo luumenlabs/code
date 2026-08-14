@@ -7,6 +7,8 @@
  * starts one in-process if not. Spec sections 21 and 47.
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { unavailableOps } from "@luumen/code-protocol";
+import type { CapabilityReport } from "@luumen/code-protocol";
 import { LocalClient } from "../client.js";
 import { createLuuCodeServer } from "../index.js";
 import type { LuuCodeServer } from "../index.js";
@@ -54,6 +56,21 @@ function chatId(): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Everything to leave out of the tool list: what the user turned off, and what
+ * this Studio build and plugin cannot do at all.
+ *
+ * The second half is the one that was missing. A tool whose capability will
+ * never arrive was advertised anyway, so an agent picked it, was refused, and
+ * went looking for another way to do the same thing — which for anything
+ * Roblox-shaped means writing it by hand through studio_exec. The rule this
+ * restores is the one `server.ts` already states: an agent picks from what it
+ * is shown, so do not show it something that cannot work.
+ */
+function hidden(report: CapabilityReport): string[] {
+  return [...report.disabledTools, ...unavailableOps(report)];
+}
+
 async function resolveBackend(): Promise<ResolvedBackend> {
   const existing = LocalClient.fromAuthFile();
   const chat = chatId();
@@ -70,7 +87,7 @@ async function resolveBackend(): Promise<ResolvedBackend> {
       mode: "attached to the running Luu Code server",
       backend: {
         execute: (op, params) => existing.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
-        blockedOps: async () => (await existing.snapshot()).capabilities.disabledTools,
+        blockedOps: async () => hidden((await existing.snapshot()).capabilities),
         onToolsChanged: (listener) => {
           unsubscribe = existing.events((event) => {
             if (event.type === "capabilities") listener();
@@ -97,7 +114,7 @@ async function resolveBackend(): Promise<ResolvedBackend> {
     mode: `started its own server on port ${owned.port}`,
     backend: {
       execute: (op, params) => owned.execute(op, params, { origin: "mcp", ...(chat ? { chat } : {}) }),
-      blockedOps: async () => owned.capabilities().disabledTools,
+      blockedOps: async () => hidden(owned.capabilities()),
       onToolsChanged: (listener) =>
         owned.bus.subscribe((event) => {
           if (event.type === "capabilities") listener();

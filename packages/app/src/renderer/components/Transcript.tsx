@@ -28,6 +28,7 @@ import {
   ScrollText,
   Search,
   SquareTerminal,
+  Store,
   Terminal,
   Wrench,
 } from "lucide-react";
@@ -66,6 +67,7 @@ const CATEGORY: Record<ActivityEvent["category"], { label: string; icon: React.E
   runtime: { label: "Runtime", icon: SquareTerminal, tone: "text-amber-400/90" },
   visual: { label: "Screenshot", icon: Camera, tone: "text-[var(--warning)]" },
   input: { label: "Input", icon: Gamepad2, tone: "text-cyan-400/90" },
+  assets: { label: "Store", icon: Store, tone: "text-emerald-400/90" },
 };
 
 const EXAMPLES = [
@@ -948,7 +950,9 @@ function activityText(activity: ActivityEvent): string {
 
   if (activity.detail) parts.push(activity.detail);
 
-  if (activity.category === "edit" && activity.instances.length > 0) {
+  // An insert puts instances in the place the same way an edit does, so it
+  // earns the same list of what it touched.
+  if ((activity.category === "edit" || activity.category === "assets") && activity.instances.length > 0) {
     parts.push(activity.instances.map((instance) => instance.path).join("\n"));
   }
 

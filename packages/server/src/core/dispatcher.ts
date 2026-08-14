@@ -20,6 +20,7 @@ import {
 } from "@luumen/code-protocol";
 import type {
   ActivityEvent,
+  AssetKind,
   BatchStep,
   BatchableOp,
   CapabilityId,
@@ -44,6 +45,7 @@ import type { OutputStore } from "./output.js";
 import { encodePng } from "./png.js";
 import type { RunControl } from "./runControl.js";
 import type { PeerRef, SessionRegistry, SessionTarget } from "./sessions.js";
+import { lookUpStoreAssets, searchStore } from "./store.js";
 import type { SettingsStore } from "../config/settings.js";
 import type { DesktopCaptureProvider } from "../native/screenshot.js";
 import { createLogger } from "../util/logger.js";
@@ -68,6 +70,9 @@ const SLOW_OPS: Partial<Record<Op, number>> = {
   // A revert is a batch: a hundred records is one request, and each one reads
   // the live value back before it writes.
   "changes.apply": 60_000,
+  // Studio downloads the asset before it can parent anything, and a large model
+  // over a slow connection is minutes rather than seconds.
+  "assets.insert": 120_000,
 };
 
 export interface ExecuteContext {
@@ -98,6 +103,8 @@ export interface DispatcherDeps {
   runControl: RunControl;
   ask: AskRegistry;
   getDesktopCaptureProvider: () => DesktopCaptureProvider | null;
+  /** The plugin version this build ships, to check the connected one against. */
+  expectedPluginVersion: string;
 }
 
 export class Dispatcher {
@@ -110,6 +117,8 @@ export class Dispatcher {
       run: this.deps.sessions.runStateFor(target),
       desktopCaptureAvailable: this.deps.getDesktopCaptureProvider() !== null,
       settings: this.deps.settings,
+      pluginVersion: this.deps.sessions.pluginVersionFor(target),
+      expectedPluginVersion: this.deps.expectedPluginVersion,
     });
   }
 
@@ -376,6 +385,21 @@ export class Dispatcher {
           questions: params.questions as AskInput[],
           timeoutMs: params.timeoutMs as number,
         });
+
+      // The store is Roblox's web API rather than the open place, so these two
+      // answer with Studio closed and never touch the session.
+      case "assets.search":
+        return searchStore({
+          query: params.query as string,
+          kind: params.kind as AssetKind,
+          limit: params.limit as number,
+          cursor: params.cursor as string | undefined,
+          creatorId: params.creatorId as number | undefined,
+          refine: params.refine as string | undefined,
+        });
+
+      case "assets.info":
+        return lookUpStoreAssets(params.assetIds as number[]);
 
       case "changes.revert":
         return this.revert(params.ids as string[], params.force === true, context);

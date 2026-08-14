@@ -7,7 +7,7 @@
  * state and with which Studio connection is live.
  */
 import { CAPABILITIES } from "@luumen/code-protocol";
-import type { CapabilityId, CapabilityReport, CapabilityState, RunState } from "@luumen/code-protocol";
+import type { CapabilityId, CapabilityReport, CapabilityState, PluginState, RunState } from "@luumen/code-protocol";
 import type { SettingsStore } from "../config/settings.js";
 
 export interface CapabilityInputs {
@@ -18,6 +18,9 @@ export interface CapabilityInputs {
   /** True when the desktop capture path exists for this platform. */
   desktopCaptureAvailable: boolean;
   settings: SettingsStore;
+  /** What the connected plugin calls itself, and what this build ships. */
+  pluginVersion: string | null;
+  expectedPluginVersion: string;
 }
 
 const STUDIO_PROVIDED: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
@@ -40,6 +43,7 @@ const STUDIO_PROVIDED: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "perf.stats",
   "perf.script-profiler",
   "test.run",
+  "assets.insert",
 ]);
 
 export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityReport {
@@ -47,11 +51,51 @@ export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityRepor
 
   return {
     capabilities,
+    plugin: describePlugin(inputs),
     permissions: inputs.settings.permissions,
     disabledTools: inputs.settings.disabledTools,
     platform: process.platform,
   };
 }
+
+/**
+ * Whether the plugin in Studio is the one this build ships.
+ *
+ * Two signals, because neither is enough on its own. Versions catch a user
+ * running a release app against a plugin from an older release; a development
+ * build stamps the same version on both, so what catches a stale plugin there
+ * is a capability this build knows about that the plugin never mentioned.
+ */
+function describePlugin(inputs: CapabilityInputs): PluginState | null {
+  if (!inputs.studioConnected || inputs.pluginVersion === null) return null;
+
+  const missingCapabilities = [...STUDIO_PROVIDED].filter((id) => !inputs.studio.has(id) && !OPTIONAL_IN_STUDIO.has(id));
+  const mismatched = inputs.pluginVersion !== inputs.expectedPluginVersion;
+
+  return {
+    version: inputs.pluginVersion,
+    expected: inputs.expectedPluginVersion,
+    mismatched,
+    missingCapabilities,
+    outdated: mismatched || missingCapabilities.length > 0,
+  };
+}
+
+/**
+ * Capabilities a current plugin can legitimately fail to report, because they
+ * depend on the Studio build rather than on the plugin: a beta feature that is
+ * off, an API a given Studio release does not carry. Their absence says nothing
+ * about how old the plugin is, so counting them would report every install as
+ * outdated and teach the user to ignore the warning.
+ */
+const OPTIONAL_IN_STUDIO: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
+  "debug.breakpoints",
+  "perf.script-profiler",
+  "playtest.network",
+  "playtest.multiplayer",
+  "edit.undo-history",
+  "input.virtual",
+]);
 
 function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
   // Two independent capture paths, and either is enough. The in-engine one is
@@ -63,19 +107,27 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     return {
       id,
       available: false,
+      // Transient only while the in-engine path could still turn up. Once
+      // Studio is connected and its plugin does not offer capture, on a
+      // platform with no desktop path either, nothing here will ever take a
+      // picture.
+      transient: !inputs.studioConnected,
       provider: "native",
       reason: `Nothing here can capture an image: Studio is not connected and screen capture is not implemented for ${process.platform}.`,
     };
   }
 
+  // Transient: a window opening is all it takes, and an agent told "Studio is
+  // not connected" can say so. A tool that had quietly vanished could not.
   if (!inputs.studioConnected) {
-    return { id, available: false, provider: "studio-plugin", reason: "Roblox Studio is not connected." };
+    return { id, available: false, transient: true, provider: "studio-plugin", reason: "Roblox Studio is not connected." };
   }
 
   if (id === "runtime.inspect" && inputs.run && !inputs.run.running) {
     return {
       id,
       available: false,
+      transient: true,
       provider: "studio-plugin",
       reason: "Nothing is running. Start a playtest to inspect runtime state.",
     };
@@ -98,6 +150,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
       return {
         id,
         available: false,
+        transient: true,
         provider: "studio-plugin",
         reason: "Input can only be delivered while the experience is running.",
       };
@@ -107,6 +160,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
       return {
         id,
         available: false,
+        transient: true,
         provider: "studio-plugin",
         reason: "The Studio window is not drawing, probably because it is minimized, and the engine discards input while it is not.",
       };
@@ -167,16 +221,47 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     };
   }
 
+  // InsertService is not a build-varying API, so a plugin that does not offer
+  // this is old rather than running against an unusual Studio. Blaming the
+  // build sent an agent looking for another way to load an asset, and the one
+  // it found was InsertService:LoadAsset through studio_exec.
+  if (id === "assets.insert" && !inputs.studio.has(id)) {
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason:
+        outdatedReason(inputs) ??
+        "The connected Studio plugin does not offer asset insertion, so store assets cannot be brought into the place.",
+    };
+  }
+
   if (STUDIO_PROVIDED.has(id)) {
-    return inputs.studio.has(id)
-      ? { id, available: true, provider: "studio-plugin" }
-      : {
-          id,
-          available: false,
-          provider: "studio-plugin",
-          reason: "The connected Studio session did not report this capability.",
-        };
+    if (inputs.studio.has(id)) return { id, available: true, provider: "studio-plugin" };
+
+    // A capability this build knows about and the plugin never mentioned is
+    // almost always a plugin older than the app, so the reason says that and
+    // names the fix. It used to say only that the session "did not report this
+    // capability", which reads as a fact about Roblox and sends an agent
+    // looking for a workaround — which is exactly what one did.
+    return {
+      id,
+      available: false,
+      provider: "studio-plugin",
+      reason: outdatedReason(inputs) ?? "The connected Studio session did not report this capability.",
+    };
   }
 
   return { id, available: true, provider: "server" };
+}
+
+function outdatedReason(inputs: CapabilityInputs): string | null {
+  if (inputs.pluginVersion === null) return null;
+
+  const which =
+    inputs.pluginVersion === inputs.expectedPluginVersion
+      ? `The Studio plugin reports version ${inputs.pluginVersion}, the same as this build, but did not offer this`
+      : `The Studio plugin is version ${inputs.pluginVersion} and this build ships ${inputs.expectedPluginVersion}`;
+
+  return `${which}. Install the plugin under Settings → Updates and restart Studio.`;
 }

@@ -39,6 +39,17 @@ const log = createLogger("sessions");
 const PAIRING_TTL_MS = 5 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 5_000;
 
+/**
+ * How long a connection may go quiet before it stops counting as live.
+ *
+ * The plugin's long poll comes back and is re-sent at least every
+ * SYNC_HOLD_MS, so anything appreciably past one hold is a DataModel that is
+ * gone. Deliberately shorter than SESSION_STALE_MS: dropping an endpoint is
+ * destructive and worth being slow about, but believing a dead one about what
+ * Studio is doing right now is not.
+ */
+const ENDPOINT_LIVE_MS = SYNC_HOLD_MS + 10_000;
+
 interface PendingCommand {
   op: Op;
   deferred: Deferred<unknown>;
@@ -185,8 +196,9 @@ export class SessionRegistry {
     if (paired && request.token && safeEquals(paired.token, request.token) && paired.installId === request.installId) {
       // The credential belongs to the game; the session belongs to the window.
       // A second window on an already-approved place connects silently and
-      // still gets a session of its own.
-      const sessionId = this.byWindow.get(windowId) ?? `s_${randomUUID().slice(0, 8)}`;
+      // still gets a session of its own — but a playtest is not a second
+      // window, however much it looks like one from here.
+      const sessionId = this.byWindow.get(windowId) ?? this.sessionForRuntimePeer(request) ?? `s_${randomUUID().slice(0, 8)}`;
       const session = this.upsertSession(sessionId, request, windowId, paired.token);
       const endpoint = this.addEndpoint(session, request.run, request.capabilities);
 
@@ -744,6 +756,41 @@ export class SessionRegistry {
   // State
   // -------------------------------------------------------------------------
 
+  /**
+   * The session a peer that is already running belongs to.
+   *
+   * Studio loads the plugin again inside the playtest's DataModel, and that
+   * instance generates its own window id — so by window alone a playtest looks
+   * like a second Studio window and is given a session of its own. The chat is
+   * bound to the edit session, which is then the only one it can see: run.start
+   * waits for a running peer that is filed somewhere else and times out with
+   * just the edit peer in the list, and run.stop finds nothing that can call
+   * EndTest. Every playtest failed this way, and nothing about it looked like a
+   * matter of identity.
+   *
+   * The pending start is what ties the two together: the edit peer is parked in
+   * ExecutePlayModeAsync and says so, and that is the window that asked to
+   * play. Falling back to the install id covers a playtest the user started by
+   * hand, where no peer was waiting on one.
+   */
+  private sessionForRuntimePeer(request: StudioHelloRequest): string | null {
+    if (request.run?.running !== true) return null;
+
+    const candidates = [...this.sessions.values()].filter((session) => session.installId === request.installId);
+    if (candidates.length === 0) return null;
+
+    const asked = candidates.find((session) =>
+      [...session.endpoints.values()].some((endpoint) => endpoint.run.pendingStart === true),
+    );
+
+    if (asked) return asked.id;
+
+    // Only where there is no ambiguity. Two windows on one place share an
+    // install id, and filing a playtest under the wrong one would have a chat
+    // watching a playtest that is not the one it started.
+    return candidates.length === 1 ? (candidates[0]?.id ?? null) : null;
+  }
+
   private upsertSession(
     sessionId: string,
     request: Pick<StudioHelloRequest, "installId" | "place" | "studioVersion" | "pluginVersion">,
@@ -842,9 +889,11 @@ export class SessionRegistry {
 
     for (const [sessionId, session] of this.sessions) {
       for (const [endpointId, endpoint] of session.endpoints) {
-        // A parked endpoint is holding an open request, so a stale timestamp
-        // there means nothing.
-        if (endpoint.park) continue;
+        // A park used to exempt an endpoint from sweeping outright, on the
+        // grounds that it is holding an open request. But a park is re-opened
+        // every SYNC_HOLD_MS, so one that has been silent past the stale window
+        // is a socket nobody is on the other end of — which is how a finished
+        // playtest's peers stayed in the session indefinitely.
         if (now - endpoint.lastSeen < SESSION_STALE_MS) continue;
 
         log.info(`Studio connection went quiet (${endpoint.realm}); dropping it`);
@@ -894,6 +943,15 @@ export class SessionRegistry {
       for (const capability of endpoint.capabilities) merged.add(capability);
     }
     return merged;
+  }
+
+  /** What the plugin in the targeted window calls itself. Null when none is connected. */
+  pluginVersionFor(target: SessionTarget = {}): string | null {
+    try {
+      return this.resolveSession(target).pluginVersion;
+    } catch {
+      return null;
+    }
   }
 
   runStateFor(target: SessionTarget = {}): RunState | null {
@@ -976,7 +1034,18 @@ export class SessionRegistry {
       }))
       .sort((left, right) => right.lastSeen - left.lastSeen);
 
-    const primary = selectEndpoint({ ...emptyPublicSession(session), endpoints });
+    // Only a connection that is still answering gets to say what mode the
+    // session is in.
+    //
+    // A playtest's DataModels are destroyed when it ends, and until they age
+    // out their endpoints are still here claiming realm "client" and
+    // `running: true`. `selectEndpoint` prefers a running peer over the edit
+    // one, so a session sitting in edit mode went on reporting "Playtest ·
+    // client" — in the app, in the plugin's panel, and to the agent. The edit
+    // peer was right there and fresher, and was outvoted by a peer that no
+    // longer existed.
+    const live = endpoints.filter((endpoint) => Date.now() - endpoint.lastSeen <= ENDPOINT_LIVE_MS);
+    const primary = selectEndpoint({ ...emptyPublicSession(session), endpoints: live });
 
     return {
       id: session.id,

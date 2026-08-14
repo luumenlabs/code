@@ -5,7 +5,7 @@
  * important thing on screen: almost every failure the agent can hit traces back
  * to one of them. Spec section 8.
  */
-import { CirclePlay, Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
+import { Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
 import { Wordmark } from "@/components/Brand";
 import { WindowControls } from "@/components/WindowControls";
 import { Badge } from "@/components/ui/badge";
@@ -126,16 +126,12 @@ export function TitleBar({
 
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
         {session ? (
-          // Only the playtest gets a badge. "Edit" is the resting state of every
-          // Studio session, so labelling it said nothing and read like a button.
+          // The place name and nothing else. Whether Studio is playing is on
+          // screen in Studio, and the Studio panel has the row for anyone who
+          // wants the realm — saying it a third time here told the user what
+          // they were already looking at.
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13.5px] font-medium">{session.place.name}</span>
-            {running && (
-              <Badge variant="success">
-                <CirclePlay className="size-3" />
-                Playtest · {session.run.realm}
-              </Badge>
-            )}
           </div>
         ) : (
           <Badge variant="warning">

@@ -16,6 +16,7 @@ local History = require(script.Parent.History)
 local InputBridge = require(script.Parent.InputBridge)
 local Value = require(script.Parent.Value)
 
+local AssetOps = require(script.AssetOps)
 local ClassOps = require(script.ClassOps)
 local DataModelOps = require(script.DataModelOps)
 local DebugOps = require(script.DebugOps)
@@ -107,6 +108,8 @@ local HANDLERS: { [string]: (any) -> any } = {
 		return RulesOps.get()
 	end,
 	["rules.set"] = RulesOps.set,
+
+	["assets.insert"] = AssetOps.insert,
 }
 
 --[[
@@ -292,6 +295,10 @@ function Commands.capabilities(): { string }
 
 	if TestOps.isAvailable() then
 		table.insert(available, "test.run")
+	end
+
+	if AssetOps.isAvailable() then
+		table.insert(available, "assets.insert")
 	end
 
 	table.insert(available, "output.capture")

@@ -148,6 +148,8 @@ Operations are defined once and flow outward from there.
 5. Add an MCP tool in `packages/server/src/mcp/tools.ts`. Write the description for an agent that has never seen this project.
 6. Add a test.
 
+A new permission group is three more places: `PERMISSION_GROUPS` and `DEFAULT_PERMISSIONS` in `packages/protocol/src/capabilities.ts`, and the label and one-line detail the user reads, in `AccessChip.tsx` and `SettingsView.tsx`. Existing installs pick up the default, so nothing needs migrating.
+
 ## Adding a coding agent
 
 Implement `AgentAdapter` in `packages/app/src/main/agents/` and add it to `discovery.ts`. An adapter's whole job is to start the CLI the user already has, point it at the Luu Code MCP server, and translate its output into `AgentEvent`. It must not hold credentials, proxy a model, or make decisions on the agent's behalf.

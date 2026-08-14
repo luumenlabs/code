@@ -26,6 +26,7 @@ You bring Claude Code, Codex, or a model on your own machine through Ollama. Luu
 | **Poke the game** | Players, characters, PlayerGui, the camera, and Luau it runs live |
 | **See the screen** | Screenshots of Studio, handed straight to the agent |
 | **Play the game** | Keyboard, mouse, and clicks on real on-screen buttons |
+| **Bring things in** | Search the Creator Store and drop models, meshes, images, audio, and animations into the place |
 
 ## Install
 
@@ -62,7 +63,7 @@ Chats are saved per place. Open a place and its history is there.
 
 ## What it is allowed to do
 
-The chip beside the send button holds six switches — looking, editing, playtesting, running Luau, sending input, screenshots. Flip one mid-conversation and the agent is told it no longer has it.
+The chip beside the send button holds seven switches — looking, editing, playtesting, running Luau, sending input, screenshots, the Creator Store. Flip one mid-conversation and the agent is told it no longer has it.
 
 Studio only connects after you approve a pairing code, so knowing the port is not enough to reach your place. Everything runs on `127.0.0.1` and nothing is sent anywhere.
 

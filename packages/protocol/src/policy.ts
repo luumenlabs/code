@@ -8,7 +8,7 @@
  */
 import { COMMANDS, TOOL_NAMES } from "./commands.js";
 import type { Op } from "./commands.js";
-import type { PermissionGroup, PermissionSettings } from "./capabilities.js";
+import type { CapabilityReport, PermissionGroup, PermissionSettings } from "./capabilities.js";
 
 /**
  * Never turned off. These are how an agent reports what is wrong and how it
@@ -63,6 +63,30 @@ export function refuseTool(policy: ToolPolicy, op: Op): ToolRefusal {
 
 export function isToolAllowed(policy: ToolPolicy, op: Op): boolean {
   return refuseTool(policy, op) === null;
+}
+
+/**
+ * Operations this Studio build and plugin cannot perform at all.
+ *
+ * Kept apart from `refuseTool` because the two answer different questions. A
+ * refusal is about what the user decided and is worth telling an agent; this is
+ * about what the environment cannot do, and the useful thing to do with it is
+ * leave the tool out of the menu entirely.
+ *
+ * Transient unavailability is deliberately not included. "Studio is not
+ * connected" and "nothing is running" are conditions an agent can report,
+ * wait out, or ask the user to fix, and a tool that vanishes says none of that
+ * — it looks exactly like a tool the user turned off.
+ */
+export function unavailableOps(report: CapabilityReport): Op[] {
+  const dead = new Set(report.capabilities.filter((entry) => !entry.available && entry.transient !== true).map((entry) => entry.id));
+
+  if (dead.size === 0) return [];
+
+  return (Object.keys(COMMANDS) as Op[]).filter((op) => {
+    const capability = COMMANDS[op].capability;
+    return capability !== null && dead.has(capability);
+  });
 }
 
 /** Counted against the group switch too, so a group that is off reads 0 of 9. */

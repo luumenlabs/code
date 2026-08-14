@@ -2,9 +2,12 @@
 --[[
 	The Studio-side connection panel.
 
-	Deliberately small. The plugin's job in the UI is to answer three questions:
-	is Studio connected, which code is being paired, and how do I recover.
-	Everything else belongs in the app.
+	It reports and does not act. The plugin's job in the UI is to answer two
+	questions — is Studio connected, and which code is being paired — and the
+	connection is the product, not this panel. It carried a Reconnect and a
+	Forget this pairing button; the loop already retries within ten seconds, so
+	the first saved nothing anyone could perceive, and neither belongs on the
+	half of Luu Code that sits in the background. Recovery belongs in the app.
 
 	Tokens come from Theme.luau, a port of the app's stylesheet, because the two
 	are usually on screen side by side.
@@ -62,6 +65,16 @@ function Ui.create(hostPlugin: Plugin)
 	)
 	widget.Title = Constants.label()
 	widget.Name = "LuuCode" .. Constants.suffix()
+
+	-- Studio hands back the same widget for an id it has already seen, and it
+	-- runs this plugin again in the playtest's DataModel. Building a second
+	-- panel into the widget leaves two stacked on each other, the newer one
+	-- wired to a Client that belongs to a DataModel on its way out — which is
+	-- how the panel ends up a blank rectangle after pressing Play. The old one
+	-- goes before the new one is built.
+	for _, existing in ipairs(widget:GetChildren()) do
+		existing:Destroy()
+	end
 
 	local root = Instance.new("Frame")
 	root.Size = UDim2.fromScale(1, 1)
@@ -134,9 +147,9 @@ function Ui.create(hostPlugin: Plugin)
 
 	-- Details -----------------------------------------------------------------
 	--
-	-- The same four the app's Studio panel lists, in the same order. There is no
-	-- Port row: the footer already says where the server is, and stating it twice
-	-- in a panel this size reads as two different numbers until you check.
+	-- The same four the app's Studio panel lists, in the same order. No Port row:
+	-- the port is only worth knowing when nothing is connecting, and the message
+	-- above names it when that happens.
 
 	Theme.spacer(scroll, Theme.space.tight, 60)
 
@@ -144,30 +157,6 @@ function Ui.create(hostPlugin: Plugin)
 	local placeValue, placeRow = Theme.row(scroll, "Place", 80)
 	local universeValue, universeRow = Theme.row(scroll, "Universe", 90)
 	local ownerValue, ownerRow = Theme.row(scroll, "Owner", 100)
-
-	-- Actions -----------------------------------------------------------------
-
-	Theme.spacer(scroll, Theme.space.section - Theme.space.row, 110)
-
-	local reconnectButton, styleReconnect = Theme.button(scroll, "Reconnect", { order = 120 })
-	local forgetButton = Theme.button(scroll, "Forget this pairing", { order = 130 })
-
-	-- Footer ------------------------------------------------------------------
-
-	Theme.spacer(scroll, Theme.space.tight, 140)
-
-	local footer = Theme.text(scroll, "", { size = 10, color = Theme.color.muted, order = 150 })
-
-	reconnectButton.Activated:Connect(function()
-		Client.reconnect()
-	end)
-
-	forgetButton.Activated:Connect(function()
-		-- Forces the next handshake to request a fresh pairing code, which is
-		-- how a user revokes an approval from the Studio side.
-		Client.forgetToken()
-		Client.reconnect()
-	end)
 
 	-- Neither of these changes for the life of the session, so they are read once
 	-- rather than on every connection state change.
@@ -179,10 +168,6 @@ function Ui.create(hostPlugin: Plugin)
 		statusDot.BackgroundColor3 = status.color
 		statusText.Text = status.text
 		statusText.TextColor3 = status.color
-
-		-- Reconnect is the one thing to do when the server has gone, and nothing
-		-- worth drawing the eye to once it is back.
-		styleReconnect(state.status == "disconnected" and "primary" or "outline")
 
 		local place = state.place
 		placeName.Text = place and place.name or "No place open"
@@ -223,8 +208,6 @@ function Ui.create(hostPlugin: Plugin)
 		local owner = ownerOf(place)
 		ownerRow.Visible = owner ~= nil
 		ownerValue.Text = owner or ""
-
-		footer.Text = string.format("Runs on 127.0.0.1:%d. Nothing leaves this machine.", state.port)
 	end
 
 	render(Client.state())

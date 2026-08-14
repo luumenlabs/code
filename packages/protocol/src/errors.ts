@@ -49,6 +49,12 @@ export const ERROR_CODES = [
   "ASK_TIMEOUT",
   /** There is no conversation on screen to put a question in front of. */
   "ASK_UNAVAILABLE",
+  /**
+   * Roblox's own Creator Store endpoints could not be reached or refused the
+   * request. Distinct because nothing about the place or the request is wrong:
+   * the agent either waits or builds what it wanted itself.
+   */
+  "STORE_UNAVAILABLE",
   /** Anything unclassified. Always accompanied by a message. */
   "INTERNAL",
 ] as const;

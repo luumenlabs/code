@@ -178,21 +178,34 @@ export class RunControl {
 
   async stop(params: { timeoutMs: number }, target: SessionTarget = {}): Promise<RunState> {
     const initial = this.state(target);
-    // Its ExecutePlayModeAsync is the session, so its EndTest ends it.
     const starting = this.sessions.findPeer(target, isStarting);
 
     if (!initial.running && !starting) return initial;
 
-    // EndTest only exists inside the session it is ending; `starting` is the
-    // only route when no peer loaded into the playtest.
+    /**
+     * Only a running peer can end a playtest.
+     *
+     * This used to fall back to the peer parked in `ExecutePlayModeAsync` on
+     * the theory that whoever started the session could end it. Studio refuses:
+     * `EndTest` may only be called from the server DataModel of a running play
+     * session, and the edit DataModel is never that. So the fallback could not
+     * work, and what it produced was an UNSUPPORTED_CAPABILITY about a Studio
+     * API — which reads as a broken build rather than as what it is, a playtest
+     * that never connected back. Say the true thing instead.
+     */
     const peer =
       this.sessions.findPeer(target, isRunning) ??
-      starting ??
       (() => {
-        throw new LuuCodeError("PLAYTEST_NOT_RUNNING", "The running playtest has no connection to Luu Code, so it cannot be stopped from here.", {
-          details: { state: initial },
-          hint: "Press Stop in Studio. If this keeps happening, the plugin may not have loaded into the playtest's DataModel.",
-        });
+        throw new LuuCodeError(
+          "PLAYTEST_NOT_RUNNING",
+          starting
+            ? "Studio was asked to play and no DataModel from that playtest ever connected to Luu Code, so there is nothing here that can end it."
+            : "The running playtest has no connection to Luu Code, so it cannot be stopped from here.",
+          {
+            details: { state: initial, startPending: starting !== null },
+            hint: "Press Stop in Studio. The playtest's own DataModel never reached Luu Code, so the plugin probably did not load into it — reinstall it under Settings → Updates and restart Studio if this keeps happening.",
+          },
+        );
       })();
 
     const refusal = await this.trigger("run.stop", {}, peer, target);

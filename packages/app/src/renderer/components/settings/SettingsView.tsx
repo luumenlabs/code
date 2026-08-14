@@ -75,6 +75,7 @@ const PERMISSION_COPY: Record<PermissionGroup, { label: string; detail: string }
   exec: { label: "Run Luau", detail: "Execute code in your session" },
   input: { label: "Play the game", detail: "Click and type in the running game" },
   screenshot: { label: "See your place", detail: "Screenshots and camera" },
+  assets: { label: "Use the store", detail: "Search the Creator Store and insert assets" },
 };
 
 export function SettingsView({

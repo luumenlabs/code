@@ -476,7 +476,7 @@ local function sync(wait: boolean): boolean
 			-- The server no longer knows this session. Pair again rather than
 			-- retrying forever against something that will never answer.
 			Client.forgetToken()
-			setStatus("disconnected", "Luu Code lost this session. Reconnect to pair again.")
+			setStatus("disconnected", "Luu Code lost this session. Pairing again.")
 		else
 			setStatus("disconnected", response.error or "Lost contact with Luu Code")
 		end
@@ -608,12 +608,6 @@ function Client.start(hostPlugin: Plugin)
 			Commands.prune()
 		end
 	end)
-end
-
-function Client.reconnect()
-	-- Ends the current session; the loop handshakes again on the next pass.
-	generation += 1
-	wake:Fire()
 end
 
 function Client.stop()

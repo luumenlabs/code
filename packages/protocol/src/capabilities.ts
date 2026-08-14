@@ -28,6 +28,7 @@ export const CAPABILITIES = [
   "perf.stats",
   "perf.script-profiler",
   "test.run",
+  "assets.insert",
 ] as const;
 
 export type CapabilityId = (typeof CAPABILITIES)[number];
@@ -37,6 +38,17 @@ export interface CapabilityState {
   available: boolean;
   /** Why it is unavailable, phrased for the agent. */
   reason?: string;
+  /**
+   * True when this session could still make it available — Studio has not
+   * connected yet, nothing is running, the window is not drawing. False means
+   * this Studio build or this plugin cannot do it at all.
+   *
+   * The difference decides whether the tool is worth showing an agent. A
+   * transient refusal is an error it can act on and should see; a permanent one
+   * is a menu entry that fails every time it is picked, and picking it is a
+   * turn spent learning what this could have said up front.
+   */
+  transient?: boolean;
   /**
    * Which layer provides it, useful when diagnosing a failure.
    *
@@ -48,7 +60,7 @@ export interface CapabilityState {
 }
 
 /** Permission groups the user can toggle. Spec sections 25 and 26. */
-export const PERMISSION_GROUPS = ["inspect", "edit", "playtest", "exec", "input", "screenshot"] as const;
+export const PERMISSION_GROUPS = ["inspect", "edit", "playtest", "exec", "input", "screenshot", "assets"] as const;
 
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -61,10 +73,32 @@ export const DEFAULT_PERMISSIONS: PermissionSettings = {
   exec: true,
   input: true,
   screenshot: true,
+  assets: true,
 };
+
+/**
+ * The plugin on the other end, and whether it is the one this build ships.
+ *
+ * `missingCapabilities` is the signal the version string cannot give: two
+ * development builds both call themselves the same thing, so a plugin that
+ * predates a feature is indistinguishable by version and obvious by what it
+ * failed to report.
+ */
+export interface PluginState {
+  version: string;
+  expected: string;
+  /** True when the two version strings differ outright. */
+  mismatched: boolean;
+  /** Capabilities this build expects a current plugin to provide and did not get. */
+  missingCapabilities: CapabilityId[];
+  /** True when either signal says the plugin is behind this build. */
+  outdated: boolean;
+}
 
 export interface CapabilityReport {
   capabilities: CapabilityState[];
+  /** Null until a Studio session is connected to have a plugin at all. */
+  plugin: PluginState | null;
   permissions: PermissionSettings;
   /**
    * Operations turned off one at a time, under groups that are otherwise on.

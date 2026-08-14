@@ -283,6 +283,22 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
       "Read the rules this place carries for coding agents — the conventions, the layout, and what to avoid, written by the people who build it. They live in the place itself, at TestService.AGENTS, so they travel with the game rather than with one machine. You are given them at the start of a conversation; read them again when you want the current text, for example before adding to it.",
   },
   {
+    op: "assets.search",
+    description:
+      "Search the Creator Store — the same catalogue Studio's Toolbox shows — for models, meshes, images, audio, or animations. Use it before building anything that already exists: a tree, a car, a lamppost, a footstep sound. Each result comes back with what an insert decision actually turns on: whether it is free, how many triangles it is, how many scripts are inside it, and how people have voted on it. A model with scripts brings someone else's code into the place, so say so rather than inserting it quietly. Pass the id to studio_insert_asset to bring it in, or use the uri for anything that goes in a property instead, like Sound.SoundId or Decal.Texture. Results are ordered by Roblox's own relevance and cannot be sorted; narrow instead, with a better query or one of the words returned under refinements.",
+  },
+  {
+    op: "assets.info",
+    description:
+      "Look up store assets by id, for ids you did not get from studio_search_assets — from the web, from the user, from a URL. Same information the search returns, so you can check that something is free and see what is inside it before putting it in the place. A store URL is accepted in place of an id. Ids the store will not describe come back under missing rather than as a failure, which is what a private, deleted, or moderated asset looks like from outside.",
+  },
+  {
+    op: "assets.insert",
+    description:
+      "Insert a Creator Store asset into the open place. Give it an id from studio_search_assets, or the URL of a store page. It goes into Workspace unless you name another parent, and position moves it once it is there — without one it lands wherever the asset puts itself, which is usually the origin. The result says how many instances arrived and how many of them are scripts; if it brought scripts, tell the user. It is one Ctrl+Z for them and one entry in the change history. Only free assets and ones the user already owns can be inserted; anything else is refused by Roblox rather than bought.",
+  },
+
+  {
     op: "ask.user",
     description:
       "Ask the user something and wait for the answer. The conversation turns into a form: each question appears with the options you gave, and they pick one, pick several, write their own answer, or dismiss it. Use it where guessing wrong would waste the turn — which of three shops they meant, whether to fix the model or the script that spawns it, what a vague word in the request refers to. Do not use it for anything the place can answer: look first, and ask only about what is genuinely the user's to decide. Ask everything you need in one call rather than one question per turn. Dismissing stops the turn, so treat a question as an interruption worth making, and state what you are about to do rather than asking permission to do it. This works with Studio closed.",

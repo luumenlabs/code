@@ -78,10 +78,21 @@ const searchParams = z
     message: "Provide at least one of name, className, or tag.",
   });
 
-const propertiesParams = z.object({
-  target: targetSchema,
-  names: z.array(z.string()).optional(),
-});
+/**
+ * `properties` is the name, because that is what `dm.get` calls the same thing.
+ *
+ * It used to be `names` alone, and an agent that had read one op's schema
+ * generalised from it and lost a turn to INVALID_PARAMS. One concept with two
+ * names across neighbouring tools is a trap the caller cannot see. `names` is
+ * still accepted so nothing already written to it breaks.
+ */
+const propertiesParams = z
+  .object({
+    target: targetSchema,
+    properties: z.array(z.string()).optional().describe("Property names to read. Omit for a curated set appropriate to the instance class."),
+    names: z.array(z.string()).optional(),
+  })
+  .transform(({ target, properties, names }) => ({ target, names: properties ?? names }));
 
 const selectionGetParams = z.object({});
 const selectionSetParams = z.object({ targets: z.array(targetSchema).max(200) });
@@ -661,6 +672,73 @@ const rulesSetParams = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// The Creator Store
+// ---------------------------------------------------------------------------
+
+/** The parts of the store an agent can reach, and the Roblox asset type of each. */
+export const ASSET_KINDS = {
+  model: 10,
+  mesh: 40,
+  image: 13,
+  audio: 3,
+  animation: 24,
+} as const satisfies Record<string, number>;
+
+export type AssetKind = keyof typeof ASSET_KINDS;
+
+const assetKindSchema = z.enum(Object.keys(ASSET_KINDS) as [AssetKind, ...AssetKind[]]);
+
+/**
+ * An asset id, however the caller came by it.
+ *
+ * A URL is accepted alongside a bare id because a web search hands back a store
+ * page, and making the agent pick the number out of it first is a round trip
+ * spent on string surgery. The longest run of digits is the id in every form
+ * Roblox publishes — `/store/asset/1818/Tree`, `/library/1818/Tree`, and
+ * `rbxassetid://1818` alike.
+ */
+const assetIdSchema = z.union([z.number().int().positive(), z.string().min(1)]).transform((value, ctx) => {
+  if (typeof value === "number") return value;
+
+  const longest = (value.match(/\d+/g) ?? []).sort((a, b) => b.length - a.length)[0];
+  const id = longest ? Number.parseInt(longest, 10) : Number.NaN;
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `No asset id in ${JSON.stringify(value)}.` });
+    return z.NEVER;
+  }
+
+  return id;
+});
+
+const assetSearchParams = z.object({
+  query: z.string().min(1).max(120).describe("What to look for, in the words a person would use."),
+  kind: assetKindSchema.default("model").describe("Which part of the store to search."),
+  limit: limit(50, 10),
+  cursor: z.string().min(1).optional().describe("Cursor from the previous search, for the next page of the same query."),
+  creatorId: z.number().int().positive().optional().describe("Only assets by this creator, whose id came from an earlier result."),
+  refine: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("One of the words an earlier search offered under refinements. Whatever Roblox actually applied comes back in refined."),
+});
+
+const assetInfoParams = z.object({
+  assetIds: z.array(assetIdSchema).min(1).max(30).describe("Asset ids, or the URLs of their store pages."),
+});
+
+const assetInsertParams = z.object({
+  assetId: assetIdSchema.describe("Asset id, or the URL of its store page."),
+  parent: targetSchema.default("game.Workspace").describe("Where it goes."),
+  name: z.string().min(1).optional().describe("Rename what arrives. Defaults to the name the asset carries."),
+  position: z
+    .tuple([z.number(), z.number(), z.number()])
+    .optional()
+    .describe("World position to move what arrives to. Left where the asset puts itself when omitted, which is usually the origin."),
+});
+
+// ---------------------------------------------------------------------------
 // Asking the user
 // ---------------------------------------------------------------------------
 
@@ -1220,6 +1298,33 @@ export const COMMANDS = {
     summary: "Write the rules the place carries for coding agents.",
   },
 
+  // Search and lookup are the server's: they are HTTP calls to Roblox and
+  // answer with Studio closed. Only the insert needs a place to put anything.
+  "assets.search": {
+    params: assetSearchParams,
+    executor: "server",
+    permission: "assets",
+    capability: null,
+    mutates: false,
+    summary: "Search the Creator Store for models, meshes, images, audio, or animations.",
+  },
+  "assets.info": {
+    params: assetInfoParams,
+    executor: "server",
+    permission: "assets",
+    capability: null,
+    mutates: false,
+    summary: "Look up Creator Store assets by id: what they are, who made them, and what is inside them.",
+  },
+  "assets.insert": {
+    params: assetInsertParams,
+    executor: "studio",
+    permission: "assets",
+    capability: "assets.insert",
+    mutates: true,
+    summary: "Insert a Creator Store asset into the place.",
+  },
+
   "ask.user": {
     params: askParams,
     executor: "server",
@@ -1334,6 +1439,10 @@ export const TOOL_NAMES = {
 
   "rules.get": "studio_project_rules",
   "rules.set": "studio_write_project_rules",
+
+  "assets.search": "studio_search_assets",
+  "assets.info": "studio_asset_info",
+  "assets.insert": "studio_insert_asset",
 
   // Not a Studio tool and not named like one: this one reaches past the place
   // to the person, and it is the only tool here that works with Studio closed.
@@ -1673,6 +1782,48 @@ export interface SearchResult {
   truncated: boolean;
 }
 
+/**
+ * One Creator Store listing.
+ *
+ * `scriptCount` and `free` are the two fields that decide whether an asset can
+ * be used at all: a paid asset the user does not own will not insert, and a
+ * model carrying scripts brings someone else's code into the place along with
+ * the geometry.
+ */
+export interface StoreAsset {
+  id: number;
+  name: string;
+  /** Cut short; the store page carries the rest. */
+  description: string;
+  /**
+   * Null for an asset outside the kinds this searches — a shirt, a plugin, a
+   * badge. An id an agent found on the web can be any of them, and calling one
+   * a model because it was asked for a model would be a guess.
+   */
+  kind: AssetKind | null;
+  /** Roblox's own asset type number, which says what it is when `kind` does not. */
+  typeId: number;
+  /** What to put in a property that takes an asset, such as Sound.SoundId. */
+  uri: string;
+  /** The store page, for the user rather than the agent. */
+  url: string;
+  creator: { id: number; name: string; verified: boolean };
+  /** True when taking it costs nothing. */
+  free: boolean;
+  /** What it costs, in the currency named, or null when it is free. */
+  price: { currency: string; amount: number } | null;
+  /** Roblox's own endorsement mark. */
+  endorsed: boolean;
+  /** Scripts inside the asset. Anything above zero is code that will run in the place. */
+  scriptCount: number;
+  /** How heavy it is. Null for audio, and for a model Roblox has not measured. */
+  mesh: { triangles: number; vertices: number } | null;
+  /** Whole seconds, as Roblox rounds them, so 0 means under one. Null for anything that is not audio. */
+  duration: number | null;
+  votes: { up: number; down: number; percent: number };
+  updatedAt: string;
+}
+
 export interface GuiClickResult {
   clicked: InstanceRef;
   /** Viewport coordinates the click was delivered to. */
@@ -1841,6 +1992,30 @@ export interface CommandResults {
     conflict: string | null;
   };
   "rules.set": MutationResult & { lineCount: number; created: boolean };
+
+  "assets.search": {
+    assets: StoreAsset[];
+    /** Pass back as `cursor` for the next page. Null when this is the last one. */
+    cursor: string | null;
+    /** How many Roblox says it has, which is capped and is not the number returned. */
+    total: number;
+    /** Words that narrow this query, offered as `refine` on the next call. */
+    refinements: string[];
+    /** The refinements Roblox actually applied. Empty when it ignored the one asked for. */
+    refined: string[];
+    /** Ids the store matched but then would not describe, so a short list is never silent. */
+    missing: number[];
+  };
+  "assets.info": { assets: StoreAsset[]; missing: number[] };
+  "assets.insert": MutationResult & {
+    assetId: number;
+    /** Instances parented into the place, which is more than one when the asset holds several. */
+    inserted: number;
+    /** Everything under them, so the size of what arrived is visible without a second call. */
+    descendants: number;
+    /** Scripts that came with it. Anything above zero is code the user did not write. */
+    scripts: number;
+  };
 
   /** Only an answered question returns; every other outcome is an error. */
   "ask.user": { answers: import("./ask.js").AskAnswer[] };

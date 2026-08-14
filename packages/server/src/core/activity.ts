@@ -24,6 +24,7 @@ const CATEGORIES: Record<string, Category> = {
   perf: "inspect",
   test: "runtime",
   rules: "inspect",
+  assets: "assets",
 };
 
 const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.reparent", "dm.clone", "dm.attributes", "dm.tags", "dm.batch", "script.set", "script.patch", "script.create", "script.replace", "rules.set"];
@@ -31,6 +32,10 @@ const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.
 export function categoryFor(op: Op): Category {
   // Reading the journal is a read, whatever its namespace suggests.
   if (op === "changes.list") return "inspect";
+  // Browsing the store and inserting from it are one activity to read about,
+  // and the insert is the interesting half — filing it under edit would bury
+  // it among the ordinary property writes.
+  if (op.startsWith("assets.")) return "assets";
   if (MUTATING_PREFIXES.some((prefix) => op.startsWith(prefix))) return "edit";
   if (op === "dm.selection.set") return "edit";
   if (op === "view.screenshot") return "visual";
@@ -199,6 +204,15 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     case "rules.set":
       return "Writing the project rules";
 
+    case "assets.search":
+      return `Searching the Creator Store for ${String(params.query)}`;
+    case "assets.info": {
+      const count = ((params.assetIds as unknown[]) ?? []).length;
+      return count === 1 ? "Looking up a store asset" : `Looking up ${count} store assets`;
+    }
+    case "assets.insert":
+      return `Inserting asset ${String(params.assetId)} into ${targetName(params)}`;
+
     case "ask.user": {
       const count = ((params.questions as unknown[]) ?? []).length;
       return count === 1 ? "Asking you a question" : `Asking you ${count} questions`;
@@ -353,6 +367,20 @@ export function detailFor(op: Op, result: unknown): string | null {
       return data.conflict ? `blocked by a ${String(data.conflict)}` : "none set";
     case "rules.set":
       return data.created ? `created, ${data.lineCount} lines` : `${data.lineCount} lines`;
+    case "assets.search":
+    case "assets.info": {
+      const found = ((data.assets as unknown[]) ?? []).length;
+      const missing = ((data.missing as unknown[]) ?? []).length;
+      const where = `${found} asset${found === 1 ? "" : "s"}`;
+      return missing > 0 ? `${where}, ${missing} the store would not describe` : where;
+    }
+    // The script count is the part the user is entitled to see without opening
+    // anything: it is someone else's code, now in their place.
+    case "assets.insert": {
+      const parts = [`${data.descendants} instances`];
+      if (data.scripts > 0) parts.push(`${data.scripts} script${data.scripts === 1 ? "" : "s"}`);
+      return `${firstPath(data.instances) ?? "inserted"} — ${parts.join(", ")}`;
+    }
     case "test.run": {
       const parts = [`${data.passed} passed`];
       if (data.failed > 0) parts.push(`${data.failed} failed`);

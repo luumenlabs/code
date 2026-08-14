@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   SquareTerminal,
+  Store,
 } from "lucide-react";
 import { PERMISSION_GROUPS, groupTally, isOp } from "@luumen/code-protocol";
 import type { PermissionGroup, PermissionSettings, ToolPolicy } from "@luumen/code-protocol";
@@ -30,6 +31,7 @@ const PERMISSIONS: Array<{ id: PermissionGroup; label: string; detail: string; i
   { id: "exec", label: "Run Luau", detail: "Execute code in your session", icon: SquareTerminal },
   { id: "input", label: "Play the game", detail: "Click and type in the running game", icon: Gamepad2 },
   { id: "screenshot", label: "See your place", detail: "Screenshots and camera", icon: Camera },
+  { id: "assets", label: "Use the store", detail: "Search the Creator Store and insert assets", icon: Store },
 ];
 
 export function AccessChip({

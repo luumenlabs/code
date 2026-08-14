@@ -14,6 +14,8 @@ if not plugin then
 	return
 end
 
+local RunService = game:GetService("RunService")
+
 local Client = require(script.Client)
 local Constants = require(script.Constants)
 local RunState = require(script.RunState)
@@ -35,7 +37,24 @@ plugin.Unloading:Connect(function()
 	Client.stop()
 end)
 
+--[[
+	The panel belongs to the edit DataModel and only to it.
+
+	Studio runs this again inside each DataModel a playtest creates, and those
+	instances were building the panel too — into the same widget, since Studio
+	hands back the one it already has for an id. The last one to build won, so
+	the panel on screen belonged to a playtest peer: it reported "Playtest ·
+	client" from a Client of its own, and when the playtest ended that DataModel
+	died and left the panel behind, frozen on the last thing it had to say.
+
+	The connection above is deliberately outside this. Every peer connects; only
+	one of them draws.
+]]
 local panelOk, panelProblem = pcall(function()
+	if RunService:IsRunning() then
+		return
+	end
+
 	local toolbar = plugin:CreateToolbar(label)
 	local toggleButton =
 		toolbar:CreateButton("LuuCodeToggle" .. Constants.suffix(), "Show the " .. label .. " connection panel", Constants.icon(), label)
