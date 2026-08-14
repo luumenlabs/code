@@ -19,6 +19,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileText,
   FolderOpen,
   Link2,
   Loader2,
@@ -45,6 +46,7 @@ import { agentBehind, pluginWaiting } from "../../../shared/update.js";
 import type { AgentInfo } from "../../../shared/agent.js";
 import type { Channel, PluginStatus, UpdateStatus } from "../../../shared/update.js";
 import { Badge, Notice, badgeVariants } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -55,10 +57,11 @@ import { cn } from "@/lib/utils";
 import { settingsWaiting } from "@/state";
 import type { Harness } from "@/state";
 
-export type Section = "general" | "providers" | "permissions" | "connection" | "updates";
+export type Section = "general" | "rules" | "providers" | "permissions" | "connection" | "updates";
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ElementType }> = [
   { id: "general", label: "General", icon: Settings2 },
+  { id: "rules", label: "Rules", icon: FileText },
   { id: "providers", label: "Providers", icon: Bot },
   { id: "permissions", label: "Permissions", icon: Shield },
   { id: "connection", label: "Connection", icon: Link2 },
@@ -128,6 +131,7 @@ export function SettingsView({
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-[640px] px-8 py-8">
           {section === "general" && <General harness={harness} />}
+          {section === "rules" && <Rules harness={harness} />}
           {section === "providers" && <Providers harness={harness} />}
           {section === "permissions" && <Permissions harness={harness} />}
           {section === "connection" && <Connection harness={harness} />}
@@ -216,6 +220,66 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
           onCheckedChange={(followRuntimeErrors) => harness.updateSettings({ followRuntimeErrors })}
         />
       </Row>
+    </Panel>
+  );
+}
+
+/** Past this the briefing cuts the document, so the panel says so first. */
+const MAX_RULES_CHARS = 16_000;
+
+/**
+ * Rules for every place.
+ *
+ * Held in local state and written on a pause: bound straight to settings, every
+ * keystroke would be a file write and a broadcast racing the cursor.
+ */
+function Rules({ harness }: { harness: Harness }): React.JSX.Element {
+  const stored = harness.settings.globalRules;
+  const [text, setText] = React.useState(stored);
+  const editing = React.useRef(false);
+
+  // Restore defaults, and anything else that writes from outside, still lands.
+  React.useEffect(() => {
+    if (!editing.current) setText(stored);
+  }, [stored]);
+
+  React.useEffect(() => {
+    if (!editing.current || text === stored) return;
+
+    const timer = window.setTimeout(() => {
+      editing.current = false;
+      void harness.updateSettings({ globalRules: text });
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [text, stored, harness]);
+
+  const overLimit = text.length > MAX_RULES_CHARS;
+
+  return (
+    <Panel title="Rules" description="Given to every agent, in every place.">
+      <div className="rounded-lg border bg-card/40 focus-within:border-ring/60">
+        <Textarea
+          value={text}
+          rows={16}
+          spellCheck={false}
+          placeholder="Ask before deleting anything under ServerStorage."
+          onChange={(event) => {
+            editing.current = true;
+            setText(event.target.value);
+          }}
+          onBlur={() => {
+            if (!editing.current) return;
+            editing.current = false;
+            if (text !== stored) void harness.updateSettings({ globalRules: text });
+          }}
+          className="px-3.5 py-3 text-[13.5px]"
+        />
+      </div>
+
+      <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
+        {overLimit ? `Only the first ${MAX_RULES_CHARS.toLocaleString()} characters are sent.` : "Saved as you type."}
+      </p>
     </Panel>
   );
 }

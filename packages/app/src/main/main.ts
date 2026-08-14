@@ -14,6 +14,7 @@ import { createLuuCodeServer } from "@luumen/code-server";
 import type { LuuCodeServer } from "@luumen/code-server";
 import type { ChangeRecord, Op, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
+import type { AgentRules } from "./agents/briefing.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
 import { PluginInstaller } from "./plugin.js";
 import { createElectronDesktopCaptureProvider } from "./screenshot.js";
@@ -61,20 +62,22 @@ function requirePlace(): PlaceRef {
 }
 
 /**
- * The rules the place carries, for the agent's briefing.
+ * Both layers of rules, for the agent's briefing.
  *
- * Best effort: no document, a Studio that has just gone, and a plugin too old
- * to know the operation all mean the same thing here — the session starts
- * without them rather than the user's message failing.
+ * The place's half is best effort: no document, a Studio that has just gone,
+ * and a plugin too old to know the operation all mean the same thing here — the
+ * session starts without them rather than the user's message failing.
  */
-async function readProjectRules(chat: string): Promise<string | null> {
+async function readRules(chat: string): Promise<AgentRules> {
+  const global = requireSettings().current().globalRules.trim();
+
   try {
     const result = (await requireServer().execute("rules.get", {}, { origin: "internal", chat })) as {
       text: string | null;
     };
-    return result.text;
+    return { global: global || null, place: result.text };
   } catch {
-    return null;
+    return { global: global || null, place: null };
   }
 }
 
@@ -733,7 +736,7 @@ function registerIpc(): void {
       cwd: scratchDirFor(active.projectId),
       modelSelection: selection,
       resumeSessionId: active.agent === agent ? active.agentSessionId : null,
-      projectRules: () => readProjectRules(active.id),
+      rules: () => readRules(active.id),
     });
 
     await manager.send(active.id, text, attachments);

@@ -35,10 +35,10 @@ export interface StartOptions {
   /** Model and its per-model options, chosen in the composer. */
   modelSelection?: import("../../shared/models.js").ModelSelection;
   /**
-   * The place's own rules, read once when the session starts. A session already
-   * running keeps the text it opened with; an edit reaches the next one.
+   * Read once when the session starts. A session already running keeps the text
+   * it opened with; an edit reaches the next one.
    */
-  projectRules?: string | null;
+  rules?: import("./briefing.js").AgentRules | null;
   /** Passed through to the agent CLI; the user controls it in the UI. */
   permissionMode: string;
   onEvent: (event: AgentEvent) => void;

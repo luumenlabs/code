@@ -16,6 +16,7 @@ import type { AgentEvent, AgentId, AgentInfo, AgentSessionSnapshot, AgentState, 
 import { setModelCatalogue } from "../../shared/models.js";
 import type { ModelInfo, ModelSelection } from "../../shared/models.js";
 import type { AgentAdapter, McpServerSpec } from "./adapter.js";
+import type { AgentRules } from "./briefing.js";
 import { discoverModels } from "./catalog.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
@@ -50,10 +51,10 @@ export interface SessionOptions {
   /** The CLI's own id from a previous run, when it can genuinely be resumed. */
   resumeSessionId?: string | null;
   /**
-   * Reads the place's rules. Called only when a session is actually started,
+   * Reads both layers of rules. Called only when a session is actually started,
    * so reusing a live one costs no Studio round trip.
    */
-  projectRules?: () => Promise<string | null>;
+  rules?: () => Promise<AgentRules>;
 }
 
 interface Session {
@@ -214,12 +215,12 @@ export class AgentManager {
     this.announce();
 
     const mcp = this.mcpServerSpec(key);
-    const projectRules = options.projectRules ? await options.projectRules() : null;
+    const rules = options.rules ? await options.rules() : null;
 
     await adapter.start({
       command: info.command,
       cwd: options.cwd,
-      projectRules,
+      rules,
       ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
       ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
       mcp,

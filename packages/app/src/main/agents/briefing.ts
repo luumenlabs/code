@@ -41,34 +41,50 @@ The user controls what you are allowed to do, and can revoke any of it mid-conve
 
 If Studio disconnects, stop and say so. Nothing you do will reach the place until it is back.`;
 
-/** Past this, the document is cut and the agent is told to read the rest. */
+/** The two layers of rules a session runs under. */
+export interface AgentRules {
+  /** From the app's settings. Follows the user across every place. */
+  global: string | null;
+  /** From TestService.AGENTS. Travels with the game. */
+  place: string | null;
+}
+
+/** Past this, a document is cut and the agent is told it was. */
 const MAX_RULES_CHARS = 16_000;
 
-/**
- * The briefing, plus the rules the place carries at TestService.AGENTS.
- *
- * Marked as the user's and placed after the harness text: an agent that cannot
- * tell the two apart will weigh a project convention against a constraint of
- * this environment and pick either one.
- */
-export function briefingFor(rules: string | null | undefined): string {
-  const trimmed = rules?.trim();
-  if (!trimmed) return HARNESS_BRIEFING;
+function section(text: string | null | undefined, tag: string, source: string): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
 
   const body =
-    trimmed.length > MAX_RULES_CHARS
-      ? `${trimmed.slice(0, MAX_RULES_CHARS)}\n\n[Cut here. Read the rest with the project rules tool.]`
-      : trimmed;
+    trimmed.length > MAX_RULES_CHARS ? `${trimmed.slice(0, MAX_RULES_CHARS)}\n\n[Cut here — ${source} is longer.]` : trimmed;
+
+  return `<${tag}>\n${body}\n</${tag}>`;
+}
+
+/**
+ * The briefing, plus whichever layers of rules exist.
+ *
+ * Marked as the user's and placed after the harness text: an agent that cannot
+ * tell the two apart will weigh a convention against a constraint of this
+ * environment and pick either one. The place's rules come last because they are
+ * the more specific of the two.
+ */
+export function briefingFor(rules: AgentRules | null | undefined): string {
+  const parts = [
+    section(rules?.global, "user-rules", "the user's own rules"),
+    section(rules?.place, "place-rules", "this place's rules"),
+  ].filter((part): part is string => part !== null);
+
+  if (parts.length === 0) return HARNESS_BRIEFING;
 
   return `${HARNESS_BRIEFING}
 
 ---
 
-The people who build this place keep their own rules for agents working in it, at TestService.AGENTS. Follow them. Where they contradict anything above, the text above wins — that part describes what is possible here, not how this game is built.
+Rules for working here, written by the user. Follow them. Where they contradict anything above, the text above wins — that part describes what is possible in this harness, not how anyone wants their game built. \`user-rules\` are the user's own, set in Luu Code and applying wherever they work; \`place-rules\` are this place's, kept at TestService.AGENTS and travelling with the game. Where the two disagree, the place is the more specific and wins.
 
-<project-rules>
-${body}
-</project-rules>`;
+${parts.join("\n\n")}`;
 }
 
 /**
@@ -77,6 +93,6 @@ ${body}
  * never again — a resumed session already has it in context, and repeating it
  * every turn would spend tokens re-teaching what the agent already knows.
  */
-export function withBriefing(text: string, rules?: string | null): string {
+export function withBriefing(text: string, rules?: AgentRules | null): string {
   return `${briefingFor(rules)}\n\n---\n\n${text}`;
 }

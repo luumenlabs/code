@@ -149,7 +149,7 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(model ? { model } : {}),
       // The preset carries how Claude Code works; the append carries where it
       // is. Without the second half it reasons about the game as files.
-      systemPrompt: { type: "preset", preset: "claude_code", append: briefingFor(options.projectRules) },
+      systemPrompt: { type: "preset", preset: "claude_code", append: briefingFor(options.rules) },
       ...(sdkEffort(effort) ? { effort: sdkEffort(effort) } : {}),
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
       ...(this.sessionId ? { resume: this.sessionId } : {}),

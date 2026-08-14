@@ -29,8 +29,13 @@ export class SettingsStore {
     return this.settings;
   }
 
+  /**
+   * Preferences go back to their defaults; the rules do not. They are something
+   * the user wrote rather than a knob they turned, and the button that restores
+   * them sits on a different panel entirely.
+   */
   reset(): AppSettings {
-    this.settings = DEFAULT_SETTINGS;
+    this.settings = { ...DEFAULT_SETTINGS, globalRules: this.settings.globalRules };
     this.save();
     return this.settings;
   }

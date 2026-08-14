@@ -57,7 +57,7 @@ function RulesOps.set(params: any): any
 			"TARGET_AMBIGUOUS",
 			string.format("TestService.%s is a %s, not a ModuleScript", NAME, existing.ClassName),
 			{ className = existing.ClassName },
-			"Rename or remove it; the rules document has to be the ModuleScript at that path."
+			"Rename or remove it, then try again."
 		)
 	end
 

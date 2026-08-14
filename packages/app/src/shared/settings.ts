@@ -55,6 +55,14 @@ export interface AppSettings {
   customModels: Record<string, string[]>;
   /** Starred model-and-options combinations, in the order they were starred. */
   favourites: FavouriteSelection[];
+  /**
+   * Rules given to every agent, in every place, before the place's own.
+   *
+   * The machine's half of the pair: a place carries its rules at
+   * TestService.AGENTS and they travel with the game, while these stay here and
+   * follow the user across places.
+   */
+  globalRules: string;
   /** Show the agent's reasoning in the transcript rather than folding it away. */
   showThinking: boolean;
   /** Jump to the Output tab the first time a runtime error appears. */
@@ -179,6 +187,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   plugin: { autoInstall: false },
   customModels: {},
   favourites: [],
+  globalRules: "",
   showThinking: true,
   followRuntimeErrors: true,
   // The values the CSS variables carried before either panel could be dragged.
@@ -205,6 +214,7 @@ export function withDefaults(stored: unknown): AppSettings {
     plugin: { autoInstall: value.plugin?.autoInstall ?? DEFAULT_SETTINGS.plugin.autoInstall },
     customModels: value.customModels ?? {},
     favourites: readFavourites(stored),
+    globalRules: typeof value.globalRules === "string" ? value.globalRules : DEFAULT_SETTINGS.globalRules,
     showThinking: value.showThinking ?? DEFAULT_SETTINGS.showThinking,
     followRuntimeErrors: value.followRuntimeErrors ?? DEFAULT_SETTINGS.followRuntimeErrors,
     layout: {

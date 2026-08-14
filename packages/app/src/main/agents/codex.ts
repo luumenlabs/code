@@ -284,7 +284,7 @@ export class CodexAdapter implements AgentAdapter {
     this.child = child;
     // Codex has no system-prompt channel, so where it is rides in front of the
     // first message. A resumed conversation already has it in context.
-    child.stdin.end(this.hasConversation ? text : withBriefing(text, options.projectRules));
+    child.stdin.end(this.hasConversation ? text : withBriefing(text, options.rules));
 
     const reader = new JsonLineReader((value, raw) => this.handle(value, raw));
 
