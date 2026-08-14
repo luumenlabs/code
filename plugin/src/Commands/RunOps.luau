@@ -46,7 +46,19 @@ local pending = {
 	active = false,
 	mode = nil :: string?,
 	error = nil :: string?,
+	startedAt = nil :: number?,
 }
+
+-- How long a start counts as in flight. `active` clears only when the playtest
+-- ends, which used to refuse every retry for the rest of the session.
+local START_GRACE_SECONDS = 15
+
+-- How many ExecutePlayModeAsync calls have yet to return.
+local outstandingStarts = 0
+
+local function startInFlight(): boolean
+	return pending.active and (os.clock() - (pending.startedAt or 0)) < START_GRACE_SECONDS
+end
 
 --[[
 	Multiplayer bookkeeping, held by the edit peer. ExecuteMultiplayerTestAsync
@@ -95,6 +107,7 @@ function RunOps.state(): any
 	-- Always a phase, "idle" included. An absent field would be indistinguishable
 	-- from a plugin too old to have one, and those mean different things.
 	state.multiplayerPhase = multiplayer.phase
+	state.pendingStart = pending.active
 	return state
 end
 
@@ -112,7 +125,7 @@ function RunOps.start(params: any): any
 		)
 	end
 
-	if pending.active then
+	if startInFlight() then
 		Errors.throw(
 			"PLAYTEST_ALREADY_RUNNING",
 			"A playtest is already starting",
@@ -127,6 +140,9 @@ function RunOps.start(params: any): any
 	pending.active = true
 	pending.mode = mode
 	pending.error = nil
+	pending.startedAt = os.clock()
+	outstandingStarts += 1
+	RunState.setPendingStart(true)
 
 	task.spawn(function()
 		local ok, err = pcall(function()
@@ -144,8 +160,17 @@ function RunOps.start(params: any): any
 			warn(string.format("[Luu Code] Studio refused to start %s mode: %s", mode, tostring(err)))
 		end
 
+		-- Counted, not flagged: a retry refused inside the grace window must not
+		-- clear the record the live playtest still owns.
+		outstandingStarts -= 1
+		if outstandingStarts > 0 then
+			return
+		end
+
 		pending.active = false
 		pending.mode = nil
+		pending.startedAt = nil
+		RunState.setPendingStart(false)
 	end)
 
 	-- Give Studio a moment to reject the request, so an outright refusal is
@@ -173,7 +198,9 @@ end
 	DataModel, which is why the server routes this to the running peer.
 ]]
 function RunOps.stop(): any
-	if not RunState.isRunning() then
+	-- This DataModel asked Studio to play, so its EndTest is the only handle on
+	-- a session the plugin never landed in.
+	if not RunState.isRunning() and not pending.active then
 		return RunState.current()
 	end
 

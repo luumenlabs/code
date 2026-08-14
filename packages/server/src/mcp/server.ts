@@ -34,16 +34,14 @@ export const MCP_SERVER_INFO = {
   version: "0.1.0",
 } as const;
 
+/** Environment only; the app's briefing already said the rest, twice. */
 const INSTRUCTIONS = `Luu Code connects you to the Roblox Studio session open on this machine.
 
-You can inspect and edit the place, control playtesting, read Studio output, inspect runtime state, capture screenshots, and interact with the running game.
+The place is a live DataModel rather than files on disk: its scripts are Instances, and these tools are the only way to read or change them.
 
-Working effectively:
-- Start from studio_status. If Studio is not connected, nothing else will work and the user needs to approve the connection in Studio.
-- Explore with studio_services, then studio_tree or studio_search. Handles returned by any inspection are the safest way to act on an exact instance.
-- Prefer studio_edit_script over studio_write_script.
-- Verify your work. An edit succeeding is not evidence that the behaviour is right: start a playtest, mark the output, interact, then read the output and runtime state back.
-- Use screenshots for questions about how something looks, and structured inspection for questions a property can answer.`;
+They reach the instance tree, script source, playtesting, Studio's output, runtime state, screenshots, and input to the running game.
+
+studio_status reports whether Studio is connected and which place is open; nothing else works until it is. Handles returned by an inspection name an exact instance, and stay valid until the DataModel is replaced.`;
 
 export function createMcpServer(backend: McpBackend): Server {
   const server = new Server(MCP_SERVER_INFO, {

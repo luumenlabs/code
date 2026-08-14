@@ -7,7 +7,7 @@
  * MCP client can keep working by starting its own with `luu-code serve`.
  * Spec sections 5.1 and 21.
  */
-import { BrowserWindow, app, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, Menu, MenuItem, app, dialog, ipcMain, shell } from "electron";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createLuuCodeServer } from "@luumen/code-server";
@@ -191,6 +191,58 @@ function broadcast(channel: string, payload: unknown): void {
   window?.webContents.send(channel, payload);
 }
 
+/**
+ * Chromium marks misspellings but leaves the correction menu to the app, and
+ * defaults the dictionary to en-US. macOS owns both itself; the setter throws.
+ */
+function configureSpellchecker(contents: Electron.WebContents): void {
+  if (process.platform !== "darwin") {
+    const { session } = contents;
+    const supported = new Set(session.availableSpellCheckerLanguages);
+    const wanted = app.getPreferredSystemLanguages().filter((language) => supported.has(language));
+
+    // An empty list turns the spellchecker off, so a machine whose languages
+    // Chromium has no dictionary for keeps the default rather than losing it.
+    if (wanted.length > 0) {
+      try {
+        session.setSpellCheckerLanguages(wanted);
+      } catch {
+        // A language Chromium lists but refuses to load. The default stays.
+      }
+    }
+  }
+
+  contents.on("context-menu", (_event, params) => {
+    const menu = new Menu();
+
+    for (const suggestion of params.dictionarySuggestions) {
+      menu.append(new MenuItem({ label: suggestion, click: () => contents.replaceMisspelling(suggestion) }));
+    }
+
+    if (params.misspelledWord) {
+      if (params.dictionarySuggestions.length > 0) menu.append(new MenuItem({ type: "separator" }));
+      menu.append(
+        new MenuItem({
+          label: "Add to dictionary",
+          click: () => contents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+        }),
+      );
+      menu.append(new MenuItem({ type: "separator" }));
+    }
+
+    if (params.isEditable) {
+      menu.append(new MenuItem({ role: "cut", enabled: params.editFlags.canCut }));
+      menu.append(new MenuItem({ role: "copy", enabled: params.editFlags.canCopy }));
+      menu.append(new MenuItem({ role: "paste", enabled: params.editFlags.canPaste }));
+      menu.append(new MenuItem({ role: "selectAll" }));
+    } else if (params.selectionText) {
+      menu.append(new MenuItem({ role: "copy" }));
+    }
+
+    if (menu.items.length > 0) menu.popup();
+  });
+}
+
 async function createWindow(): Promise<void> {
   const icon = iconPath();
 
@@ -217,6 +269,8 @@ async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // The composer is the one place in the app the user writes prose.
+      spellcheck: true,
     },
   });
 
@@ -227,6 +281,8 @@ async function createWindow(): Promise<void> {
   window.on("page-title-updated", (event) => event.preventDefault());
 
   const contents = window.webContents;
+
+  configureSpellchecker(contents);
 
   // External links belong in the user's browser, not in a window that can talk
   // to Roblox Studio.
@@ -885,6 +941,12 @@ function registerIpc(): void {
   ipcMain.handle("execute", (_event, op: string, params: unknown, chat?: string) =>
     requireServer().execute(op, params, { origin: "harness", ...(chat ? { chat } : {}) }),
   );
+
+  // Its own channel because it is silent: the user pressed Clear, so the
+  // transcript has nothing to record. The chat still picks the Studio window.
+  ipcMain.handle("clear-output", async (_event, chat?: string) => {
+    await requireServer().execute("output.clear", {}, { origin: "harness", silent: true, ...(chat ? { chat } : {}) });
+  });
 }
 
 app.whenReady().then(bootstrap).catch((error) => {

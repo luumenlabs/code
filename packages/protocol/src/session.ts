@@ -62,6 +62,11 @@ export interface RunState {
    * watch, such as a multiplayer test's server DataModel.
    */
   rendering?: boolean;
+  /**
+   * This DataModel asked Studio to play and the call has not returned. The only
+   * evidence a playtest exists when no peer loads into it. Absent on old plugins.
+   */
+  pendingStart?: boolean;
 }
 
 export const EDIT_RUN_STATE: RunState = {

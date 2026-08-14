@@ -407,7 +407,7 @@ export function useHarness(): Harness {
 
   const clearOutput = useCallback(() => {
     setOutput([]);
-    void window.luuCode.execute("output.clear", {}, activeThreadId ?? undefined).catch(() => undefined);
+    void window.luuCode.clearStudioOutput(activeThreadId ?? undefined).catch(() => undefined);
   }, [activeThreadId]);
 
   const newThread = useCallback(async () => {

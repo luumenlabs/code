@@ -50,6 +50,8 @@ export interface MultiplayerParams {
 const isEdit = (peer: PeerRef) => !peer.run.running;
 const isRunning = (peer: PeerRef) => peer.run.running;
 const isRunningServer = (peer: PeerRef) => peer.run.running && (peer.realm === "server" || peer.realm === "client");
+/** Asked Studio to play and has not been told how it went. See RunState.pendingStart. */
+const isStarting = (peer: PeerRef) => peer.run.pendingStart === true;
 
 export class RunControl {
   constructor(private readonly sessions: SessionRegistry) {}
@@ -138,19 +140,34 @@ export class RunControl {
        * reason in the place. What this knows is narrower and more useful —
        * Studio accepted the request and no connected DataModel ever said it was
        * running — so that is what it says, with the peers it heard from.
+       *
+       * A pending start narrows it: Studio took the request and has not
+       * returned, so retrying cannot help.
        */
-      throw new LuuCodeError("STUDIO_TIMEOUT", `No Studio DataModel reported a running playtest within ${params.timeoutMs}ms.`, {
-        details: {
-          state,
-          mode: params.mode,
-          peers: this.sessions.peers(target).map((peer) => ({
-            realm: peer.realm,
-            running: peer.run.running,
-            players: peer.run.playerCount ?? null,
-          })),
+      const starting = this.sessions.findPeer(target, isStarting) !== null;
+
+      throw new LuuCodeError(
+        "STUDIO_TIMEOUT",
+        starting
+          ? `Studio accepted the request to play and has not returned, but no connected DataModel reports running within ${params.timeoutMs}ms.`
+          : `No Studio DataModel reported a running playtest within ${params.timeoutMs}ms.`,
+        {
+          details: {
+            state,
+            mode: params.mode,
+            startPending: starting,
+            peers: this.sessions.peers(target).map((peer) => ({
+              realm: peer.realm,
+              running: peer.run.running,
+              players: peer.run.playerCount ?? null,
+              pendingStart: peer.run.pendingStart ?? null,
+            })),
+          },
+          hint: starting
+            ? "The place is almost certainly playing on screen. Luu Code cannot observe it, so treat the playtest as unavailable rather than retrying: say so, and carry on with what can be checked without it. run.stop will still end it."
+            : "Look at Studio. If the place is not playing, it may still be loading — try again. If it is playing, the playtest is up but Luu Code cannot see it, and the Studio plugin is probably out of date.",
         },
-        hint: "Look at Studio. If the place is not playing, it may still be loading — try again. If it is playing, the playtest is up but Luu Code cannot see it, and the Studio plugin is probably out of date.",
-      });
+      );
     }
 
     if (!params.waitReady) return { ...state, ready: state.ready };
@@ -161,26 +178,35 @@ export class RunControl {
 
   async stop(params: { timeoutMs: number }, target: SessionTarget = {}): Promise<RunState> {
     const initial = this.state(target);
-    if (!initial.running) return initial;
+    // Its ExecutePlayModeAsync is the session, so its EndTest ends it.
+    const starting = this.sessions.findPeer(target, isStarting);
 
-    // EndTest only exists inside the session it is ending. Sending this to the
-    // edit peer would reach a DataModel with no test to end, and it would say so
-    // rather than doing anything.
-    const peer = this.requirePeer(
-      target,
-      isRunning,
-      new LuuCodeError("PLAYTEST_NOT_RUNNING", "The running playtest has no connection to Luu Code, so it cannot be stopped from here.", {
-        details: { state: initial },
-        hint: "Press Stop in Studio. If this keeps happening, the plugin may not have loaded into the playtest's DataModel.",
-      }),
-    );
+    if (!initial.running && !starting) return initial;
+
+    // EndTest only exists inside the session it is ending; `starting` is the
+    // only route when no peer loaded into the playtest.
+    const peer =
+      this.sessions.findPeer(target, isRunning) ??
+      starting ??
+      (() => {
+        throw new LuuCodeError("PLAYTEST_NOT_RUNNING", "The running playtest has no connection to Luu Code, so it cannot be stopped from here.", {
+          details: { state: initial },
+          hint: "Press Stop in Studio. If this keeps happening, the plugin may not have loaded into the playtest's DataModel.",
+        });
+      })();
 
     const refusal = await this.trigger("run.stop", {}, peer, target);
     if (refusal) throw refusal;
 
-    const state = await this.waitFor(target, (current) => !current.running, params.timeoutMs);
+    // A playtest nobody reported running is over when the peer that started it
+    // stops waiting on it.
+    const state = await this.waitFor(
+      target,
+      (current) => !current.running && this.sessions.findPeer(target, isStarting) === null,
+      params.timeoutMs,
+    );
 
-    if (state.running) {
+    if (state.running || this.sessions.findPeer(target, isStarting) !== null) {
       throw new LuuCodeError("STUDIO_TIMEOUT", `The playtest did not stop within ${params.timeoutMs}ms.`, {
         details: { state },
         hint: "Stop it in Studio, then continue.",

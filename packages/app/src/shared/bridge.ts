@@ -121,6 +121,12 @@ export interface LuuCodeBridge {
    */
   execute(op: string, params?: unknown, chat?: string): Promise<unknown>;
 
+  /**
+   * Empties Studio's output buffer without writing a row into the conversation:
+   * the user pressed Clear, so the transcript has nothing to record.
+   */
+  clearStudioOutput(chat?: string): Promise<void>;
+
   onServerEvent(listener: (event: ServerEvent) => void): () => void;
   /** Carries the thread the event came from: several may be running. */
   onAgentEvent(listener: (payload: { threadId: string; event: AgentEvent }) => void): () => void;

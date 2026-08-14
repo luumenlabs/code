@@ -180,6 +180,12 @@ export class CodexAdapter implements AgentAdapter {
 
   private resumeId: string | null = null;
 
+  /**
+   * Messages typed while a turn was running. Codex closes stdin when a turn
+   * starts, so they go in as the turn that follows rather than being dropped.
+   */
+  private queued: Array<{ text: string; attachments: Attachment[] }> = [];
+
   async start(options: StartOptions): Promise<void> {
     this.options = options;
     this.started = true;
@@ -200,8 +206,29 @@ export class CodexAdapter implements AgentAdapter {
   async send(text: string, attachments: Attachment[] = []): Promise<void> {
     const options = this.options;
     if (!options) throw new Error(`${this.variant.label} is not running.`);
-    if (this.child) throw new Error(`${this.variant.label} is still working on the previous message.`);
 
+    if (this.child) {
+      this.queued.push({ text, attachments });
+      return;
+    }
+
+    this.turnFor(options, text, attachments);
+  }
+
+  /** Joined into one message: consecutive corrections are one thing to say. */
+  private takeQueued(): { text: string; attachments: Attachment[] } | null {
+    if (this.queued.length === 0) return null;
+
+    const pending = this.queued;
+    this.queued = [];
+
+    return {
+      text: pending.map((entry) => entry.text).filter((entry) => entry.length > 0).join("\n\n"),
+      attachments: pending.flatMap((entry) => entry.attachments),
+    };
+  }
+
+  private turnFor(options: StartOptions, text: string, attachments: Attachment[]): void {
     // Config overrides rather than a config file, so the user's own
     // ~/.codex/config.toml is never rewritten by Luu Code.
     const selection = options.modelSelection;
@@ -301,6 +328,7 @@ export class CodexAdapter implements AgentAdapter {
       options.onEvent({ type: "error", message: `Could not start ${this.variant.label}: ${error.message}` });
       options.onEvent({ type: "state", state: "error" });
       this.child = null;
+      this.dropQueued(options, "it could not be started");
     });
 
     child.on("exit", (code) => {
@@ -313,23 +341,46 @@ export class CodexAdapter implements AgentAdapter {
           message: describeExit(this.variant.label, code, this.stderr, this.variant.exitHint),
         });
         options.onEvent({ type: "state", state: "error" });
+        // Not drained after a failure: it would loop.
+        this.dropQueued(options, "the turn before it failed");
         return;
       }
 
       this.hasConversation = true;
       options.onEvent({ type: "turn-complete", summary: null });
+
+      const next = this.takeQueued();
+      if (next) {
+        this.turnFor(options, next.text, next.attachments);
+        return;
+      }
+
       options.onEvent({ type: "state", state: "idle" });
+    });
+  }
+
+  /** A message that will never be sent is said so, not dropped in silence. */
+  private dropQueued(options: StartOptions, because: string): void {
+    const abandoned = this.takeQueued();
+    if (!abandoned) return;
+
+    options.onEvent({
+      type: "error",
+      message: `This was not sent to ${this.variant.label}, because ${because}:\n\n${abandoned.text}`,
     });
   }
 
   interrupt(): void {
     this.child?.kill("SIGINT");
     this.child = null;
+    // Stop means stop, including anything typed while the turn was running.
+    this.queued = [];
     this.options?.onEvent({ type: "state", state: "idle", message: "Interrupted." });
   }
 
   async stop(): Promise<void> {
     this.started = false;
+    this.queued = [];
     const child = this.child;
     this.child = null;
     child?.kill("SIGTERM");

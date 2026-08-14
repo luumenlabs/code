@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("luuCode", {
   revealPluginFolder: () => ipcRenderer.invoke("reveal-plugin-folder"),
 
   execute: (op, params, chat) => ipcRenderer.invoke("execute", op, params, chat),
+  clearStudioOutput: (chat) => ipcRenderer.invoke("clear-output", chat),
 
   onServerEvent: (listener) => subscribe("server-event", listener),
   onAgentEvent: (listener) => subscribe("agent-event", listener),

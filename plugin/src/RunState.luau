@@ -21,6 +21,14 @@ local epoch = 0
 local lastRunning: boolean? = nil
 local listeners: { (any) -> () } = {}
 
+-- Set by RunOps while its start request is outstanding. Held here because the
+-- whole state goes up on every sync, and RunOps already depends on this module.
+local pendingStart = false
+
+function RunState.setPendingStart(value: boolean)
+	pendingStart = value
+end
+
 --[[
 	Is the experience up in this DataModel?
 
@@ -145,6 +153,7 @@ function RunState.current(): any
 		-- Reported from every peer so the server can tell an operation that needs
 		-- frames where to send it, and refuse when nowhere can take it.
 		rendering = RenderMonitor.isRendering(),
+		pendingStart = pendingStart,
 	}
 end
 

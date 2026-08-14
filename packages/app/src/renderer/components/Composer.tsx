@@ -80,9 +80,17 @@ export function Composer({
     const text = value.trim();
     if ((text.length === 0 && attachments.length === 0) || !ready) return;
 
+    const sent = attachments;
     onValueChange("");
     setAttachments([]);
-    await harness.send(text, attachments);
+
+    try {
+      await harness.send(text, sent);
+    } catch {
+      // The box was cleared before the send; this is the only copy left.
+      onValueChange(text);
+      setAttachments(sent);
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
