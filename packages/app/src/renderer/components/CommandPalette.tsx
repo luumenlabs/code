@@ -7,7 +7,7 @@
  * Escape closes.
  */
 import * as React from "react";
-import { CirclePlay, MessageSquare, Plus, ScrollText, Search, Settings, SquareTerminal } from "lucide-react";
+import { CirclePlay, MessageSquare, Plus, ScrollText, Search, Settings } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { Harness } from "@/state";
@@ -73,14 +73,6 @@ export function CommandPalette({
         group: "Actions",
         disabled: !place,
         run: close(() => void harness.run(running ? "run.stop" : "run.start", running ? {} : { mode: "play" })),
-      },
-      {
-        id: "screenshot",
-        label: "Screenshot Studio",
-        icon: SquareTerminal,
-        group: "Actions",
-        disabled: !place,
-        run: close(() => void harness.run("view.screenshot", {})),
       },
       {
         id: "clear-output",

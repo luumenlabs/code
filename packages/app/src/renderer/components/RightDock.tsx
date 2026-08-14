@@ -9,7 +9,6 @@
 import * as React from "react";
 import {
   Blocks,
-  Camera,
   Check,
   ChevronDown,
   Copy,
@@ -180,21 +179,34 @@ function StudioDetails({
 }): React.JSX.Element {
   const place = session.place;
   const identity = identityOf(place);
+  // Studio's tab shows the file, which no plugin API exposes, so this is
+  // game.Name and may not match it. Said in a tooltip rather than on the panel.
+  const localName = place.nameSource === "datamodel" && place.placeId === 0;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-[14px] font-medium">{place.name}</span>
-            {/* Not a warning, a fact — and the one that explains why this name
-                may not be the name on the Studio tab. */}
+            {localName ? (
+              <Hint label="Publish the place or set game.Name to change this.">
+                <span className="truncate text-[14px] font-medium">{place.name}</span>
+              </Hint>
+            ) : (
+              <span className="truncate text-[14px] font-medium">{place.name}</span>
+            )}
             {place.unsaved && <Badge variant="outline">unpublished</Badge>}
           </div>
           <div className="mt-0.5 text-[12px] text-muted-foreground">
             Studio {session.studioVersion} · plugin {session.pluginVersion}
           </div>
         </div>
+
+        <Hint label="Disconnect">
+          <Button variant="ghost" size="icon-sm" onClick={() => void window.luuCode.disconnectSession(session.id)}>
+            <Unplug />
+          </Button>
+        </Hint>
 
         {sessions.length > 1 && (
           <DropdownMenu>
@@ -228,8 +240,7 @@ function StudioDetails({
         )}
       </div>
 
-      {/* Facts, written as facts. These were badges, which made them look like
-          controls that had stopped working; nothing here is clickable. */}
+      {/* Not badges: nothing on these rows is clickable. */}
       <Field label="Mode">
         {session.run.running ? (
           <span className="text-[12.5px] text-[var(--success)]">Playtest · {session.run.realm}</span>
@@ -238,16 +249,13 @@ function StudioDetails({
         )}
       </Field>
 
-      {/* The ids, because the name is the one thing about a place that is not
-          reliable and not unique — and "which game am I actually pointed at"
-          is a question a name has never answered. */}
-      <Field label="Place">
-        {place.placeId > 0 ? (
+      {/* The id, since the name is neither reliable nor unique. Absent when
+          there is none: the badge beside the name already says so. */}
+      {place.placeId > 0 && (
+        <Field label="Place">
           <CopyableId value={String(place.placeId)} />
-        ) : (
-          <span className="text-[12.5px] text-muted-foreground">Never published</span>
-        )}
-      </Field>
+        </Field>
+      )}
 
       {place.gameId > 0 && (
         <Field label="Universe">
@@ -263,30 +271,22 @@ function StudioDetails({
         </Field>
       )}
 
-      <Field label="Connections">
-        <span className="truncate text-[12.5px] capitalize">
-          {session.endpoints.map((endpoint) => endpoint.realm).join(" · ") || "None"}
-        </span>
-      </Field>
+      {/* One connection is always the realm Mode just named. */}
+      {session.endpoints.length !== 1 && (
+        <Field label="Connections">
+          <span className="truncate text-[12.5px] capitalize">
+            {session.endpoints.map((endpoint) => endpoint.realm).join(" · ") || "None"}
+          </span>
+        </Field>
+      )}
 
-      <PlaceNotes place={place} identity={identity} />
+      {!identity && (
+        <p className="flex items-center gap-1.5 text-[12px] text-[var(--warning)]">
+          <TriangleAlert className="size-3 shrink-0" />
+          Chats are filed under Unknown until this place is published.
+        </p>
+      )}
 
-      <div className="flex gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1"
-          onClick={() => void harness.run("view.screenshot", {})}
-        >
-          <Camera />
-          Screenshot
-        </Button>
-        <Hint label="Disconnect">
-          <Button variant="ghost" size="icon-sm" onClick={() => void window.luuCode.disconnectSession(session.id)}>
-            <Unplug />
-          </Button>
-        </Hint>
-      </div>
     </div>
   );
 }
@@ -324,54 +324,6 @@ function CopyableId({ value }: { value: string }): React.JSX.Element {
   );
 }
 
-/**
- * Why the name might not be the name, and when that costs something.
- *
- * Both notes exist because of the same gap: Studio's tab shows the file a
- * place was opened from, and no plugin API exposes it. `game.Name` is the
- * DataModel's own name, which Studio never updates — a place made with
- * File → New stays "Place1" however the file is later called. The published
- * name fixes it for a published place and there is nothing to fix it with for
- * a local one, so the panel says so rather than letting the user assume the
- * app is confused about which place it is in.
- *
- * The second note is the one that matters. Chats are filed against the place's
- * id, never its name, so two places called the same thing never merge — but a
- * place with no id has nothing to be told apart by, and those genuinely do
- * share one heading.
- */
-function PlaceNotes({
-  place,
-  identity,
-}: {
-  place: StudioSession["place"];
-  identity: string | null;
-}): React.JSX.Element | null {
-  const localName = place.nameSource === "datamodel" && place.placeId === 0;
-  if (!localName && identity) return null;
-
-  return (
-    <div className="flex flex-col gap-1.5 rounded-md bg-muted/40 px-2 py-1.5">
-      {localName && (
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          This is the place's own name. Studio's tab shows the file it was opened from, which a plugin cannot read —
-          publish the place, or set <code className="font-mono text-foreground/80">game.Name</code>, to change it here.
-        </p>
-      )}
-
-      {!identity && (
-        <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--warning)]">
-          <TriangleAlert className="mt-0.5 size-3 shrink-0" />
-          <span>
-            Roblox has no id for this place, so Luu Code cannot tell it apart from any other unpublished one. Its chats
-            are filed under Unknown, alongside theirs.
-          </span>
-        </p>
-      )}
-    </div>
-  );
-}
-
 function StudioEmpty(): React.JSX.Element {
   return (
     <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed p-3">
@@ -391,26 +343,28 @@ function StudioEmpty(): React.JSX.Element {
 }
 
 /**
- * Only the unavailable capabilities are listed, with the reason. A list of
- * things that work is noise; a list of things that do not, and why, is the
- * answer to "why did the agent just fail".
+ * What does not work, named. The reasons are written for an agent to act on and
+ * are a paragraph each, so they hang off the row rather than filling the panel.
  */
 function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Element | null {
   const blocked = report.capabilities.filter((entry) => !entry.available && entry.reason);
   if (blocked.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5 text-[11.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         <TriangleAlert className="size-3" />
         Unavailable right now
       </div>
-      {blocked.map((entry) => (
-        <div key={entry.id} className="rounded-md bg-muted/40 px-2 py-1.5">
-          <code className="font-mono text-[11.5px] text-foreground/80">{entry.id}</code>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{entry.reason}</p>
-        </div>
-      ))}
+      <div className="flex flex-wrap gap-1">
+        {blocked.map((entry) => (
+          <Hint key={entry.id} label={entry.reason} side="left">
+            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11.5px] text-muted-foreground">
+              {entry.id}
+            </code>
+          </Hint>
+        ))}
+      </div>
     </div>
   );
 }
@@ -440,7 +394,7 @@ function McpSetup({ command, port }: { command: string; port: number }): React.J
       </div>
       <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
         <KeyRound className="size-3" />
-        Runs on 127.0.0.1:{port}. Nothing leaves this machine.
+        127.0.0.1:{port}
       </p>
     </div>
   );
