@@ -11,7 +11,7 @@
  * be photographed.
  */
 const { contextBridge, ipcRenderer } = require("electron");
-const { SNAPSHOT, OUTPUT, VERSIONS, AGENTS } = require("./mock.cjs");
+const { SNAPSHOT, OUTPUT, VERSIONS, AGENTS, CHANGES } = require("./mock.cjs");
 
 /** Structured-clone-safe deep copy: contextBridge will not pass shared refs. */
 const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -43,11 +43,16 @@ contextBridge.exposeInMainWorld("luuCode", {
   archiveThread: resolve(SNAPSHOT.threads),
   deleteThread: resolve(SNAPSHOT.threads),
 
+  answerAsk: () => Promise.resolve(),
+  cancelAsk: () => Promise.resolve(),
+  onAsks: noop,
+
   approvePairing: () => Promise.resolve(true),
   rejectPairing: () => Promise.resolve(true),
   selectSession: () => Promise.resolve(),
   disconnectSession: () => Promise.resolve(),
   setPermission: () => Promise.resolve(),
+  setToolAllowed: () => Promise.resolve(),
 
   updateSettings: (patch) => Promise.resolve({ ...copy(SNAPSHOT.settings), ...patch }),
   resetSettings: resolve(SNAPSHOT.settings),
@@ -61,7 +66,12 @@ contextBridge.exposeInMainWorld("luuCode", {
   openReleases: () => Promise.resolve(),
   revealPluginFolder: () => Promise.resolve(),
 
-  execute: () => Promise.resolve({}),
+  // The dock reads the journal through here rather than from the snapshot, so
+  // the Changes tab is empty unless this op answers.
+  execute: (op) =>
+    Promise.resolve(op === "changes.list" ? { records: copy(CHANGES), total: CHANGES.length, truncated: false } : {}),
+
+  clearStudioOutput: () => Promise.resolve(),
 
   onServerEvent: (listener) => {
     onServerEvent = listener;

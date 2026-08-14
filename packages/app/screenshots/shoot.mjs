@@ -41,7 +41,7 @@ const args = ["exec", "electron", "screenshots/main.cjs"];
 
 if (scale !== "1") args.push(`--force-device-scale-factor=${scale}`);
 if (!has("open")) args.push("--shot");
-for (const name of ["out", "width", "height", "settle"]) {
+for (const name of ["out", "width", "height", "settle", "tab"]) {
   const given = value(name, null);
   if (given !== null) args.push(`--${name}=${given}`);
 }

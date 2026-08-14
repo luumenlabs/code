@@ -30,6 +30,7 @@ const OUT = resolve(arg("out", join(HERE, "out", "luu-code.png")));
 // paint of the spinners. A shot taken too early is a shot of a half-styled app.
 const SETTLE = Number(arg("settle", "1600"));
 const QUALITY = Number(arg("quality", "0.92"));
+const TAB = arg("tab", "changes");
 
 /**
  * WebP, encoded by the copy of Chromium already running.
@@ -65,6 +66,34 @@ async function encodeWebp(window, image) {
   return Buffer.from(encoded.slice(encoded.indexOf(",") + 1), "base64");
 }
 
+/**
+ * Puts the dock on one of its tabs.
+ *
+ * Which tab is open is React state in `App`, not something the fake bridge can
+ * declare, so the only way in is the switcher itself. Radix selects a tab on
+ * focus under its default activation mode, and `click()` alone does not focus —
+ * hence both, and the blur afterwards so the shot has no focused control in it.
+ */
+async function showTab(window, tab) {
+  const shown = await window.webContents.executeJavaScript(`(async () => {
+    const find = () => document.querySelector('[role="tab"][id$="trigger-${tab}"]');
+
+    for (let attempt = 0; attempt < 40 && !find(); attempt += 1) {
+      await new Promise((done) => setTimeout(done, 50));
+    }
+
+    const trigger = find();
+    if (!trigger) return false;
+
+    trigger.focus();
+    trigger.click();
+    trigger.blur();
+    return true;
+  })()`);
+
+  if (!shown) throw new Error(`No dock tab called "${tab}". Expected studio, changes, or output.`);
+}
+
 async function main() {
   const window = new BrowserWindow({
     width: WIDTH,
@@ -86,12 +115,19 @@ async function main() {
     },
   });
 
+  // A renderer that threw paints nothing, and a blank 1440x900 rectangle is a
+  // valid PNG. Without this the mock going stale looks like a working shot.
+  window.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 2) console.error(`renderer: ${message}`);
+  });
+
   ipcMain.handle("window-minimize", () => window.minimize());
   ipcMain.handle("window-toggle-maximize", () => (window.isMaximized() ? window.unmaximize() : window.maximize()));
   ipcMain.handle("window-close", () => window.close());
 
   await window.loadFile(RENDERER);
   window.show();
+  await showTab(window, TAB);
 
   if (!flag("shot")) {
     console.log(`Window open at ${WIDTH}x${HEIGHT}. Take your screenshot, then close it.`);
@@ -132,5 +168,10 @@ async function main() {
   app.quit();
 }
 
-app.whenReady().then(main);
+app.whenReady()
+  .then(main)
+  .catch((error) => {
+    console.error(error.message ?? error);
+    process.exit(1);
+  });
 app.on("window-all-closed", () => app.quit());

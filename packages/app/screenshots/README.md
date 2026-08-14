@@ -19,7 +19,13 @@ node screenshots/shoot.mjs --out=../../assets/screenshot.webp
 ```
 
 Other flags: `--width=`, `--height=`, `--scale=`, `--quality=`, `--settle=` (ms
-before the shutter — raise it if a font or spinner is not ready).
+before the shutter — raise it if a font or spinner is not ready), and `--tab=`
+(`studio`, `changes`, or `output` — which dock tab is open; `changes` by
+default).
+
+Which tab is open is React state rather than anything the fake bridge can
+declare, so `--tab=` clicks the switcher. A tab that is not there is an error,
+not a shot of the wrong panel.
 
 **The extension picks the format.** `.webp` is encoded by the Chromium already
 running, so there is no `sharp` and no native dependency in a folder whose whole
@@ -45,6 +51,12 @@ when that happens. `--scale=2 --width=940 --height=500` fits, and gives 1880x100
   the answer under it, and one still running with its thinking, Roblox
   operations, and tool calls open, plus the live clock. Real tool names, real
   Luau, no screenshots.
+- **The dock on Changes**, holding three diffs the place has taken: two from the
+  honey-balancing chat and one from the open one, because the journal is per
+  Studio window rather than per conversation. They start open, so the panel is a
+  stack of real diffs rather than a list of rows.
+- **One of them under the live turn** as well, as the "1 change" fold — the same
+  record, read from the conversation's own copy.
 - **Codex one version behind**, so the amber count on the Settings button and
   the Providers tab is visible rather than something you have to describe.
 

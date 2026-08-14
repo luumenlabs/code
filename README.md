@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/banner.png" alt="Luu Code" width="900">
-  <img src="assets/screenshot.webp" alt="Luu Code: a Roblox place open in the sidebar, an agent mid-turn editing a script and starting a playtest, and Studio's state in the panel beside it" width="900">
+  <img src="assets/screenshot.webp" alt="Luu Code: a Roblox place open in the sidebar, an agent mid-turn editing a script and starting a playtest, and the diffs it has made to the place in the panel beside it" width="900">
 </div>
 
 <div align="center">

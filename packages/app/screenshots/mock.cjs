@@ -34,8 +34,9 @@ const PROJECTS = [
   { id: "prj_pets", identity: null, placeId: 0, name: "Pet Sim 99", lastUsedAt: NOW - day(5) },
 ];
 
-// The conversation the window opens on.
+// The conversation the window opens on, and the Studio window it works in.
 const OPEN = "thr_pollen";
+const SESSION_ID = "ses_bee_main";
 
 /**
  * `agent` is what draws the provider mark on the second line of each row, so
@@ -96,6 +97,8 @@ const ref = (path, className, childCount = 0) => ({
   className,
   childCount,
 });
+
+const lines = (text) => text.replace(/\n$/, "").split("\n").length;
 
 const activity = (id, at, category, title, detail, status = "ok", instances = []) => ({
   kind: "activity",
@@ -246,14 +249,162 @@ Two things worth doing:
 ];
 
 // ---------------------------------------------------------------------------
+// The change journal
+//
+// What has been done to Bee Simulator 6 in this Studio window — which is not
+// only the open chat's work, because the journal is per place and the honey
+// balancing chat is editing the same game.
+//
+// The dock opens every diff, so the order matters: the list runs oldest first
+// and the top of it is what ends up in the picture.
+// ---------------------------------------------------------------------------
+
+const LEADERSTATS_BEFORE = `local Players = game:GetService("Players")
+
+local function onPlayerAdded(player: Player)
+\tlocal stats = Instance.new("Folder")
+\tstats.Name = "leaderstats"
+
+\tlocal pollen = Instance.new("IntValue")
+\tpollen.Name = "Pollen"
+\tpollen.Value = 0
+\tpollen.Parent = stats
+
+\tstats.Parent = player
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+`;
+
+const LEADERSTATS_AFTER = `local Players = game:GetService("Players")
+
+local ProfileStore = require(script.Parent.Parent.Data.ProfileStore)
+
+local function onPlayerAdded(player: Player)
+\tlocal stats = Instance.new("Folder")
+\tstats.Name = "leaderstats"
+
+\tlocal profile = ProfileStore.waitForProfile(player)
+\tif not profile then
+\t\t-- A failed load must never stamp 0 over a good value.
+\t\treturn
+\tend
+
+\tlocal pollen = Instance.new("IntValue")
+\tpollen.Name = "Pollen"
+\tpollen.Value = profile.Data.pollen
+\tpollen.Parent = stats
+
+\tstats.Parent = player
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+`;
+
+const HIVE_CONFIG_BEFORE = `local HiveConfig = {}
+
+HiveConfig.tiers = {
+\t{ name = "Wooden", cost = 0, rate = 1 },
+\t{ name = "Stone", cost = 250, rate = 1.6 },
+\t{ name = "Gilded", cost = 1200, rate = 2.4 },
+\t{ name = "Diamond", cost = 9000, rate = 4 },
+}
+
+return HiveConfig
+`;
+
+const HIVE_CONFIG_AFTER = `local HiveConfig = {}
+
+HiveConfig.tiers = {
+\t{ name = "Wooden", cost = 0, rate = 1 },
+\t{ name = "Stone", cost = 250, rate = 1.6 },
+\t{ name = "Gilded", cost = 1200, rate = 2.4 },
+\t{ name = "Diamond", cost = 4800, rate = 3.1 },
+}
+
+return HiveConfig
+`;
+
+const change = (record) => ({
+  chat: null,
+  session: SESSION_ID,
+  parentPath: null,
+  revertable: true,
+  reason: null,
+  ...record,
+});
+
+const CHANGES = [
+  // The other Bee chat, mid-turn on tier 4 pricing.
+  change({
+    id: "chg_tier4",
+    op: "edit.attributes",
+    activityId: "act_honey_1",
+    chat: "thr_honey",
+    at: NOW - min(16),
+    kind: "attributes",
+    target: ref("ReplicatedStorage.Config.Hives.Tier4", "Configuration"),
+    summary: "Set HoneyCost and PollenRate on Tier4",
+    attributes: [
+      { name: "HoneyCost", before: 9000, after: 4800 },
+      { name: "PollenRate", before: 4, after: 3.1 },
+    ],
+  }),
+  change({
+    id: "chg_hiveconfig",
+    op: "edit.source",
+    activityId: "act_honey_2",
+    chat: "thr_honey",
+    at: NOW - min(3),
+    kind: "source",
+    target: ref("ReplicatedStorage.Config.HiveConfig", "ModuleScript"),
+    summary: "Changed the source of HiveConfig",
+    source: {
+      before: HIVE_CONFIG_BEFORE,
+      after: HIVE_CONFIG_AFTER,
+      beforeLines: lines(HIVE_CONFIG_BEFORE),
+      afterLines: lines(HIVE_CONFIG_AFTER),
+    },
+  }),
+
+  // The open chat's live turn: the same edit tool call `t5` made, as the place
+  // recorded it.
+  change({
+    id: "chg_leaderstats",
+    op: "edit.source",
+    activityId: "act_a4",
+    chat: OPEN,
+    at: T2 + sec(48),
+    kind: "source",
+    target: ref("ServerScriptService.Pollen.PollenLeaderstats", "Script"),
+    summary: "Changed the source of PollenLeaderstats",
+    source: {
+      before: LEADERSTATS_BEFORE,
+      after: LEADERSTATS_AFTER,
+      beforeLines: lines(LEADERSTATS_BEFORE),
+      afterLines: lines(LEADERSTATS_AFTER),
+    },
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // Studio, providers, versions
 // ---------------------------------------------------------------------------
 
 const SESSION = {
-  id: "ses_bee_main",
+  id: SESSION_ID,
   installId: "inst_9f31c0",
   windowId: "win_01",
-  place: { name: "Bee Simulator 6", placeId: 8421771003, universeId: 4712880153, identity: "game:4712880153" },
+  place: {
+    name: "Bee Simulator 6",
+    placeId: 8421771003,
+    gameId: 4712880153,
+    identity: "game:4712880153",
+    unsaved: false,
+    nameSource: "published",
+    creatorId: 1174763,
+    creatorType: "Group",
+  },
   studioVersion: "0.712.1.7120583",
   pluginVersion: "0.4.2",
   status: "connected",
@@ -403,6 +554,7 @@ const SNAPSHOT = {
   capabilities: {
     capabilities: CAPABILITIES,
     permissions: { inspect: true, edit: true, playtest: true, exec: true, input: true, screenshot: true },
+    disabledTools: [],
     platform: "win32",
   },
   agents: AGENTS,
@@ -412,11 +564,15 @@ const SNAPSHOT = {
     titleGeneration: { enabled: true, provider: "auto", model: null },
     plugin: { autoInstall: true },
     customModels: {},
-    favourites: [{ model: "claude-opus-5", options: [{ id: "effort", value: "max" }] }],
+    favourites: [{ id: "fav_opus_max", model: "claude-opus-5", options: [{ id: "effort", value: "max" }] }],
+    globalRules: "",
     showThinking: true,
     // Off, so a warning line in the mock output cannot flip the dock to the
     // Output tab a second before the shutter.
     followRuntimeErrors: false,
+    // Wider than the default dock: the panel is showing diffs, and a line of
+    // Luau that runs out of room is the one thing a diff cannot afford.
+    layout: { sidebarWidth: 276, dockWidth: 430 },
   },
   session: { agent: "claude", state: "working", sessionId: "sess_a91f", model: "claude-opus-5", message: null },
   agentStates: AGENT_STATES,
@@ -431,8 +587,12 @@ const SNAPSHOT = {
     agentSessionId: "sess_a91f",
     modelSelection: { model: "claude-opus-5", options: [{ id: "effort", value: "high" }] },
     items: TIMELINE,
+    // The conversation's own half of the journal, which is what puts the
+    // "1 change" fold under its second turn.
+    changes: CHANGES.filter((record) => record.chat === OPEN),
   },
   modelSelection: { model: "claude-opus-5", options: [{ id: "effort", value: "high" }] },
+  pendingAsks: {},
 };
 
-module.exports = { SNAPSHOT, OUTPUT, VERSIONS, AGENTS };
+module.exports = { SNAPSHOT, OUTPUT, VERSIONS, AGENTS, CHANGES };
