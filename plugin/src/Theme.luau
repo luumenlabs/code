@@ -42,7 +42,7 @@ Theme.color = {
 
 --[[
 	Puts `gap` between every character. Roblox has no letter-spacing, and the
-	section headings and the pairing code both need it.
+	section headings need it.
 ]]
 function Theme.spaced(content: string, gap: string): string
 	local pieces = table.create(#content)

@@ -7,7 +7,7 @@
  * identical. Spec sections 33 and 45.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AskRequest, ChangeRecord, OutputEntry, PairingRequest, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
+import type { AskRequest, ChangeRecord, OutputEntry, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, AgentState, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
 import { setModelCatalogue } from "../shared/models.js";
@@ -111,7 +111,6 @@ export interface Harness {
    * a conflict is an outcome, not a thrown error.
    */
   revert(ids: string[], force?: boolean): Promise<RevertOutcome[]>;
-  pendingPairing: PairingRequest | null;
   /**
    * The question the open conversation is waiting on, if any.
    *
@@ -286,7 +285,7 @@ export function useHarness(): Harness {
         // The window went away and took the journal with it. Dropping only that
         // window's records keeps a second connected place's history intact.
         setChanges((current) => current.filter((record) => record.session !== event.session));
-      } else if (event.type === "session.connected" || event.type === "session.disconnected" || event.type === "pairing.requested") {
+      } else if (event.type === "session.connected" || event.type === "session.disconnected") {
         void refresh();
         void loadChanges(openThreadId.current);
       }
@@ -483,8 +482,6 @@ export function useHarness(): Harness {
     [activeThreadId, agentStates],
   );
 
-  const pendingPairing = useMemo(() => snapshot?.status.pending[0] ?? null, [snapshot?.status.pending]);
-
   const pendingAsk = useMemo(
     () => (activeThreadId ? (asks[activeThreadId]?.[0] ?? null) : null),
     [asks, activeThreadId],
@@ -510,7 +507,6 @@ export function useHarness(): Harness {
     history,
     reverting,
     revert,
-    pendingPairing,
     pendingAsk,
     modelSelection,
     applyModel,

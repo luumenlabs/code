@@ -60,9 +60,7 @@ export interface LuuCodeServer {
   ): Promise<unknown>;
   status(): SessionStatus;
   capabilities(): CapabilityReport;
-  approvePairing(sessionId: string): boolean;
-  rejectPairing(sessionId: string): boolean;
-  /** Drops a Studio session and forgets its pairing. */
+  /** Drops a Studio session and everything keyed on it. */
   disconnectSession(sessionId: string): void;
   /**
    * Changes what the agent is allowed to do, and tells everyone.
@@ -96,7 +94,6 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
   let desktopCapture: DesktopCaptureProvider | null = options.desktopCaptureProvider ?? platformDesktopCaptureProvider();
 
   const sessions = new SessionRegistry(
-    settings,
     bus,
     {
       onOutput: (sessionId, entries) => {
@@ -175,8 +172,6 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
       }),
     status: () => sessions.status(),
     capabilities: () => dispatcher.capabilityReport(),
-    approvePairing: (sessionId) => sessions.approvePairing(sessionId),
-    rejectPairing: (sessionId) => sessions.rejectPairing(sessionId),
     disconnectSession: (sessionId) => {
       sessions.disconnect(sessionId);
       output.drop(sessionId);

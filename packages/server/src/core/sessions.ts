@@ -1,5 +1,5 @@
 /**
- * Studio session registry: pairing, connection lifecycle, and command routing.
+ * Studio session registry: connection lifecycle and command routing.
  * Spec sections 8, 26, 29, and 30.
  */
 import { randomUUID } from "node:crypto";
@@ -12,7 +12,6 @@ import {
 import type {
   CapabilityId,
   Op,
-  PairingRequest,
   PlaceInfo,
   RunState,
   SessionStatus,
@@ -20,23 +19,20 @@ import type {
   StudioEndpoint,
   StudioHelloRequest,
   StudioHelloResponse,
-  StudioPairResponse,
   StudioRealm,
   StudioRuntimeConfig,
   StudioSession,
   StudioSyncRequest,
   StudioSyncResponse,
 } from "@luumen/code-protocol";
-import { generatePairingCode, generateToken, safeEquals } from "./auth.js";
+import { generateToken, safeEquals } from "./auth.js";
 import { EventBus } from "./events.js";
-import type { SettingsStore } from "../config/settings.js";
 import { defer } from "../util/defer.js";
 import type { Deferred } from "../util/defer.js";
 import { createLogger } from "../util/logger.js";
 
 const log = createLogger("sessions");
 
-const PAIRING_TTL_MS = 5 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 5_000;
 
 /**
@@ -112,19 +108,6 @@ interface ChatBinding {
   placeName: string;
 }
 
-interface PendingPairing {
-  request: PairingRequest;
-  approved: boolean | null;
-  timer: NodeJS.Timeout;
-  /**
-   * Carried over from the handshake so the connection is fully described the
-   * instant it is approved. Without this there is a window where every
-   * capability check fails on a freshly paired session.
-   */
-  capabilities: CapabilityId[];
-  run: RunState;
-}
-
 export interface SessionEvents {
   onOutput(sessionId: string, entries: Array<Record<string, unknown>>): void;
   onRunState(sessionId: string, state: RunState): void;
@@ -153,12 +136,10 @@ export class SessionRegistry {
   /** Window id to session id, so a re-handshake finds its own session. */
   private readonly byWindow = new Map<string, string>();
   private readonly chats = new Map<string, ChatBinding>();
-  private readonly pairings = new Map<string, PendingPairing>();
   private activeSessionId: string | null = null;
   private sweepTimer: NodeJS.Timeout | null = null;
 
   constructor(
-    private readonly settings: SettingsStore,
     private readonly bus: EventBus,
     private readonly hooks: SessionEvents,
     private readonly serverVersion: string,
@@ -183,182 +164,48 @@ export class SessionRegistry {
   }
 
   // -------------------------------------------------------------------------
-  // Handshake and pairing
+  // Handshake
   // -------------------------------------------------------------------------
 
+  /**
+   * Connects, every time.
+   *
+   * There was an approval step here: a six-digit code shown in Studio and in
+   * the app, compared by the user before the first command could run. Both ends
+   * are one program on one machine, run by one person, and the code was asking
+   * them to vouch for themselves. The token below is still issued and still
+   * checked on every sync — it is what tells one connection from a stale one —
+   * but it is a handle the server hands out, not permission the user grants.
+   */
   hello(request: StudioHelloRequest): StudioHelloResponse {
     const windowId = windowIdOf(request);
-    const paired = request.token ? this.settings.findPairedByToken(request.token) : undefined;
 
-    // A stored token is the only silent path back in. Recognising an install id
-    // alone would make that id equivalent to a credential, and it is readable
-    // by any process that can read Studio's settings.
-    if (paired && request.token && safeEquals(paired.token, request.token) && paired.installId === request.installId) {
-      // The credential belongs to the game; the session belongs to the window.
-      // A second window on an already-approved place connects silently and
-      // still gets a session of its own — but a playtest is not a second
-      // window, however much it looks like one from here.
-      const sessionId = this.byWindow.get(windowId) ?? this.sessionForRuntimePeer(request) ?? `s_${randomUUID().slice(0, 8)}`;
-      const session = this.upsertSession(sessionId, request, windowId, paired.token);
-      const endpoint = this.addEndpoint(session, request.run, request.capabilities);
+    // A window that has handshaked before keeps its session, so a plugin
+    // reloading does not strand the chats bound to it. A playtest's DataModel
+    // joins the window that started it rather than opening one of its own.
+    const sessionId = this.byWindow.get(windowId) ?? this.sessionForRuntimePeer(request) ?? `s_${randomUUID().slice(0, 8)}`;
+    const token = this.sessions.get(sessionId)?.token ?? generateToken();
 
-      this.settings.addPaired({
-        ...paired,
-        placeName: request.place.name,
-        placeId: request.place.placeId,
-      });
+    const session = this.upsertSession(sessionId, request, windowId, token);
+    const endpoint = this.addEndpoint(session, request.run, request.capabilities);
 
-      log.info(`Studio connected: ${request.place.name} (${endpoint.realm})`);
-      this.bus.emit({ type: "session.connected", session: this.toPublicSession(session) });
-      this.emitStatus();
-
-      return {
-        status: "connected",
-        sessionId: session.id,
-        endpointId: endpoint.id,
-        token: session.token,
-        config: this.runtimeConfig(session),
-      };
-    }
-
-    // Matched on the window, not the game: two windows asking to connect are two
-    // approvals, and collapsing them would show one code for both.
-    const existing = [...this.pairings.values()].find((entry) => entry.request.windowId === windowId);
-    if (existing && existing.approved === null) {
-      // The plugin restarted while a request was already on screen; keep the
-      // same code so the user is not asked to compare a new one.
-      return {
-        status: "pairing",
-        sessionId: existing.request.sessionId,
-        pairingCode: existing.request.code,
-        expiresAt: existing.request.expiresAt,
-      };
-    }
-
-    const sessionId = `s_${randomUUID().slice(0, 8)}`;
-    const pairingRequest: PairingRequest = {
-      sessionId,
-      installId: request.installId,
-      windowId,
-      code: generatePairingCode(),
-      place: request.place,
-      studioVersion: request.studioVersion,
-      pluginVersion: request.pluginVersion,
-      requestedAt: Date.now(),
-      expiresAt: Date.now() + PAIRING_TTL_MS,
-    };
-
-    const timer = setTimeout(() => this.pairings.delete(sessionId), PAIRING_TTL_MS);
-    timer.unref?.();
-
-    this.pairings.set(sessionId, {
-      request: pairingRequest,
-      approved: null,
-      timer,
-      capabilities: request.capabilities ?? [],
-      run: request.run ?? defaultRunState(),
-    });
-    this.bus.emit({ type: "pairing.requested", request: pairingRequest });
-    this.emitStatus();
-
-    if (this.settings.get().autoApprovePairing) {
-      log.info(`Auto-approving ${request.place.name} (autoApprovePairing is on)`);
-      this.approvePairing(sessionId);
-    } else {
-      log.info(`Studio wants to connect: ${request.place.name}. Approval code ${pairingRequest.code}`);
-    }
-
-    return {
-      status: "pairing",
-      sessionId,
-      pairingCode: pairingRequest.code,
-      expiresAt: pairingRequest.expiresAt,
-    };
-  }
-
-  pair(sessionId: string, installId: string, windowId?: string): StudioPairResponse {
-    const pending = this.pairings.get(sessionId);
-    const window = windowId ?? installId;
-
-    if (!pending || pending.request.installId !== installId || pending.request.windowId !== window) {
-      return {
-        status: "rejected",
-        error: new LuuCodeError("SESSION_UNKNOWN", "This pairing request expired. Reconnect from Studio to get a new code.").toWire(),
-      };
-    }
-
-    if (pending.approved === null) return { status: "pending" };
-
-    if (pending.approved === false) {
-      this.clearPairing(sessionId);
-      return {
-        status: "rejected",
-        error: new LuuCodeError("PERMISSION_DENIED", "The connection was declined in Luu Code.").toWire(),
-      };
-    }
-
-    const token = generateToken();
-    const session = this.upsertSession(
-      sessionId,
-      {
-        installId,
-        place: pending.request.place,
-        studioVersion: pending.request.studioVersion,
-        pluginVersion: pending.request.pluginVersion,
-      },
-      window,
-      token,
-    );
-
-    const endpoint = this.addEndpoint(session, pending.run, pending.capabilities);
-
-    // The user just approved this window, which is the clearest statement of
-    // which Studio session they mean. It becomes the default for chats that
-    // have not picked one; chats already bound elsewhere are left alone.
+    // The window that just connected is the clearest statement of which Studio
+    // the user means, for callers that name none. The approval used to do this;
+    // without it the default stuck to the first window ever seen and stayed
+    // there after that window was gone.
     this.activeSessionId = session.id;
 
-    this.settings.addPaired({
-      installId,
-      token,
-      placeName: pending.request.place.name,
-      placeId: pending.request.place.placeId,
-      pairedAt: Date.now(),
-    });
-
-    this.clearPairing(sessionId);
-    this.bus.emit({ type: "pairing.resolved", sessionId, approved: true });
+    log.info(`Studio connected: ${request.place.name} (${endpoint.realm})`);
     this.bus.emit({ type: "session.connected", session: this.toPublicSession(session) });
     this.emitStatus();
 
-    log.info(`Paired with ${pending.request.place.name}`);
-
-    return { status: "connected", endpointId: endpoint.id, token, config: this.runtimeConfig(session) };
-  }
-
-  approvePairing(sessionId: string): boolean {
-    const pending = this.pairings.get(sessionId);
-    if (!pending || pending.approved !== null) return false;
-    pending.approved = true;
-    return true;
-  }
-
-  rejectPairing(sessionId: string): boolean {
-    const pending = this.pairings.get(sessionId);
-    if (!pending || pending.approved !== null) return false;
-    pending.approved = false;
-    this.bus.emit({ type: "pairing.resolved", sessionId, approved: false });
-    this.emitStatus();
-    return true;
-  }
-
-  pendingPairings(): PairingRequest[] {
-    return [...this.pairings.values()].filter((entry) => entry.approved === null).map((entry) => entry.request);
-  }
-
-  private clearPairing(sessionId: string): void {
-    const pending = this.pairings.get(sessionId);
-    if (pending) clearTimeout(pending.timer);
-    this.pairings.delete(sessionId);
+    return {
+      status: "connected",
+      sessionId: session.id,
+      endpointId: endpoint.id,
+      token: session.token,
+      config: this.runtimeConfig(session),
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -369,7 +216,7 @@ export class SessionRegistry {
     const session = this.sessions.get(request.sessionId);
 
     if (!session || !safeEquals(session.token, request.token ?? "")) {
-      throw new LuuCodeError("UNAUTHORIZED", "This Studio session is not paired with the local server.");
+      throw new LuuCodeError("UNAUTHORIZED", "This Studio connection is not registered with the local server.");
     }
 
     const endpoint = session.endpoints.get(request.endpointId);
@@ -1008,12 +855,6 @@ export class SessionRegistry {
 
     this.forget(session);
 
-    // The approval covers the game, not this one window. Revoking it while
-    // another window still has the place open would knock that one out too, and
-    // it was never the one disconnected.
-    const stillOpen = [...this.sessions.values()].some((other) => other.installId === session.installId);
-    if (!stillOpen) this.settings.removePaired(session.installId);
-
     // Chats bound here keep their binding, and say so if asked to do anything.
     // Silently moving them onto whatever else is connected is the failure this
     // whole path exists to prevent — disconnecting a window is not an
@@ -1071,7 +912,6 @@ export class SessionRegistry {
       sessions: [...this.sessions.values()].map((session) => this.toPublicSession(session)),
       activeSessionId: this.activeSessionId,
       chats,
-      pending: this.pendingPairings(),
     };
   }
 

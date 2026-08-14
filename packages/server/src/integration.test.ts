@@ -1,7 +1,7 @@
 /**
  * End-to-end test of the local server with a simulated Studio plugin.
  *
- * This is the seam that matters most: pairing, the long-polled sync loop,
+ * This is the seam that matters most: the handshake, the long-polled sync loop,
  * command round trips, and the failure paths an agent has to be able to
  * distinguish. A fake plugin exercises them without needing Roblox installed.
  */
@@ -21,8 +21,8 @@ const { unavailableOps } = await import("@luumen/code-protocol");
 type LuuCodeServer = Awaited<ReturnType<typeof createLuuCodeServer>>;
 
 /**
- * Stands in for the Studio plugin: handshakes, pairs, then runs the same
- * two-loop sync the real plugin does.
+ * Stands in for the Studio plugin: handshakes, then runs the same two-loop
+ * sync the real plugin does.
  */
 class FakePlugin {
   sessionId = "";
@@ -127,7 +127,7 @@ class FakePlugin {
     return { status: response.status, body: (await response.json()) as T };
   }
 
-  hello(token?: string): Promise<{ status: number; body: any }> {
+  hello(): Promise<{ status: number; body: any }> {
     return this.post("/studio/hello", {
       protocolVersion: 1,
       installId: this.installId,
@@ -137,16 +137,17 @@ class FakePlugin {
       place: this.place(),
       capabilities: this.capabilities,
       run: this.runState(),
-      token,
     });
   }
 
-  pair(): Promise<{ status: number; body: any }> {
-    return this.post("/studio/pair", {
-      sessionId: this.sessionId,
-      installId: this.installId,
-      windowId: this.windowId,
-    });
+  /** Handshakes and records what came back, the way the plugin's loop does. */
+  async connect(): Promise<this> {
+    const { body } = await this.hello();
+    expect(body.status).toBe("connected");
+    this.sessionId = body.sessionId;
+    this.token = body.token;
+    this.endpointId = body.endpointId;
+    return this;
   }
 
   runState(): Record<string, unknown> {
@@ -250,20 +251,7 @@ let server: LuuCodeServer;
 let plugin: FakePlugin;
 
 async function connectPlugin(): Promise<FakePlugin> {
-  const fake = new FakePlugin(server.port);
-
-  const first = await fake.hello();
-  expect(first.body.status).toBe("pairing");
-  fake.sessionId = first.body.sessionId;
-
-  expect(server.approvePairing(fake.sessionId)).toBe(true);
-
-  const paired = await fake.pair();
-  expect(paired.body.status).toBe("connected");
-  fake.token = paired.body.token;
-  fake.endpointId = paired.body.endpointId;
-
-  return fake;
+  return new FakePlugin(server.port).connect();
 }
 
 beforeAll(async () => {
@@ -283,48 +271,49 @@ afterEach(() => {
   plugin?.stop();
 });
 
-describe("pairing", () => {
+describe("the handshake", () => {
   it("refuses to run commands before Studio is connected", async () => {
     await expect(server.execute("dm.services", {})).rejects.toMatchObject({ code: "STUDIO_NOT_CONNECTED" });
   });
 
-  it("requires user approval before issuing a token", async () => {
-    const fake = new FakePlugin(server.port, "install-unapproved");
-    const first = await fake.hello();
+  it("connects on the first handshake, with no approval step", async () => {
+    const { body } = await new FakePlugin(server.port).hello();
 
-    expect(first.body.status).toBe("pairing");
-    expect(first.body.pairingCode).toMatch(/^\d{6}$/);
-
-    fake.sessionId = first.body.sessionId;
-    const beforeApproval = await fake.pair();
-    expect(beforeApproval.body.status).toBe("pending");
-
-    server.rejectPairing(fake.sessionId);
-    const afterRejection = await fake.pair();
-    expect(afterRejection.body.status).toBe("rejected");
+    expect(body.status).toBe("connected");
+    expect(body.token).toEqual(expect.any(String));
+    expect(body.endpointId).toEqual(expect.any(String));
   });
 
-  it("reconnects silently with a stored token", async () => {
+  it("keeps a window on its session when the plugin handshakes again", async () => {
     plugin = await connectPlugin();
-    const again = await plugin.hello(plugin.token);
+    const again = await plugin.hello();
 
     expect(again.body.status).toBe("connected");
     expect(again.body.sessionId).toBe(plugin.sessionId);
+    // The token is the session's, so a reload does not invalidate the one the
+    // other DataModels of that window are already syncing with.
+    expect(again.body.token).toBe(plugin.token);
   });
 
-  it("does not accept an install id as a credential", async () => {
-    const paired = new FakePlugin(server.port, "install-shared");
-    const first = await paired.hello();
-    paired.sessionId = first.body.sessionId;
-    server.approvePairing(paired.sessionId);
-    const approved = await paired.pair();
-    expect(approved.body.status).toBe("connected");
+  /**
+   * The token is a session handle rather than a credential now, but sync still
+   * checks it: it is what tells a live connection from one whose session the
+   * server has already dropped.
+   */
+  it("turns away a sync quoting a token that is not this session's", async () => {
+    plugin = await connectPlugin();
 
-    // Same install id, no token. Studio's settings are readable by any local
-    // process, so knowing the install id must not be enough to take control.
-    const impostor = new FakePlugin(server.port, "install-shared");
-    const response = await impostor.hello();
-    expect(response.body.status).toBe("pairing");
+    const response = await (plugin as any).post("/studio/sync", {
+      sessionId: plugin.sessionId,
+      endpointId: plugin.endpointId,
+      token: "not-the-token",
+      wait: false,
+      results: [],
+      events: [],
+      run: plugin.runState(),
+    });
+
+    expect(response.body.error?.code).toBe("UNAUTHORIZED");
   });
 });
 
@@ -332,40 +321,13 @@ describe("pairing", () => {
  * Several Studio windows open at once.
  *
  * Studio stores plugin settings once per machine, so every open window reads
- * back the same install id and the same token. The window id is the only thing
- * telling them apart, and without it both windows resolved to one session where
- * each handshake evicted the other's connection — one Studio at a time, and a
- * pairing prompt every time you switched.
+ * back the same install id. The window id is the only thing telling them apart,
+ * and without it both windows resolved to one session where each handshake
+ * evicted the other's connection — one Studio at a time.
  */
 describe("multiple Studio windows", () => {
-  /**
-   * Connects one window, pairing if it has to. Passing a token is what a second
-   * window on an already-approved place does: it reads the same per-place
-   * credential out of Studio's settings.
-   */
-  async function connectWindow(
-    installId: string,
-    windowId: string,
-    placeId: number,
-    token?: string,
-  ): Promise<FakePlugin> {
-    const fake = new FakePlugin(server.port, installId, windowId, placeId);
-    const hello = await fake.hello(token);
-
-    if (hello.body.status === "pairing") {
-      fake.sessionId = hello.body.sessionId;
-      expect(server.approvePairing(fake.sessionId)).toBe(true);
-
-      const paired = await fake.pair();
-      expect(paired.body.status).toBe("connected");
-      fake.token = paired.body.token;
-      fake.endpointId = paired.body.endpointId;
-    } else {
-      expect(hello.body.status).toBe("connected");
-      fake.sessionId = hello.body.sessionId;
-      fake.token = hello.body.token;
-      fake.endpointId = hello.body.endpointId;
-    }
+  async function connectWindow(installId: string, windowId: string, placeId: number): Promise<FakePlugin> {
+    const fake = await new FakePlugin(server.port, installId, windowId, placeId).connect();
 
     // Answers with its own window id, so a routing mistake names the culprit
     // instead of just failing an equality check.
@@ -1112,13 +1074,7 @@ describe("playtest", () => {
     plugin.running = true;
     plugin.realmOverride = "client";
 
-    const first = await plugin.hello();
-    plugin.sessionId = first.body.sessionId;
-    expect(server.approvePairing(plugin.sessionId)).toBe(true);
-
-    const paired = await plugin.pair();
-    plugin.token = paired.body.token;
-    plugin.endpointId = paired.body.endpointId;
+    await plugin.connect();
     plugin.start();
 
     const modeNow = async (): Promise<any> => {

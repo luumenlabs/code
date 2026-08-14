@@ -2,12 +2,11 @@
 --[[
 	Session lifecycle and the sync loop. Spec sections 8, 26, and 29.
 
-	Connection is explicit: the plugin asks to connect, the server issues a
-	six-digit code, and the user approves it in Luu Code before any token is
-	handed out. A local process that merely discovers the port cannot take
-	control of Studio.
+	The plugin handshakes and is connected. There was an approval step — a code
+	shown here and confirmed in the app — and it is gone: both ends are one
+	program on one machine, and the code asked the user to vouch for themselves.
 
-	Two threads share the session once paired:
+	Two threads share the session:
 
 	  * the poller holds a long request open so the server can push a command
 	    down the moment an agent issues one;
@@ -34,7 +33,6 @@ local pluginRef: Plugin = nil
 local state = {
 	status = "disconnected",
 	message = "Not connected",
-	pairingCode = nil :: string?,
 	sessionId = nil :: string?,
 	endpointId = nil :: string?,
 	token = nil :: string?,
@@ -77,7 +75,6 @@ function Client.state(): any
 	return {
 		status = state.status,
 		message = state.message,
-		pairingCode = state.pairingCode,
 		sessionId = state.sessionId,
 		port = state.port,
 		place = state.place,
@@ -249,7 +246,7 @@ end
 	Nothing Studio exposes tells one open window from another: plugin settings
 	are machine-wide, so every window reads back the same install id and the same
 	token. That made two open windows one session on the server, where each
-	handshake evicted the other's connection and sent it back through pairing.
+	handshake evicted the other's connection.
 	A value generated per plugin runtime is the missing half of the identity —
 	the install id says which game, this says which window.
 ]]
@@ -295,37 +292,25 @@ local function installId(): string
 	return generated
 end
 
-local function storedToken(): string?
-	local key = settingKey(Constants.SETTING_TOKEN)
-	if key == nil then
-		return nil
-	end
+--[[
+	The session token, held for as long as the connection is.
 
-	local stored = pluginRef:GetSetting(key)
-	if type(stored) == "string" and #stored > 0 then
-		return stored
-	end
-	return nil
-end
-
+	It used to be written to plugin settings so an approval could survive a
+	Studio restart. Nothing is being remembered now — the server issues one on
+	every handshake — so keeping a copy on disk would only leave a dead
+	credential behind.
+]]
 local function saveToken(token: string)
 	state.token = token
-
-	local key = settingKey(Constants.SETTING_TOKEN)
-	if key ~= nil then
-		pluginRef:SetSetting(key, token)
-	end
 end
 
-function Client.forgetToken()
+--[[
+	Drops the session so the next pass through the loop handshakes cleanly.
+]]
+function Client.forgetSession()
 	state.token = nil
 	state.sessionId = nil
 	state.endpointId = nil
-
-	local key = settingKey(Constants.SETTING_TOKEN)
-	if key ~= nil then
-		pluginRef:SetSetting(key, "")
-	end
 end
 
 function Client.port(): number
@@ -335,37 +320,6 @@ end
 function Client.setPort(port: number)
 	state.port = port
 	pluginRef:SetSetting(Constants.SETTING_PORT, port)
-end
-
-local function waitForApproval(): boolean
-	while not shouldStop do
-		local response = Net.post(baseUrl() .. Constants.ROUTES.pair, {
-			sessionId = state.sessionId,
-			installId = installId(),
-			windowId = windowId,
-		})
-
-		if not response.ok then
-			setStatus("disconnected", response.error or "Lost contact with Luu Code while pairing")
-			return false
-		end
-
-		local body = response.body
-
-		if body.status == "connected" then
-			saveToken(body.token)
-			state.endpointId = body.endpointId
-			return true
-		elseif body.status == "rejected" then
-			state.pairingCode = nil
-			setStatus("disconnected", body.error and body.error.message or "Pairing was declined")
-			return false
-		end
-
-		task.wait(Constants.PAIR_POLL_SECONDS)
-	end
-
-	return false
 end
 
 local function handshake(): boolean
@@ -380,7 +334,6 @@ local function handshake(): boolean
 		place = state.place,
 		capabilities = Commands.capabilities(),
 		run = RunState.current(),
-		token = storedToken(),
 	})
 
 	if not response.ok then
@@ -398,26 +351,11 @@ local function handshake(): boolean
 	if body.status == "connected" then
 		state.sessionId = body.sessionId
 		state.endpointId = body.endpointId
-		state.pairingCode = nil
 		saveToken(body.token)
 		-- The green "Connected", the place name, and the mode below it already
 		-- say everything. A sentence repeating them is noise in a 280px panel.
 		setStatus("connected", "")
 		return true
-	end
-
-	if body.status == "pairing" then
-		state.sessionId = body.sessionId
-		state.pairingCode = body.pairingCode
-		setStatus("pairing", "Approve it in Luu Code.")
-
-		if waitForApproval() then
-			state.pairingCode = nil
-			setStatus("connected", "")
-			return true
-		end
-
-		return false
 	end
 
 	setStatus("disconnected", body.error and body.error.message or "Luu Code turned down the connection")
@@ -475,8 +413,8 @@ local function sync(wait: boolean): boolean
 		if response.status == 401 or response.status == 404 then
 			-- The server no longer knows this session. Pair again rather than
 			-- retrying forever against something that will never answer.
-			Client.forgetToken()
-			setStatus("disconnected", "Luu Code lost this session. Pairing again.")
+			Client.forgetSession()
+			setStatus("disconnected", "Luu Code lost this session. Connecting again.")
 		else
 			setStatus("disconnected", response.error or "Lost contact with Luu Code")
 		end
@@ -570,10 +508,9 @@ function Client.start(hostPlugin: Plugin)
 		state.port = storedPort
 	end
 
-	-- The unscoped keys are from before identity was per place. Every window read
-	-- the same two values back, which is the thing this replaced; leaving them
-	-- behind would keep one stale token on disk forever. Each place pairs once
-	-- more, then remembers on its own key.
+	-- Tokens are no longer persisted, so anything a previous build wrote is a
+	-- dead credential sitting in the user's plugin settings. Cleared on the way
+	-- past rather than left to rot.
 	pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, nil)
 	pluginRef:SetSetting(Constants.SETTING_TOKEN, nil)
 

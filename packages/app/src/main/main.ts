@@ -124,7 +124,7 @@ const channel: Channel = resolveChannel();
  * other by their product names.
  *
  * Deliberately not extended to the local server: Studio finds it on a fixed
- * port with a paired token, and moving those would mean re-pairing Studio every
+ * port, and moving it would mean pointing Studio somewhere else every
  * time you switch between the dev app and the installed one. Two servers still
  * cannot share the port, which is reported as the conflict it is.
  */
@@ -1023,8 +1023,6 @@ function registerIpc(): void {
 
   // ---- Studio --------------------------------------------------------------
 
-  ipcMain.handle("approve-pairing", (_event, sessionId: string) => requireServer().approvePairing(sessionId));
-  ipcMain.handle("reject-pairing", (_event, sessionId: string) => requireServer().rejectPairing(sessionId));
 
   ipcMain.handle("select-session", async (_event, sessionId: string, chat?: string) => {
     await requireServer().execute("session.select", { sessionId }, { origin: "harness", ...(chat ? { chat } : {}) });

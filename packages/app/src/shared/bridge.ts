@@ -96,8 +96,6 @@ export interface LuuCodeBridge {
   /** Fires whenever a question arrives or stops waiting, keyed by conversation. */
   onAsks(listener: (asks: Record<string, import("@luumen/code-protocol").AskRequest[]>) => void): () => void;
 
-  approvePairing(sessionId: string): Promise<boolean>;
-  rejectPairing(sessionId: string): Promise<boolean>;
   /**
    * Points a chat at a Studio window. Without one it only moves the default
    * that new chats start from, which is what the empty state means.

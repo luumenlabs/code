@@ -1,18 +1,21 @@
 /**
  * Local trust. Spec section 26.
  *
- * Two separate credentials, because the two sides can do different things:
+ * One credential that means something, and one that is bookkeeping:
  *
- *   Studio  — cannot read files, so it earns a token through a pairing code the
- *             user approves. Discovering the port is not enough to drive Studio.
  *   Clients — the harness and MCP run as the user, so they read a token from a
  *             user-only file. A process that cannot read the user's files
- *             cannot issue commands.
+ *             cannot issue commands. This is the boundary.
+ *   Studio  — issued a session token on its handshake and quotes it back on
+ *             every sync. It tells one connection from a stale one; it is not
+ *             something the user grants. Studio used to earn it by having the
+ *             user compare a six-digit code between two windows of the same
+ *             program, which asked them to vouch for themselves.
  *
  * The server binds to loopback only and never enables remote access by default.
  */
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { dirname } from "node:path";
 import { authFile } from "../config/paths.js";
 import { createLogger } from "../util/logger.js";
@@ -21,11 +24,6 @@ const log = createLogger("auth");
 
 export function generateToken(): string {
   return randomBytes(32).toString("hex");
-}
-
-/** Six digits, shown in Studio and confirmed in the harness. */
-export function generatePairingCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 export function safeEquals(left: string, right: string): boolean {

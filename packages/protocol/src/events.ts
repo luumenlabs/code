@@ -6,7 +6,7 @@
 import type { CapabilityReport } from "./capabilities.js";
 import type { ChangeRecord } from "./changes.js";
 import type { OutputEntry, Op } from "./commands.js";
-import type { PairingRequest, RunState, SessionStatus, StudioSession } from "./session.js";
+import type { RunState, SessionStatus, StudioSession } from "./session.js";
 import type { WireError } from "./errors.js";
 import type { InstanceRef } from "./targets.js";
 
@@ -22,8 +22,6 @@ export type ServerEvent =
   | { type: "status"; status: SessionStatus }
   | { type: "session.connected"; session: StudioSession }
   | { type: "session.disconnected"; sessionId: string; reason: string }
-  | { type: "pairing.requested"; request: PairingRequest }
-  | { type: "pairing.resolved"; sessionId: string; approved: boolean }
   | { type: "run"; sessionId: string; state: RunState }
   | { type: "output"; sessionId: string; entries: OutputEntry[] }
   | { type: "capabilities"; report: CapabilityReport }

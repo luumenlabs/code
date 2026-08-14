@@ -118,7 +118,7 @@ export interface PlaceInfo {
   placeVersion?: number;
 }
 
-export type ConnectionStatus = "disconnected" | "pairing" | "connected" | "stale";
+export type ConnectionStatus = "disconnected" | "connected" | "stale";
 
 /**
  * One plugin connection. A single Studio window can have more than one at a
@@ -140,7 +140,7 @@ export interface StudioSession {
   id: string;
   /**
    * Identifies the game this window has open. Shared by every window on the
-   * same place, because it is what the pairing approval is remembered against.
+   * same place, and by every DataModel a playtest of it creates.
    */
   installId: string;
   /**
@@ -161,18 +161,6 @@ export interface StudioSession {
   active: boolean;
 }
 
-export interface PairingRequest {
-  sessionId: string;
-  installId: string;
-  windowId: string;
-  code: string;
-  place: PlaceInfo;
-  studioVersion: string;
-  pluginVersion: string;
-  requestedAt: number;
-  expiresAt: number;
-}
-
 export interface SessionStatus {
   serverVersion: string;
   /** All Studio sessions the server currently knows about. */
@@ -190,8 +178,6 @@ export interface SessionStatus {
    * user happened to have selected.
    */
   chats: Record<string, string>;
-  /** Pairing requests waiting for user approval. */
-  pending: PairingRequest[];
 }
 
 /**

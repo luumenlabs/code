@@ -2,7 +2,7 @@
  * The local HTTP surface.
  *
  * Three kinds of caller share one listener:
- *   /studio/*  the Roblox Studio plugin, authenticated by its paired token
+ *   /studio/*  the Roblox Studio plugin, authenticated by its session token
  *   /mcp       external MCP clients
  *   everything else, the first-party harness and the CLI
  *
@@ -14,7 +14,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { DEFAULT_HOST, LuuCodeError, ROUTES, isOp } from "@luumen/code-protocol";
-import type { ServerEvent, StudioHelloRequest, StudioPairRequest, StudioSyncRequest } from "@luumen/code-protocol";
+import type { ServerEvent, StudioHelloRequest, StudioSyncRequest } from "@luumen/code-protocol";
 import { bearerToken, safeEquals } from "../core/auth.js";
 import type { EventBus } from "../core/events.js";
 import type { Dispatcher } from "../core/dispatcher.js";
@@ -99,12 +99,6 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  if (path === ROUTES.pair && req.method === "POST") {
-    const body = await readJson<StudioPairRequest>(req);
-    sendJson(res, 200, deps.sessions.pair(body.sessionId, body.installId, body.windowId));
-    return;
-  }
-
   if (path === ROUTES.sync && req.method === "POST") {
     const body = await readJson<StudioSyncRequest>(req);
 
@@ -134,7 +128,7 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
     sendJson(res, 200, {
       status: deps.sessions.status(),
       capabilities: deps.dispatcher.capabilityReport(),
-      settings: { permissions: deps.settings.permissions, autoApprovePairing: deps.settings.get().autoApprovePairing },
+      settings: { permissions: deps.settings.permissions },
     });
     return;
   }
@@ -166,18 +160,6 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
       const failure = LuuCodeError.from(error);
       sendJson(res, 200, { ok: false, error: failure.toWire() });
     }
-    return;
-  }
-
-  if (path === `${ROUTES.pairing}/approve` && req.method === "POST") {
-    const body = await readJson<{ sessionId: string }>(req);
-    sendJson(res, 200, { ok: deps.sessions.approvePairing(body.sessionId) });
-    return;
-  }
-
-  if (path === `${ROUTES.pairing}/reject` && req.method === "POST") {
-    const body = await readJson<{ sessionId: string }>(req);
-    sendJson(res, 200, { ok: deps.sessions.rejectPairing(body.sessionId) });
     return;
   }
 

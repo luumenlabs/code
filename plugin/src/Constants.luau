@@ -63,7 +63,6 @@ Constants.DEFAULT_PORT = 33770
 
 Constants.ROUTES = {
 	hello = "/studio/hello",
-	pair = "/studio/pair",
 	sync = "/studio/sync",
 }
 
@@ -84,9 +83,6 @@ Constants.SETTING_AUTOCONNECT = "luucode_autoconnect"
 -- How long to wait between reconnect attempts when the server is unreachable.
 Constants.RETRY_MIN_SECONDS = 1
 Constants.RETRY_MAX_SECONDS = 10
-
--- Pairing polls this often while waiting for the user to approve.
-Constants.PAIR_POLL_SECONDS = 1.5
 
 -- Output entries buffered before the plugin forces a sync.
 Constants.OUTPUT_FLUSH_THRESHOLD = 25

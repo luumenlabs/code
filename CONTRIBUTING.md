@@ -53,8 +53,7 @@ a test conversation never turns up in your real history and the app you use
 keeps its plugin.
 
 The local server is deliberately *not* separated — Studio finds it on a fixed
-port with a paired token, and moving those would mean re-pairing every time you
-switched. One consequence: a dev build and an installed build cannot run at the
+port. One consequence: a dev build and an installed build cannot run at the
 same time. The second one to start says the port is taken; set `LUU_CODE_PORT`
 and `LUU_CODE_HOME` if you really need both.
 
@@ -178,7 +177,7 @@ pnpm typecheck
 cd plugin && luu run check
 ```
 
-The server suite runs a simulated Studio plugin through the real transport: pairing, the sync loop, command round trips, and the failure paths. If you change transport or routing behaviour, extend it.
+The server suite runs a simulated Studio plugin through the real transport: the handshake, the sync loop, command round trips, and the failure paths. If you change transport or routing behaviour, extend it.
 
 ## Commit messages
 

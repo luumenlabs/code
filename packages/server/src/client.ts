@@ -18,7 +18,7 @@ export interface LocalClientOptions {
 export interface ServerSnapshot {
   status: SessionStatus;
   capabilities: CapabilityReport;
-  settings: { permissions: PermissionSettings; autoApprovePairing: boolean };
+  settings: { permissions: PermissionSettings };
 }
 
 export class LocalClient {
@@ -77,26 +77,6 @@ export class LocalClient {
 
     if (!body.ok) throw LuuCodeError.from(body.error);
     return body.data;
-  }
-
-  async approvePairing(sessionId: string): Promise<boolean> {
-    const response = await this.http(`${this.base}/pairing/approve`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ sessionId }),
-    });
-    const body = (await response.json()) as { ok: boolean };
-    return body.ok;
-  }
-
-  async rejectPairing(sessionId: string): Promise<boolean> {
-    const response = await this.http(`${this.base}/pairing/reject`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ sessionId }),
-    });
-    const body = (await response.json()) as { ok: boolean };
-    return body.ok;
   }
 
   async setPermission(group: PermissionGroup, allowed: boolean): Promise<PermissionSettings> {

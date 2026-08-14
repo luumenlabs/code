@@ -1,11 +1,10 @@
 /**
  * The `luu-code` command line.
  *
- * Enough to use Luu Code without the Electron app: run the server, approve a
- * Studio connection, check what is connected, and print the MCP configuration
- * for an external agent. Spec sections 23 and 47.
+ * Enough to use Luu Code without the Electron app: run the server, check what
+ * is connected, and print the MCP configuration for an external agent.
+ * Spec sections 23 and 47.
  */
-import { createInterface } from "node:readline/promises";
 import { LuuCodeError, describeError } from "@luumen/code-protocol";
 import type { PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { PERMISSION_GROUPS } from "@luumen/code-protocol";
@@ -18,10 +17,8 @@ import { setLogLevel } from "../util/logger.js";
 const USAGE = `luu-code ${SERVER_VERSION} — connect coding agents to Roblox Studio
 
 Usage:
-  luu-code serve [--port <n>] [--approve-all]   Start the local server
+  luu-code serve [--port <n>]                   Start the local server
   luu-code status                               Show what is connected
-  luu-code approve <sessionId>                  Approve a waiting Studio session
-  luu-code reject <sessionId>                   Decline a waiting Studio session
   luu-code permissions [<group> on|off]         Show or change permissions
   luu-code mcp                                  Run the MCP server on stdio
   luu-code mcp-config [claude|codex|json]       Print MCP client configuration
@@ -52,12 +49,6 @@ export async function main(argv: string[]): Promise<number> {
     case "status":
       return status();
 
-    case "approve":
-      return resolvePairing(rest[0], true);
-
-    case "reject":
-      return resolvePairing(rest[0], false);
-
     case "permissions":
       return permissions(rest);
 
@@ -81,58 +72,15 @@ export async function main(argv: string[]): Promise<number> {
 async function serve(args: string[]): Promise<number> {
   const portIndex = args.indexOf("--port");
   const port = portIndex !== -1 ? Number.parseInt(args[portIndex + 1] ?? "", 10) : undefined;
-  const approveAll = args.includes("--approve-all");
 
   setLogLevel(args.includes("--verbose") ? "debug" : "info");
 
   const server = await createLuuCodeServer(port && Number.isFinite(port) ? { port } : {});
 
   process.stdout.write(`Luu Code server running on http://127.0.0.1:${server.port}\n`);
-  process.stdout.write(`Install the Studio plugin, then approve the connection when Studio asks.\n\n`);
-
-  const rl = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : null;
-  let prompting = false;
+  process.stdout.write(`Install the Studio plugin and open a place; it connects on its own.\n\n`);
 
   server.bus.subscribe((event: ServerEvent) => {
-    if (event.type === "pairing.requested") {
-      const { request } = event;
-      process.stdout.write(`\nRoblox Studio wants to connect:\n`);
-      process.stdout.write(`  Place:   ${request.place.name}\n`);
-      process.stdout.write(`  Code:    ${request.code}\n`);
-      process.stdout.write(`  Studio:  ${request.studioVersion}\n`);
-
-      if (approveAll) {
-        server.approvePairing(request.sessionId);
-        process.stdout.write(`  Approved automatically (--approve-all).\n\n`);
-        return;
-      }
-
-      if (!rl) {
-        process.stdout.write(`\nRun: luu-code approve ${request.sessionId}\n\n`);
-        return;
-      }
-
-      if (prompting) return;
-      prompting = true;
-
-      void rl
-        .question(`\nDoes Studio show code ${request.code}? Approve? [y/N] `)
-        .then((answer) => {
-          prompting = false;
-          const approved = /^y(es)?$/i.test(answer.trim());
-          if (approved) {
-            server.approvePairing(request.sessionId);
-            process.stdout.write("Approved.\n\n");
-          } else {
-            server.rejectPairing(request.sessionId);
-            process.stdout.write("Declined.\n\n");
-          }
-        })
-        .catch(() => {
-          prompting = false;
-        });
-    }
-
     if (event.type === "session.connected") {
       process.stdout.write(`Connected to ${event.session.place.name}\n`);
     }
@@ -145,7 +93,6 @@ async function serve(args: string[]): Promise<number> {
   await new Promise<void>((resolve) => {
     const shutdown = (): void => {
       process.stdout.write("\nShutting down.\n");
-      rl?.close();
       void server.close().then(resolve);
     };
     process.on("SIGINT", shutdown);
@@ -186,11 +133,6 @@ async function status(): Promise<number> {
       process.stdout.write(`    Connections: ${session.endpoints.map((endpoint) => endpoint.realm).join(", ") || "none"}\n`);
     }
 
-    for (const pending of snapshot.status.pending) {
-      process.stdout.write(`\n  Waiting for approval: ${pending.place.name} (code ${pending.code})\n`);
-      process.stdout.write(`    luu-code approve ${pending.sessionId}\n`);
-    }
-
     const unavailable = snapshot.capabilities.capabilities.filter((entry) => !entry.available);
     if (unavailable.length > 0) {
       process.stdout.write("\nUnavailable capabilities:\n");
@@ -199,28 +141,6 @@ async function status(): Promise<number> {
       }
     }
 
-    return 0;
-  } catch (error) {
-    return reportError(error);
-  }
-}
-
-async function resolvePairing(sessionId: string | undefined, approve: boolean): Promise<number> {
-  if (!sessionId) {
-    process.stderr.write("Provide the session id shown by `luu-code status`.\n");
-    return 1;
-  }
-
-  try {
-    const client = await requireClient();
-    const ok = approve ? await client.approvePairing(sessionId) : await client.rejectPairing(sessionId);
-
-    if (!ok) {
-      process.stderr.write("That pairing request is no longer waiting. Reconnect from Studio.\n");
-      return 1;
-    }
-
-    process.stdout.write(approve ? "Approved.\n" : "Declined.\n");
     return 0;
   } catch (error) {
     return reportError(error);

@@ -4,7 +4,6 @@ import { ChangeViewer } from "@/components/ChangeViewer";
 import { bundleFrom } from "@/components/changeDocument";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
-import { PairingDialog } from "@/components/PairingDialog";
 import { RightDock } from "@/components/RightDock";
 import type { DockTab } from "@/components/RightDock";
 import { SettingsView } from "@/components/settings/SettingsView";
@@ -247,7 +246,6 @@ export function App(): React.JSX.Element {
           onOpenSettings={() => setSettingsOpen(true)}
           onExitSettings={() => setSettingsOpen(false)}
         />
-        <PairingDialog request={harness.pendingPairing} />
       </ChangesProvider>
     </TooltipProvider>
   );

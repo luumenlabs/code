@@ -1,5 +1,5 @@
 /**
- * Persisted settings and paired-session records.
+ * Persisted settings.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -9,22 +9,6 @@ import { configDir, settingsFile } from "./paths.js";
 import { createLogger } from "../util/logger.js";
 
 const log = createLogger("settings");
-
-/**
- * One approval, remembered against the game it was granted for.
- *
- * Keyed by install id rather than by session: a session lasts as long as a
- * Studio window is open, and the point of remembering is to survive that window
- * closing. Two windows on the same place share the credential, which is what
- * lets the second one connect without asking again.
- */
-export interface PairedSession {
-  installId: string;
-  token: string;
-  placeName: string;
-  placeId: number;
-  pairedAt: number;
-}
 
 export interface Settings {
   port: number;
@@ -39,18 +23,12 @@ export interface Settings {
    * one mistake this file must not make.
    */
   disabledTools: string[];
-  /** Sessions the user has already approved, so Studio reconnects silently. */
-  paired: PairedSession[];
-  /** Approve new Studio sessions without asking. Off by default. */
-  autoApprovePairing: boolean;
 }
 
 const DEFAULTS: Settings = {
   port: DEFAULT_PORT,
   permissions: { ...DEFAULT_PERMISSIONS },
   disabledTools: [],
-  paired: [],
-  autoApprovePairing: false,
 };
 
 export class SettingsStore {
@@ -70,11 +48,10 @@ export class SettingsStore {
         ...raw,
         permissions: { ...DEFAULTS.permissions, ...(raw.permissions ?? {}) },
         disabledTools: Array.isArray(raw.disabledTools) ? raw.disabledTools.filter((entry) => typeof entry === "string") : [],
-        paired: Array.isArray(raw.paired) ? raw.paired : [],
       };
     } catch {
       // A missing or unreadable settings file is normal on first run.
-      return { ...DEFAULTS, permissions: { ...DEFAULTS.permissions }, disabledTools: [], paired: [] };
+      return { ...DEFAULTS, permissions: { ...DEFAULTS.permissions }, disabledTools: [] };
     }
   }
 
@@ -150,36 +127,6 @@ export class SettingsStore {
 
   setPort(port: number): void {
     this.data.port = port;
-    this.persist();
-  }
-
-  setAutoApprove(value: boolean): void {
-    this.data.autoApprovePairing = value;
-    this.persist();
-  }
-
-  findPairedByInstall(installId: string): PairedSession | undefined {
-    return this.data.paired.find((entry) => entry.installId === installId);
-  }
-
-  findPairedByToken(token: string): PairedSession | undefined {
-    return this.data.paired.find((entry) => entry.token === token);
-  }
-
-  addPaired(entry: PairedSession): void {
-    this.data.paired = this.data.paired.filter((existing) => existing.installId !== entry.installId);
-    this.data.paired.push(entry);
-    this.persist();
-  }
-
-  removePaired(installId: string): void {
-    const before = this.data.paired.length;
-    this.data.paired = this.data.paired.filter((entry) => entry.installId !== installId);
-    if (this.data.paired.length !== before) this.persist();
-  }
-
-  clearPaired(): void {
-    this.data.paired = [];
     this.persist();
   }
 

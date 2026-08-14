@@ -2,8 +2,8 @@
  * Wire format between the Roblox Studio plugin and the local server.
  *
  * The plugin cannot open a socket, so it drives everything with HTTP requests:
- * one handshake, one pairing call, then a single long-polled sync endpoint that
- * carries results and events up and commands down.
+ * one handshake, then a single long-polled sync endpoint that carries results
+ * and events up and commands down.
  */
 import type { CapabilityId } from "./capabilities.js";
 import type { PlaceInfo, RunState, StudioRealm } from "./session.js";
@@ -24,13 +24,11 @@ export const SESSION_STALE_MS = 45_000;
 
 export const ROUTES = {
   hello: "/studio/hello",
-  pair: "/studio/pair",
   sync: "/studio/sync",
   health: "/health",
   events: "/events",
   command: "/command",
   status: "/status",
-  pairing: "/pairing",
   mcp: "/mcp",
 } as const;
 
@@ -39,7 +37,8 @@ export interface StudioHelloRequest {
   /**
    * Identifies the *game*, not the window: the plugin derives it from the place
    * identity, so every Studio window on the same place presents the same one.
-   * It is what a pairing approval is remembered against.
+   * It is how a playtest's DataModels are recognised as belonging to the window
+   * that started them.
    */
   installId: string;
   /**
@@ -58,10 +57,17 @@ export interface StudioHelloRequest {
   capabilities: CapabilityId[];
   /** Which DataModel this plugin instance is attached to. */
   run: RunState;
-  /** Token from a previous pairing, if the plugin still has one. */
-  token?: string;
 }
 
+/**
+ * The handshake connects or it says why.
+ *
+ * There is no approval step. Both halves of Luu Code run on one machine as one
+ * user, and a code to be compared between two windows of the same program was
+ * ceremony rather than a boundary. The token below is a session handle, not a
+ * credential the user grants: the server issues it here and the plugin quotes
+ * it back on every sync so a connection can be told from a stale one.
+ */
 export type StudioHelloResponse =
   | {
       status: "connected";
@@ -73,27 +79,9 @@ export type StudioHelloResponse =
       config: StudioRuntimeConfig;
     }
   | {
-      status: "pairing";
-      sessionId: string;
-      /** Six digits the user compares against the harness before approving. */
-      pairingCode: string;
-      expiresAt: number;
-    }
-  | {
       status: "rejected";
       error: WireError;
     };
-
-export interface StudioPairRequest {
-  sessionId: string;
-  installId: string;
-  windowId?: string;
-}
-
-export type StudioPairResponse =
-  | { status: "connected"; endpointId: string; token: string; config: StudioRuntimeConfig }
-  | { status: "pending" }
-  | { status: "rejected"; error: WireError };
 
 export interface StudioRuntimeConfig {
   /** How long the plugin should hold a sync request open. */

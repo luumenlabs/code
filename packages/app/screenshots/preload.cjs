@@ -47,8 +47,6 @@ contextBridge.exposeInMainWorld("luuCode", {
   cancelAsk: () => Promise.resolve(),
   onAsks: noop,
 
-  approvePairing: () => Promise.resolve(true),
-  rejectPairing: () => Promise.resolve(true),
   selectSession: () => Promise.resolve(),
   disconnectSession: () => Promise.resolve(),
   setPermission: () => Promise.resolve(),

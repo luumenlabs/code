@@ -7,7 +7,7 @@
  * would genuinely act differently.
  */
 export const ERROR_CODES = [
-  /** No Studio session is paired and connected. */
+  /** No Studio session is connected. */
   "STUDIO_NOT_CONNECTED",
   /** The referenced Studio session id is unknown or was replaced. */
   "SESSION_UNKNOWN",

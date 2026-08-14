@@ -2,12 +2,12 @@
 --[[
 	The Studio-side connection panel.
 
-	It reports and does not act. The plugin's job in the UI is to answer two
-	questions — is Studio connected, and which code is being paired — and the
-	connection is the product, not this panel. It carried a Reconnect and a
-	Forget this pairing button; the loop already retries within ten seconds, so
-	the first saved nothing anyone could perceive, and neither belongs on the
-	half of Luu Code that sits in the background. Recovery belongs in the app.
+	It reports and does not act. There is one question left for it to answer —
+	is Studio connected — because the connection is the product and this panel
+	is not. It carried a Reconnect and a Forget this pairing button, and a
+	six-digit code to approve; the buttons did nothing the retry loop was not
+	already doing within ten seconds, and the code asked the user to vouch for
+	one half of a program to its other half. Recovery belongs in the app.
 
 	Tokens come from Theme.luau, a port of the app's stylesheet, because the two
 	are usually on screen side by side.
@@ -21,7 +21,6 @@ local Ui = {}
 
 local STATUS = {
 	connected = { text = "Connected", color = Theme.color.success },
-	pairing = { text = "Waiting for approval", color = Theme.color.warning },
 	disconnected = { text = "Not connected", color = Theme.color.destructive },
 }
 
@@ -82,9 +81,7 @@ function Ui.create(hostPlugin: Plugin)
 	root.BorderSizePixel = 0
 	root.Parent = widget
 
-	-- Scrolls because the widget can be dragged shorter than its contents, and a
-	-- pairing code the user cannot reach is the one thing this panel must never
-	-- do.
+	-- Scrolls because the widget can be dragged shorter than its contents.
 	local scroll = Instance.new("ScrollingFrame")
 	scroll.Size = UDim2.fromScale(1, 1)
 	scroll.BackgroundTransparency = 1
@@ -112,29 +109,6 @@ function Ui.create(hostPlugin: Plugin)
 	local versions = Theme.text(scroll, "", { size = 11, color = Theme.color.muted, order = 30 })
 
 	Theme.spacer(scroll, Theme.space.tight, 35)
-
-	-- Pairing -----------------------------------------------------------------
-
-	local pairingCard = Theme.card(scroll, 40)
-	pairingCard.Visible = false
-	Theme.padding(pairingCard, 14, 14)
-	Theme.list(pairingCard, 6)
-
-	Theme.sectionLabel(pairingCard, "Approve in Luu Code", 1)
-
-	local codeText = Theme.text(pairingCard, "", {
-		size = 26,
-		color = Theme.color.primary,
-		font = Theme.font.mono,
-		align = Enum.TextXAlignment.Center,
-		order = 2,
-	})
-
-	Theme.text(pairingCard, "Check this code matches the one the app is showing, then approve it there.", {
-		size = 11,
-		color = Theme.color.muted,
-		order = 3,
-	})
 
 	-- A message worth reading -------------------------------------------------
 
@@ -171,13 +145,6 @@ function Ui.create(hostPlugin: Plugin)
 
 		local place = state.place
 		placeName.Text = place and place.name or "No place open"
-
-		local code = state.pairingCode
-		pairingCard.Visible = code ~= nil
-		-- Six digits set solid read as a number to be parsed; spaced out they
-		-- read as a code to be compared against the one on screen in the app,
-		-- which is the only thing anyone ever does with this.
-		codeText.Text = code and Theme.spaced(code, "  ") or ""
 
 		-- The status word already says "Connected"; repeating it underneath is
 		-- noise in a panel this narrow. A message only earns its card when it

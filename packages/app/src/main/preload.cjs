@@ -36,8 +36,6 @@ contextBridge.exposeInMainWorld("luuCode", {
   cancelAsk: (id) => ipcRenderer.invoke("cancel-ask", id),
   onAsks: (listener) => subscribe("asks", listener),
 
-  approvePairing: (sessionId) => ipcRenderer.invoke("approve-pairing", sessionId),
-  rejectPairing: (sessionId) => ipcRenderer.invoke("reject-pairing", sessionId),
   selectSession: (sessionId, chat) => ipcRenderer.invoke("select-session", sessionId, chat),
   disconnectSession: (sessionId) => ipcRenderer.invoke("disconnect-session", sessionId),
   setPermission: (group, allowed) => ipcRenderer.invoke("set-permission", group, allowed),

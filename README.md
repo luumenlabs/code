@@ -50,8 +50,7 @@ Nightlies are published on the [releases page](https://github.com/luumenlabs/cod
 
 1. Open your place in Roblox Studio.
 2. Open Luu Code.
-3. Approve the six-digit code, once it matches the one Studio is showing.
-4. Pick a model, and say what you want changed.
+3. Pick a model, and say what you want changed.
 
 Try:
 
@@ -65,7 +64,7 @@ Chats are saved per place. Open a place and its history is there.
 
 The chip beside the send button holds seven switches — looking, editing, playtesting, running Luau, sending input, screenshots, the Creator Store. Flip one mid-conversation and the agent is told it no longer has it.
 
-Studio only connects after you approve a pairing code, so knowing the port is not enough to reach your place. Everything runs on `127.0.0.1` and nothing is sent anywhere.
+Everything runs on `127.0.0.1` and nothing is sent anywhere. The plugin connects to the server on this machine as soon as both are open.
 
 Luu Code works through Studio. It does not read or write your files.
 
