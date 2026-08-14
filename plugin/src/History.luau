@@ -42,7 +42,27 @@ function History.record(label: string, body: () -> any): (any, string?)
 	error(result, 0)
 end
 
+--[[
+	Whether Studio will give us an undo waypoint.
+
+	Answered once and remembered, because asking is not free: the only way to
+	find out is to open a recording and cancel it, and cancelling one rolls
+	Studio back to where the recording began — which includes putting the
+	selection back. Asked on every sync, as it was, that quietly cleared
+	whatever the user had selected every few seconds and made Studio unusable
+	while the plugin was installed.
+
+	The answer is a property of the Studio build and the DataModel, so one probe
+	per DataModel is all it was ever worth. `History.forget` drops it when the
+	DataModel is replaced.
+]]
+local available: boolean? = nil
+
 function History.isAvailable(): boolean
+	if available ~= nil then
+		return available :: boolean
+	end
+
 	local ok, recordingId = pcall(function()
 		return ChangeHistoryService:TryBeginRecording("LuuCode.Probe", "Luu Code capability probe")
 	end)
@@ -51,10 +71,17 @@ function History.isAvailable(): boolean
 		pcall(function()
 			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
 		end)
+		available = true
 		return true
 	end
 
+	-- Not cached as false: a recording that is open right now is a reason to
+	-- decline this instant, not evidence that Studio never allows one.
 	return false
+end
+
+function History.forget()
+	available = nil
 end
 
 return History
