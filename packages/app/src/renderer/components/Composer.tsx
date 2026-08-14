@@ -1,9 +1,12 @@
 import * as React from "react";
 import { ArrowUp, ImagePlus, Square, X } from "lucide-react";
+import { EMPTY_DRAFT, resolveDraft, toggleOption, writeAnswer } from "@luumen/code-protocol";
+import type { AskAnswer, AskDraft, AskQuestion } from "@luumen/code-protocol";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/misc";
 import { Hint } from "@/components/ui/tooltip";
 import { AccessChip } from "@/components/composer/AccessChip";
+import { AskPanel } from "@/components/composer/AskPanel";
 import { ModelChip } from "@/components/composer/ModelChip";
 import { cn } from "@/lib/utils";
 import type { Attachment, Harness } from "@/state";
@@ -38,18 +41,51 @@ export function Composer({
   // one until Studio is connected.
   const ready = studioConnected && hasModel && session?.state !== "error";
 
-  const placeholder = !studioConnected
-    ? "Connect Roblox Studio…"
-    : !hasModel
-      ? "Pick a model…"
-      : "Describe a change…";
+  /**
+   * The question the agent is waiting on, and the answer being built for it.
+   *
+   * Drafts are kept here rather than in the panel because the box below is
+   * where the written answer is typed — the two halves of one answer, and the
+   * rule that one clears the other only works if they share a state.
+   */
+  const ask = harness.pendingAsk;
+  const [index, setIndex] = React.useState(0);
+  const [drafts, setDrafts] = React.useState<Record<string, AskDraft>>({});
 
+  const question: AskQuestion | undefined = ask?.questions[index];
+  const draft = question ? (drafts[question.id] ?? EMPTY_DRAFT) : undefined;
+  const answered = question ? resolveDraft(question, draft) !== null : false;
+  const last = ask ? index >= ask.questions.length - 1 : true;
+
+  // Every question answered, wherever you are standing. Going back to change
+  // one and then having to click Next past answers you have already given
+  // would be the form making you prove it twice.
+  const complete = ask?.questions.every((entry) => resolveDraft(entry, drafts[entry.id]) !== null) ?? false;
+
+  // A new question starts at the top with nothing filled in.
+  React.useEffect(() => {
+    setIndex(0);
+    setDrafts({});
+  }, [ask?.id]);
+
+  const placeholder = ask
+    ? question && question.options.length > 0
+      ? "Type your own answer, or leave this blank to use the selected option"
+      : "Type your answer…"
+    : !studioConnected
+      ? "Connect Roblox Studio…"
+      : !hasModel
+        ? "Pick a model…"
+        : "Describe a change…";
+
+  // A question already fills the card, so the box under it is one line until
+  // the answer needs more.
   React.useLayoutEffect(() => {
     const element = textarea.current;
     if (!element) return;
     element.style.height = "auto";
-    element.style.height = `${Math.min(Math.max(element.scrollHeight, MIN_HEIGHT), MAX_HEIGHT)}px`;
-  }, [value]);
+    element.style.height = `${Math.min(Math.max(element.scrollHeight, ask ? 0 : MIN_HEIGHT), MAX_HEIGHT)}px`;
+  }, [value, ask, draft?.written]);
 
   const addFiles = React.useCallback(async (files: FileList | File[]): Promise<void> => {
     const images = [...files].filter((file) => file.type.startsWith("image/"));
@@ -93,11 +129,67 @@ export function Composer({
     }
   };
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit();
+  /** Sends every answer at once; the agent asked for them as one call. */
+  const sendAnswers = async (): Promise<void> => {
+    if (!ask) return;
+
+    const answers: AskAnswer[] = [];
+
+    for (const entry of ask.questions) {
+      const answer = resolveDraft(entry, drafts[entry.id]);
+      // Nothing is sent half-filled: the agent would read a missing answer as
+      // an answer, which is the guess this whole tool exists to prevent.
+      if (answer === null) return;
+      answers.push({ questionId: entry.id, question: entry.question, answer });
     }
+
+    await window.luuCode.answerAsk(ask.id, answers);
+  };
+
+  /**
+   * Send once nothing is outstanding, otherwise go to whatever still is.
+   *
+   * Stepping to the next index would strand you on the last question with an
+   * earlier one blank and a button that does nothing.
+   */
+  const advance = (): void => {
+    if (!ask || !question || !answered) return;
+
+    if (complete) {
+      void sendAnswers();
+      return;
+    }
+
+    const outstanding = ask.questions.findIndex((entry) => resolveDraft(entry, drafts[entry.id]) === null);
+    if (outstanding !== -1) setIndex(outstanding);
+  };
+
+  // Drafts are kept per question id, so stepping back and forth keeps every
+  // answer already given rather than clearing the ones you walked past.
+  const back = (): void => setIndex((current) => Math.max(0, current - 1));
+  const next = (): void => {
+    if (answered && !last) setIndex((current) => current + 1);
+  };
+
+  // Read by the auto-advance timer, which would otherwise fire against the
+  // draft as it was before the option was picked.
+  const advanceRef = React.useRef(advance);
+  advanceRef.current = advance;
+
+  const onToggle = React.useCallback((entry: AskQuestion, label: string): void => {
+    setDrafts((current) => ({ ...current, [entry.id]: toggleOption(entry, current[entry.id], label) }));
+
+    // One choice is the whole answer, so picking it moves on rather than
+    // waiting for a press of Next that has nothing left to decide.
+    if (!entry.multiple) window.setTimeout(() => advanceRef.current(), 200);
+  }, []);
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+
+    if (ask) advance();
+    else void submit();
   };
 
   return (
@@ -143,14 +235,34 @@ export function Composer({
             </div>
           )}
 
+          {ask && (
+            <AskPanel
+              request={ask}
+              index={index}
+              draft={draft}
+              onToggle={onToggle}
+              onBack={back}
+              onNext={next}
+              canNext={answered}
+              disabled={false}
+            />
+          )}
+
           <div className="px-4 pt-3.5 pb-1">
             <Textarea
               ref={textarea}
-              rows={3}
-              value={value}
-              disabled={!ready}
+              rows={ask ? 1 : 3}
+              value={ask && question ? (draft?.written ?? "") : value}
+              disabled={ask ? false : !ready}
               placeholder={placeholder}
-              onChange={(event) => onValueChange(event.target.value)}
+              onChange={(event) => {
+                if (ask && question) {
+                  const written = event.target.value;
+                  setDrafts((current) => ({ ...current, [question.id]: writeAnswer(current[question.id], written) }));
+                  return;
+                }
+                onValueChange(event.target.value);
+              }}
               onKeyDown={onKeyDown}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
@@ -161,7 +273,7 @@ export function Composer({
                   void addFiles(files);
                 }
               }}
-              style={{ userSelect: "text", cursor: "auto", minHeight: MIN_HEIGHT }}
+              style={{ userSelect: "text", cursor: "auto", ...(ask ? {} : { minHeight: MIN_HEIGHT }) }}
             />
           </div>
 
@@ -201,18 +313,29 @@ export function Composer({
               </Button>
             </Hint>
 
-            {harness.busy ? (
-              <Hint label="Stop">
+            {/* Stopping while a question is up dismisses it as well, so the
+                agent is told the user refused rather than left it to time out. */}
+            {harness.busy && (
+              <Hint label={ask ? "Dismiss and stop" : "Stop"}>
                 <Button
                   size="icon-sm"
                   variant="destructive"
                   className="rounded-full"
-                  onClick={() => void harness.interrupt()}
+                  onClick={() => {
+                    if (ask) void window.luuCode.cancelAsk(ask.id);
+                    else void harness.interrupt();
+                  }}
                 >
                   <Square className="size-3 fill-current" />
                 </Button>
               </Hint>
-            ) : (
+            )}
+
+            {ask ? (
+              <Button size="sm" className="ml-1 rounded-full px-3" disabled={!answered} onClick={advance}>
+                {complete ? "Send" : "Next"}
+              </Button>
+            ) : harness.busy ? null : (
               <Button
                 size="icon-sm"
                 className="rounded-full"

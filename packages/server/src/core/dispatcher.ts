@@ -34,6 +34,7 @@ import type {
 } from "@luumen/code-protocol";
 import { ZodError } from "zod";
 import { categoryFor, detailFor, instancesFor, titleFor } from "./activity.js";
+import type { AskInput, AskRegistry } from "./ask.js";
 import { buildCapabilityReport } from "./capabilities.js";
 import { takeChanges } from "./changes.js";
 import type { ChangeJournal } from "./changes.js";
@@ -95,6 +96,7 @@ export interface DispatcherDeps {
   output: OutputStore;
   changes: ChangeJournal;
   runControl: RunControl;
+  ask: AskRegistry;
   getDesktopCaptureProvider: () => DesktopCaptureProvider | null;
 }
 
@@ -364,6 +366,16 @@ export class Dispatcher {
 
       case "rules.set":
         return this.sendToStudio(op, { source: wrapRules(params.text as string) }, context);
+
+      // Held open for as long as the user takes. Nothing else in the dispatcher
+      // waits on a person, so this is the one operation whose timeout is not a
+      // guess about a machine.
+      case "ask.user":
+        return this.deps.ask.request({
+          chat: context.chat,
+          questions: params.questions as AskInput[],
+          timeoutMs: params.timeoutMs as number,
+        });
 
       case "changes.revert":
         return this.revert(params.ids as string[], params.force === true, context);

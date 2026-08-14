@@ -283,6 +283,12 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
       "Read the rules this place carries for coding agents — the conventions, the layout, and what to avoid, written by the people who build it. They live in the place itself, at TestService.AGENTS, so they travel with the game rather than with one machine. You are given them at the start of a conversation; read them again when you want the current text, for example before adding to it.",
   },
   {
+    op: "ask.user",
+    description:
+      "Ask the user something and wait for the answer. The conversation turns into a form: each question appears with the options you gave, and they pick one, pick several, write their own answer, or dismiss it. Use it where guessing wrong would waste the turn — which of three shops they meant, whether to fix the model or the script that spawns it, what a vague word in the request refers to. Do not use it for anything the place can answer: look first, and ask only about what is genuinely the user's to decide. Ask everything you need in one call rather than one question per turn. Dismissing stops the turn, so treat a question as an interruption worth making, and state what you are about to do rather than asking permission to do it. This works with Studio closed.",
+  },
+
+  {
     op: "rules.set",
     description:
       "Write the place's rules for coding agents. Use it when the user tells you something about this game worth keeping — a convention, a layout decision, something not to touch. This replaces the whole document, so read it with studio_project_rules first and send the existing text back with your addition. The user sees the change and can take it back.",

@@ -7,7 +7,7 @@
  * identical. Spec sections 33 and 45.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeRecord, OutputEntry, PairingRequest, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
+import type { AskRequest, ChangeRecord, OutputEntry, PairingRequest, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, AgentState, Attachment, TranscriptEntry } from "../shared/agent.js";
 import type { HarnessSnapshot } from "../shared/bridge.js";
 import { setModelCatalogue } from "../shared/models.js";
@@ -112,6 +112,13 @@ export interface Harness {
    */
   revert(ids: string[], force?: boolean): Promise<RevertOutcome[]>;
   pendingPairing: PairingRequest | null;
+  /**
+   * The question the open conversation is waiting on, if any.
+   *
+   * One at a time: the agent is stopped on it, so there cannot be a second
+   * until this one is answered.
+   */
+  pendingAsk: AskRequest | null;
   modelSelection: ModelSelection | null;
   /**
    * Applies a model and its options together — a new model, a changed reasoning
@@ -147,6 +154,7 @@ export function useHarness(): Harness {
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
   const [history, setHistory] = useState<ChangeRecord[]>([]);
   const [reverting, setReverting] = useState<string[]>([]);
+  const [asks, setAsks] = useState<Record<string, AskRequest[]>>({});
 
   // Transcript entries name the conversation they belong to, and several may be
   // arriving at once. Read through a ref so the subscription is set up once and
@@ -166,6 +174,7 @@ export function useHarness(): Harness {
     setSettings(next.settings);
     setVersions(next.versions);
     setModelProblem(next.modelProblem);
+    setAsks(next.pendingAsks);
 
     if (next.models.length > 0) {
       // Adapters and helpers resolve slugs through the shared catalogue, so
@@ -301,6 +310,7 @@ export function useHarness(): Harness {
     });
 
     const offAgentStates = window.luuCode.onAgentStates(setAgentStates);
+    const offAsks = window.luuCode.onAsks(setAsks);
 
     const offTranscript = window.luuCode.onTranscript(upsert);
     const offThreads = window.luuCode.onThreadsChanged((index) => {
@@ -324,6 +334,7 @@ export function useHarness(): Harness {
       offServer();
       offAgent();
       offAgentStates();
+      offAsks();
       offTranscript();
       offThreads();
       offCatalogue();
@@ -474,6 +485,11 @@ export function useHarness(): Harness {
 
   const pendingPairing = useMemo(() => snapshot?.status.pending[0] ?? null, [snapshot?.status.pending]);
 
+  const pendingAsk = useMemo(
+    () => (activeThreadId ? (asks[activeThreadId]?.[0] ?? null) : null),
+    [asks, activeThreadId],
+  );
+
   return {
     snapshot,
     timeline,
@@ -495,6 +511,7 @@ export function useHarness(): Harness {
     reverting,
     revert,
     pendingPairing,
+    pendingAsk,
     modelSelection,
     applyModel,
     send,

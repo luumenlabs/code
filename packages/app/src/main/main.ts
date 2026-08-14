@@ -12,7 +12,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createLuuCodeServer } from "@luumen/code-server";
 import type { LuuCodeServer } from "@luumen/code-server";
-import type { ChangeRecord, Op, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
+import { LuuCodeError } from "@luumen/code-protocol";
+import type { AskAnswer, AskOutcome, AskRequest, ChangeRecord, Op, PermissionGroup, ServerEvent } from "@luumen/code-protocol";
 import { AgentManager } from "./agents/manager.js";
 import type { AgentRules } from "./agents/briefing.js";
 import { generateTitle, titleProvider } from "./agents/title.js";
@@ -172,6 +173,46 @@ let updater: Updater | null = null;
 let plugin: PluginInstaller | null = null;
 /** Resolved once at startup, then reused for both the agents and the UI. */
 let mcpScript = "";
+
+/**
+ * Questions waiting on the user, by ask id.
+ *
+ * The agent's tool call is held open for as long as one of these lives, so
+ * every path out has to settle exactly once — an answer, a dismissal, the wait
+ * running out, or the conversation being deleted underneath it.
+ */
+const asks = new Map<string, { request: AskRequest; settle: (outcome: AskOutcome) => void }>();
+
+/** Every unanswered question, by the conversation it is waiting in. */
+function pendingAsks(): Record<string, AskRequest[]> {
+  const byThread: Record<string, AskRequest[]> = {};
+
+  for (const { request } of asks.values()) {
+    (byThread[request.chat] ??= []).push(request);
+  }
+
+  return byThread;
+}
+
+function broadcastAsks(): void {
+  broadcast("asks", pendingAsks());
+}
+
+/**
+ * Ends every question waiting on a conversation.
+ *
+ * Called when the turn that asked stops for any reason. Without it the form
+ * stays up after the agent has gone, and answering it resolves a promise
+ * nobody is holding — the user picks an option and nothing happens, which is
+ * the worst way for this to fail because it looks like it worked.
+ */
+function abandonAsks(threadId: string): void {
+  // `settle` owns the removal — it uses the delete as its once-only guard, so
+  // taking the entry out here first would stop it resolving at all.
+  for (const pending of [...asks.values()]) {
+    if (pending.request.chat === threadId) pending.settle({ status: "expired" });
+  }
+}
 
 /**
  * The model the next message will use.
@@ -513,6 +554,40 @@ async function bootstrap(): Promise<void> {
     desktopCaptureProvider: createElectronDesktopCaptureProvider(),
   });
 
+  /**
+   * A question goes to the composer of the conversation that asked, and the
+   * agent's tool call waits here until it comes back.
+   *
+   * Live state rather than a transcript entry: the form is a control, and a
+   * control restored from disk into a turn that ended long ago is a button
+   * that does nothing. What the user chose is kept by the tool row instead,
+   * which is where the call and its result already live.
+   */
+  server.setAskHost((request) => {
+    const store = requireThreads();
+
+    if (!store.get(request.chat)) {
+      throw new LuuCodeError("ASK_UNAVAILABLE", "That conversation is no longer open.");
+    }
+
+    return new Promise<AskOutcome>((resolve) => {
+      const settle = (outcome: AskOutcome): void => {
+        // The delete is the guard: whichever path gets here first owns the
+        // outcome, and the losers return without resolving a second time.
+        if (!asks.delete(request.id)) return;
+
+        clearTimeout(timer);
+        broadcastAsks();
+        resolve(outcome);
+      };
+
+      const timer = setTimeout(() => settle({ status: "expired" }), Math.max(0, request.expiresAt - Date.now()));
+
+      asks.set(request.id, { request, settle });
+      broadcastAsks();
+    });
+  });
+
   server.bus.subscribe((event: ServerEvent) => {
     broadcast("server-event", event);
 
@@ -598,6 +673,13 @@ async function bootstrap(): Promise<void> {
     onEvent: (threadId: string, event: AgentEvent) => {
       broadcast("agent-event", { threadId, event });
 
+      // The turn that asked has stopped, so nothing is listening for the
+      // answer any more. Taking the form down is the only honest thing to do:
+      // leaving it up invites the user to answer into a call that has gone.
+      if (event.type === "state" && (event.state === "idle" || event.state === "stopped" || event.state === "error")) {
+        abandonAsks(threadId);
+      }
+
       const store = requireThreads();
       const thread = store.get(threadId);
       if (!thread) return;
@@ -677,6 +759,7 @@ function registerIpc(): void {
       threads: store.index(),
       thread: store.active(),
       modelSelection: activeSelection(),
+      pendingAsks: pendingAsks(),
     };
   });
 
@@ -902,6 +985,10 @@ function registerIpc(): void {
   ipcMain.handle("delete-thread", async (_event, id: string) => {
     const store = requireThreads();
 
+    // A question in a conversation that no longer exists has nobody to answer
+    // it, and the agent holding it is about to be stopped anyway.
+    abandonAsks(id);
+
     store.remove(id);
     // Deleting a conversation does end its session — there is nothing left for
     // it to write into.
@@ -910,6 +997,28 @@ function registerIpc(): void {
     const index = store.index();
     broadcast("threads", index);
     return index;
+  });
+
+  // ---- Questions -----------------------------------------------------------
+
+  ipcMain.handle("answer-ask", (_event, id: string, answers: AskAnswer[]) => {
+    asks.get(id)?.settle({ status: "answered", answers });
+  });
+
+  /**
+   * Dismissing a question stops the turn as well as ending the wait.
+   *
+   * The agent asked because it could not sensibly continue without knowing.
+   * Letting it carry on having been told "no answer" is exactly the guess the
+   * question existed to prevent, so the turn ends where the user ended it.
+   */
+  ipcMain.handle("cancel-ask", (_event, id: string) => {
+    const pending = asks.get(id);
+    if (!pending) return;
+
+    const { chat } = pending.request;
+    pending.settle({ status: "cancelled" });
+    requireAgents().interrupt(chat);
   });
 
   // ---- Studio --------------------------------------------------------------

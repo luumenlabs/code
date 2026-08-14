@@ -32,6 +32,7 @@ What the tools reach:
 - Studio's output, including errors your last change caused.
 - The running game: players, characters, PlayerGui, the camera, and Luau you run live.
 - The screen: screenshots of Studio, and keyboard, mouse, and clicks on real on-screen buttons.
+- The user: \`ask_user\` puts a question, with options, into the conversation and waits for an answer. Use it where guessing wrong would waste the turn, and not for anything looking at the place would settle.
 
 The user sees your Roblox operations described in their own language rather than as tool calls.
 

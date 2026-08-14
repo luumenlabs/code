@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("luuCode", {
   archiveThread: (id, archived) => ipcRenderer.invoke("archive-thread", id, archived),
   deleteThread: (id) => ipcRenderer.invoke("delete-thread", id),
 
+  answerAsk: (id, answers) => ipcRenderer.invoke("answer-ask", id, answers),
+  cancelAsk: (id) => ipcRenderer.invoke("cancel-ask", id),
+  onAsks: (listener) => subscribe("asks", listener),
+
   approvePairing: (sessionId) => ipcRenderer.invoke("approve-pairing", sessionId),
   rejectPairing: (sessionId) => ipcRenderer.invoke("reject-pairing", sessionId),
   selectSession: (sessionId, chat) => ipcRenderer.invoke("select-session", sessionId, chat),

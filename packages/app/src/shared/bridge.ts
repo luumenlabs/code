@@ -51,6 +51,8 @@ export interface HarnessSnapshot {
   thread: Thread | null;
   /** The open thread's model, or the draft's. */
   modelSelection: import("./models.js").ModelSelection | null;
+  /** Questions waiting on an answer, by the conversation each is waiting in. */
+  pendingAsks: Record<string, import("@luumen/code-protocol").AskRequest[]>;
 }
 
 export interface LuuCodeBridge {
@@ -86,6 +88,13 @@ export interface LuuCodeBridge {
   /** Files a conversation away, or brings it back. */
   archiveThread(id: string, archived: boolean): Promise<ThreadIndex>;
   deleteThread(id: string): Promise<ThreadIndex>;
+
+  /** Answers a question the agent asked. Its turn carries on with the reply. */
+  answerAsk(id: string, answers: import("@luumen/code-protocol").AskAnswer[]): Promise<void>;
+  /** Dismisses the question and stops the turn that asked it. */
+  cancelAsk(id: string): Promise<void>;
+  /** Fires whenever a question arrives or stops waiting, keyed by conversation. */
+  onAsks(listener: (asks: Record<string, import("@luumen/code-protocol").AskRequest[]>) => void): () => void;
 
   approvePairing(sessionId: string): Promise<boolean>;
   rejectPairing(sessionId: string): Promise<boolean>;

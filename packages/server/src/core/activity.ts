@@ -199,6 +199,11 @@ export function titleFor(op: Op, params: Record<string, unknown>): string {
     case "rules.set":
       return "Writing the project rules";
 
+    case "ask.user": {
+      const count = ((params.questions as unknown[]) ?? []).length;
+      return count === 1 ? "Asking you a question" : `Asking you ${count} questions`;
+    }
+
     case "view.screenshot":
       return params.source === "viewport" || params.source === undefined ? "Capturing the viewport" : "Capturing the Studio window";
 

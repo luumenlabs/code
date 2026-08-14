@@ -18,9 +18,16 @@ import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js
  * once as the Roblox operation the server reported, and once as a raw row with
  * `{}` for arguments. Every tool this server exposes is `studio_*`, so the tool
  * name alone is enough to recognise one.
+ *
+ * `ask_user` is deliberately not one of them. It performs no Roblox operation,
+ * so there is no activity row for it to be the duplicate of, and the question
+ * and the answer are worth reading back later — it stays an ordinary tool row.
  */
 function isRobloxTool(name: string): boolean {
-  return name.includes("luu-code") || /(^|__)studio_[a-z_]+$/.test(name);
+  const op = opForTool(name);
+  if (op === "ask.user") return false;
+
+  return name.includes("luu-code") || op !== null;
 }
 
 /**

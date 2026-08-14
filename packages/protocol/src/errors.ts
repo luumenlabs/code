@@ -43,6 +43,12 @@ export const ERROR_CODES = [
   "UNAUTHORIZED",
   /** Executed Luau raised an error. */
   "EXECUTION_ERROR",
+  /** The user dismissed a question the agent asked, and stopped the turn. */
+  "ASK_CANCELLED",
+  /** A question was left unanswered for long enough that the wait was given up. */
+  "ASK_TIMEOUT",
+  /** There is no conversation on screen to put a question in front of. */
+  "ASK_UNAVAILABLE",
   /** Anything unclassified. Always accompanied by a message. */
   "INTERNAL",
 ] as const;

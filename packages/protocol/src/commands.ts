@@ -661,6 +661,58 @@ const rulesSetParams = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Asking the user
+// ---------------------------------------------------------------------------
+
+/**
+ * A question, and what may be picked in answer to it.
+ *
+ * One option is refused. A choice of one is not a question, and the form it
+ * would draw — a single button that has to be pressed — reads as a demand
+ * rather than a decision. None is allowed and means the opposite: an open
+ * question, answered by writing.
+ */
+const askQuestionParams = z
+  .object({
+    question: z.string().min(1).max(280).describe("What you need to know, as one sentence."),
+    header: z.string().min(1).max(24).optional().describe("Two or three words naming the decision, shown above it."),
+    options: z
+      .array(
+        z.object({
+          label: z.string().min(1).max(80),
+          description: z.string().max(160).optional().describe("What picking it means, where the label does not say."),
+        }),
+      )
+      .max(6)
+      .default([])
+      .describe("What to offer. Leave it out to ask an open question, answered in the user's own words."),
+    multiple: z.boolean().default(false).describe("Whether more than one option may be picked."),
+  })
+  .refine((value) => value.options.length !== 1, {
+    message: "Give at least two options, or none at all for an open question.",
+  });
+
+const askParams = z.object({
+  questions: z.array(askQuestionParams).min(1).max(4).describe("Ask everything you need at once; each gets its own block."),
+  /**
+   * Four minutes, and no way to ask for longer.
+   *
+   * The answer travels back as the body of a held-open HTTP response, and
+   * Node's fetch abandons one that has sent no headers for five minutes. A wait
+   * longer than that would be given up on by the client rather than by us,
+   * which is the one failure the user cannot be told about — they would still
+   * be looking at the form.
+   */
+  timeoutMs: z
+    .number()
+    .int()
+    .min(10_000)
+    .max(240_000)
+    .default(240_000)
+    .describe("How long to wait for an answer before giving up. The user is a person; do not make this short."),
+});
+
+// ---------------------------------------------------------------------------
 // Changes
 // ---------------------------------------------------------------------------
 
@@ -1168,6 +1220,18 @@ export const COMMANDS = {
     summary: "Write the rules the place carries for coding agents.",
   },
 
+  "ask.user": {
+    params: askParams,
+    executor: "server",
+    permission: "inspect",
+    capability: null,
+    mutates: false,
+    // The form in the conversation is the row. An activity line above it saying
+    // a question was asked would be the question told twice.
+    silent: true,
+    summary: "Put a question to the user and wait for the answer.",
+  },
+
   "changes.list": {
     params: changesListParams,
     executor: "server",
@@ -1270,6 +1334,10 @@ export const TOOL_NAMES = {
 
   "rules.get": "studio_project_rules",
   "rules.set": "studio_write_project_rules",
+
+  // Not a Studio tool and not named like one: this one reaches past the place
+  // to the person, and it is the only tool here that works with Studio closed.
+  "ask.user": "ask_user",
 
   // Read and written by the app's own review panel. An agent has the change
   // journal stripped out of its results by design, so none of this is a tool it
@@ -1773,6 +1841,9 @@ export interface CommandResults {
     conflict: string | null;
   };
   "rules.set": MutationResult & { lineCount: number; created: boolean };
+
+  /** Only an answered question returns; every other outcome is an error. */
+  "ask.user": { answers: import("./ask.js").AskAnswer[] };
 
   "changes.list": { records: ChangeRecord[]; total: number; truncated: boolean };
   "changes.revert": { outcomes: RevertOutcome[]; reverted: number };

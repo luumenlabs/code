@@ -8,6 +8,8 @@
 import { LuuCodeError } from "@luumen/code-protocol";
 import type { CapabilityReport, Op, PermissionGroup, SessionStatus, StudioRealm } from "@luumen/code-protocol";
 import { SettingsStore } from "./config/settings.js";
+import { AskRegistry } from "./core/ask.js";
+import type { AskHost } from "./core/ask.js";
 import { generateToken, writeClientAuth } from "./core/auth.js";
 import { ChangeJournal } from "./core/changes.js";
 import { Dispatcher } from "./core/dispatcher.js";
@@ -74,6 +76,14 @@ export interface LuuCodeServer {
   setPermission(group: PermissionGroup, allowed: boolean): void;
   setToolAllowed(op: Op, allowed: boolean): void;
   setDesktopCaptureProvider(provider: DesktopCaptureProvider | null): void;
+  /**
+   * Registers who shows the agent's questions to the user.
+   *
+   * Only the app can: a question needs a conversation to appear in. Without a
+   * host `ask.user` fails and says so, which is what a terminal agent should
+   * hear — it can ask in its reply, where the user is already reading.
+   */
+  setAskHost(host: AskHost | null): void;
   close(): Promise<void>;
 }
 
@@ -103,6 +113,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
   );
 
   const runControl = new RunControl(sessions);
+  const ask = new AskRegistry();
 
   const dispatcher = new Dispatcher({
     sessions,
@@ -111,6 +122,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     output,
     changes,
     runControl,
+    ask,
     getDesktopCaptureProvider: () => desktopCapture,
   });
 
@@ -182,6 +194,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
     setDesktopCaptureProvider: (provider) => {
       desktopCapture = provider ?? platformDesktopCaptureProvider();
     },
+    setAskHost: (host) => ask.setHost(host),
     close: async () => {
       sessions.stop();
       await http.close();
@@ -190,6 +203,7 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
 }
 
 export { SettingsStore } from "./config/settings.js";
+export type { AskHost } from "./core/ask.js";
 export { readClientAuth } from "./core/auth.js";
 export { MCP_TOOLS } from "./mcp/tools.js";
 export { createMcpServer } from "./mcp/server.js";

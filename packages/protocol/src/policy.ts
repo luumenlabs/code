@@ -11,10 +11,11 @@ import type { Op } from "./commands.js";
 import type { PermissionGroup, PermissionSettings } from "./capabilities.js";
 
 /**
- * Never turned off. These are how an agent reports what is wrong, so disabling
- * them does not restrict it — it makes every later failure unattributable.
+ * Never turned off. These are how an agent reports what is wrong and how it
+ * asks instead of guessing. Disabling them does not restrict it — it makes a
+ * later failure unattributable, or turns a question into an assumption.
  */
-export const ESSENTIAL_OPS: readonly Op[] = ["session.status", "session.capabilities"];
+export const ESSENTIAL_OPS: readonly Op[] = ["session.status", "session.capabilities", "ask.user"];
 
 /** How much say the user has over one operation. */
 export type ToolControl =

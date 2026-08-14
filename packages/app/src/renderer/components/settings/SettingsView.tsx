@@ -493,7 +493,7 @@ function ToolList({
             </div>
 
             {essential ? (
-              <Hint label="Always on — this is how an agent reports what is wrong.">
+              <Hint label="Always on — how an agent reports trouble, and asks rather than guesses.">
                 <Lock className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
               </Hint>
             ) : (
