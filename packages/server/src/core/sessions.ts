@@ -635,8 +635,14 @@ export class SessionRegistry {
     // Studio replaces the plugin's DataModel on every edit/run transition, so a
     // stale connection for the same realm is dead. Scoped to one session: two
     // Studio windows are both in the edit realm and neither replaced the other.
+    // An edit peer clears the running ones too: a window reporting edit is not
+    // playing, so they are left over from a finished playtest. A live one
+    // re-handshakes on its next sync; a dead one cannot.
+    const replaced = (existing: EndpointRecord): boolean =>
+      existing.realm === run.realm || (run.realm === "edit" && existing.realm !== "edit");
+
     for (const [id, existing] of session.endpoints) {
-      if (existing.realm === run.realm) {
+      if (replaced(existing)) {
         this.failEndpoint(existing, new LuuCodeError("STUDIO_NOT_CONNECTED", "Studio replaced this connection."));
         session.endpoints.delete(id);
       }
@@ -687,9 +693,10 @@ export class SessionRegistry {
 
     for (const [sessionId, session] of this.sessions) {
       for (const [endpointId, endpoint] of session.endpoints) {
-        // A park is re-opened every SYNC_HOLD_MS, so one silent past the stale
-        // window is a socket with nobody on the other end. Holding an open
-        // request is not on its own a reason to survive the sweep.
+        // A parked endpoint is holding an open request, so a stale timestamp
+        // there means nothing. Without this the edit peer is dropped while
+        // Studio has it suspended for a playtest.
+        if (endpoint.park) continue;
         if (now - endpoint.lastSeen < SESSION_STALE_MS) continue;
 
         log.info(`Studio connection went quiet (${endpoint.realm}); dropping it`);
