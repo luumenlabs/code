@@ -197,9 +197,55 @@ end
 HANDLERS["dm.batch"] = runBatch
 
 --[[
+	The route to the player's DataModel, when this peer is a playtest's server
+	and has one. See Bridge.serveClients.
+]]
+local clientBroker: ((string, any) -> any)? = nil
+local clientCapabilities: { string } = {}
+
+--[[
+	Capability answers for this DataModel, cached: several of the probes answer
+	by trying the thing — opening an undo recording, setting a breakpoint,
+	constructing a VirtualInput — and the sync loop asks on every round trip.
+	Nothing here changes while a DataModel is alive, bar a playtest client
+	turning up to serve what this peer cannot.
+]]
+local cached: { string }? = nil
+
+--[[
+	Operations only the player's own DataModel can serve: the viewport it draws,
+	the GUI it builds, and the input pipeline it feeds. A playtest's server has
+	no view of any of them.
+]]
+local CLIENT_ONLY: { [string]: boolean } = {
+	["view.screenshot"] = true,
+	["view.gui"] = true,
+	["view.viewport_info"] = true,
+	["view.focus"] = true,
+	["view.highlight"] = true,
+	["input.key"] = true,
+	["input.text"] = true,
+	["input.mouse"] = true,
+	["input.gui_click"] = true,
+}
+
+function Commands.setClientBroker(broker: (string, any) -> any, capabilities: { string })
+	clientBroker = broker
+	clientCapabilities = capabilities
+	-- What this peer can do has just changed, and the answer is cached.
+	cached = nil
+end
+
+--[[
 	Runs one command and always returns a result envelope, never raises.
 ]]
 function Commands.dispatch(op: string, params: any): any
+	-- Forwarded before anything local is tried: this peer has handlers for these
+	-- and they would answer for the wrong DataModel.
+	if clientBroker ~= nil and CLIENT_ONLY[op] then
+		return (clientBroker :: any)(op, params)
+	end
+
 	local handler = HANDLERS[op]
 
 	if handler == nil then
@@ -226,13 +272,9 @@ end
 	Capability probe, run once per DataModel, so an agent is never offered an
 	operation that cannot work here.
 
-	Cached because several of these answer by trying the thing — opening an undo
-	recording, setting a breakpoint, constructing a VirtualInput — and the sync
-	loop asks on every round trip. Nothing here changes while a DataModel is
-	alive; `release` drops the answers when Studio hands us a new one.
+	The answers are cached; see the declaration above. `release` drops them when
+	Studio hands us a new DataModel.
 ]]
-local cached: { string }? = nil
-
 --[[
 	Asks one probe. A probe that raises is a capability this DataModel does not
 	have, not a bug worth propagating: several of them answer by using a
@@ -328,6 +370,21 @@ function Commands.capabilities(): { string }
 	end
 
 	table.insert(available, "output.capture")
+
+	-- What the player's DataModel can do, which this peer serves by forwarding.
+	-- Taken from the client rather than assumed: it refuses a different set of
+	-- things than a playtest's server does.
+	local already: { [string]: boolean } = {}
+	for _, id in ipairs(available) do
+		already[id] = true
+	end
+
+	for _, id in ipairs(clientCapabilities) do
+		if not already[id] then
+			already[id] = true
+			table.insert(available, id)
+		end
+	end
 
 	cached = available
 	return available

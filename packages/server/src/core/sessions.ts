@@ -120,6 +120,12 @@ export interface PeerRef {
   run: RunState;
   /** First handshake, which is what gives "client 2" a stable meaning. */
   connectedAt: number;
+  /**
+   * What this connection can serve, which is not decided by its realm alone: a
+   * playtest's server reports the client's capabilities too, because it can
+   * forward to it.
+   */
+  capabilities: Set<CapabilityId>;
 }
 
 export class SessionRegistry {
@@ -379,10 +385,12 @@ export class SessionRegistry {
   async send(
     op: Op,
     params: Record<string, unknown>,
-    options: SessionTarget & { realm?: StudioRealm; peer?: PeerRef; timeoutMs: number },
+    options: SessionTarget & { realm?: StudioRealm; peer?: PeerRef; capability?: CapabilityId | null; timeoutMs: number },
   ): Promise<unknown> {
     const session = options.peer ? this.requireSession(options.peer.sessionId) : this.resolveSession(options);
-    const endpoint = options.peer ? this.requireEndpoint(session, options.peer.endpointId) : this.resolveEndpoint(session, options.realm);
+    const endpoint = options.peer
+      ? this.requireEndpoint(session, options.peer.endpointId)
+      : this.resolveEndpoint(session, options.realm, options.capability);
 
     // Bound here rather than at resolution, so a chat is pinned by the first
     // command it sends and not by a status probe. A command aimed at a named
@@ -456,6 +464,7 @@ export class SessionRegistry {
           realm: endpoint.realm,
           run: endpoint.run,
           connectedAt: endpoint.connectedAt,
+          capabilities: endpoint.capabilities,
         });
       }
     }
@@ -576,9 +585,23 @@ export class SessionRegistry {
     }
   }
 
-  private resolveEndpoint(session: SessionRecord, realm?: StudioRealm): EndpointRecord {
+  /**
+   * Which connection serves this command.
+   *
+   * `selectEndpoint` prefers a running peer, which is right nearly always. The
+   * exception is a capability that peer does not have: the playtest bridge is a
+   * game script, so it cannot compile Luau, and routing `runtime.exec` there
+   * because it happens to be running would refuse work the edit peer could do.
+   * A named realm still wins — asking for a realm is asking for that DataModel.
+   */
+  private resolveEndpoint(session: SessionRecord, realm?: StudioRealm, capability?: CapabilityId | null): EndpointRecord {
     const publicSession = this.toPublicSession(session);
-    const chosen = selectEndpoint(publicSession, realm);
+    let chosen = selectEndpoint(publicSession, realm);
+
+    if (!realm && capability && chosen && !session.endpoints.get(chosen.id)?.capabilities.has(capability)) {
+      const able = publicSession.endpoints.find((endpoint) => session.endpoints.get(endpoint.id)?.capabilities.has(capability));
+      if (able) chosen = able;
+    }
 
     if (!chosen) {
       throw new LuuCodeError(

@@ -149,11 +149,16 @@ export class RunControl {
       }),
     );
 
+    // One budget for the whole transition, spent across waiting for the
+    // playtest, for its bridge to connect, and for a character.
+    const deadline = Date.now() + params.timeoutMs;
+    const remaining = () => Math.max(deadline - Date.now(), 0);
+
     const issued = await this.trigger("run.start", { mode: params.mode, bridge: params.bridge }, peer, target);
     if (issued.error) throw issued.error;
 
     const bridge = (issued.data as { bridge?: BridgeReport } | undefined)?.bridge;
-    const state = await this.waitFor(target, (current) => current.running, params.timeoutMs);
+    const state = await this.waitFor(target, (current) => current.running, remaining());
 
     if (!state.running) {
       /**
@@ -188,18 +193,27 @@ export class RunControl {
     }
 
     /**
-     * Studio does not load the plugin into the DataModel a playtest creates, so
-     * on a Play the playtest is up and nothing can look inside it. That is the
-     * ordinary outcome, not a failure — but it is never `ready`, since nothing
-     * here can watch for a character, and saying so is the whole point.
+     * A bridge went into the place, so a peer from inside the playtest is on
+     * its way — it has to boot the DataModel and handshake first, which lands
+     * seconds after the transition does. Answering before then would report
+     * every bridged playtest as unobservable.
      */
-    if (state.observable === false) {
-      return { ...state, mode: params.mode, ready: false, observable: false, ...(bridge ? { bridge } : {}) };
+    const observed = bridge?.installed ? await this.waitFor(target, (current) => current.observable !== false, remaining()) : state;
+
+    /**
+     * Nothing inside the playtest. Either no bridge was asked for, or one could
+     * not be installed: Studio does not load the plugin into the DataModel a
+     * playtest creates, so without a bridge there is nothing in there to ask.
+     * That is an outcome, not a failure — but it is never `ready`, since
+     * nothing here can watch for a character, and saying so is the whole point.
+     */
+    if (observed.observable === false) {
+      return { ...observed, mode: params.mode, ready: false, observable: false, ...(bridge ? { bridge } : {}) };
     }
 
-    if (!params.waitReady) return { ...state, ready: state.ready, ...(bridge ? { bridge } : {}) };
+    if (!params.waitReady) return { ...observed, ready: observed.ready, ...(bridge ? { bridge } : {}) };
 
-    const ready = await this.waitFor(target, (current) => current.ready, params.timeoutMs);
+    const ready = await this.waitFor(target, (current) => current.ready, remaining());
     return { ...ready, ready: ready.ready, ...(bridge ? { bridge } : {}) };
   }
 

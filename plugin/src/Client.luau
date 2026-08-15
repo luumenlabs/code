@@ -544,6 +544,17 @@ function Client.startBridge(hostPort: number, hostInstallId: string)
 	-- entry point but this, and without it nothing polls the run state.
 	RunState.start()
 	Client.start(nil :: any)
+
+	-- A playtest's server cannot see the viewport, the player's GUI, or the
+	-- input pipeline. The client can, and cannot reach Luu Code itself, so this
+	-- peer answers for it.
+	Bridge.serveClients(function(broker, capabilities)
+		Commands.setClientBroker(broker, capabilities)
+		-- The handshake has already been and gone, so this peer has to say what
+		-- it can do again rather than wait to be asked.
+		statePending = true
+		wake:Fire()
+	end)
 end
 
 function Client.stop()

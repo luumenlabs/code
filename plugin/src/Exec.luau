@@ -1,11 +1,13 @@
 --!nonstrict
 --[[
-	Runtime execution. Roblox gates `loadstring` behind a place setting, and
-	flipping it would change the user's project, so the source is compiled by
-	creating a ModuleScript inside the plugin's own container and requiring it:
-	nothing is added to the place, replicates, or lands in the undo history.
+	Runtime execution. Source is compiled by creating a ModuleScript inside the
+	plugin's own container and requiring it: nothing is added to the place,
+	replicates, or lands in the undo history. Roblox gates `loadstring` behind a
+	place setting, so it is only the fallback for a DataModel that cannot write
+	Source at all — the playtest bridge, which is an ordinary game script.
 
-	It runs at plugin security, in whichever DataModel the plugin is attached to.
+	It runs at whatever the host has: plugin security in Studio's own DataModels,
+	and a game script's inside a playtest.
 ]]
 
 local Errors = require(script.Parent.Errors)
@@ -17,6 +19,32 @@ local Exec = {}
 
 local counter = 0
 
+--[[
+	The fallback for a DataModel that cannot write Source. `loadstring` is off in
+	most places and absent in some builds, so this often only turns one refusal
+	into a better-worded one.
+]]
+local function compileWithLoadstring(source: string): (boolean, any)
+	local loader = loadstring :: any
+
+	if type(loader) ~= "function" then
+		return false,
+			"This DataModel cannot compile source: writing Script.Source needs plugin identity, and loadstring is unavailable here."
+	end
+
+	local ok, chunk, syntaxError = pcall(loader, source)
+
+	if not ok then
+		return false, "This DataModel cannot compile source: loadstring is turned off for this place."
+	end
+
+	if chunk == nil then
+		return false, syntaxError
+	end
+
+	return pcall(chunk)
+end
+
 local function compile(source: string): (boolean, any)
 	counter += 1
 
@@ -24,16 +52,16 @@ local function compile(source: string): (boolean, any)
 	module.Name = "LuuCodeExec_" .. tostring(counter)
 
 	-- Writing Source needs plugin identity, and the bridge inside a playtest is
-	-- an ordinary game script. That makes this the answer to "can this DataModel
-	-- compile source" rather than a fault — but only if it is caught, because
-	-- this runs on the capability probe that every handshake goes through.
+	-- an ordinary game script. Catching it matters twice over: this runs on the
+	-- capability probe every handshake goes through, and there is a second way
+	-- to compile worth trying before giving up.
 	local wrote = pcall(function()
 		module.Source = source
 	end)
 
 	if not wrote then
 		module:Destroy()
-		return false, "This DataModel cannot compile source: writing Script.Source needs plugin identity."
+		return compileWithLoadstring(source)
 	end
 
 	-- The plugin script itself: outside the DataModel, so the place is untouched.

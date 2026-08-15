@@ -569,6 +569,10 @@ export class Dispatcher {
 
     const chosen =
       peers.find((peer) => peer.run.running && peer.realm === "client" && rendering(peer)) ??
+      // A playtest's server has no window of its own, but it may hold the route
+      // to a player's DataModel that has one — the bridge forwards capture
+      // there. It only reports this capability when that route is open.
+      peers.find((peer) => peer.run.running && peer.realm === "server" && peer.capabilities.has("view.screenshot")) ??
       peers.find((peer) => !peer.run.running && rendering(peer)) ??
       peers.find(rendering);
 
@@ -604,6 +608,7 @@ export class Dispatcher {
 
     return this.deps.sessions.send(op, outbound, {
       timeoutMs: timeoutFor(op, params),
+      capability: COMMANDS[op]?.capability ?? null,
       ...pick(context),
       ...(realm ? { realm } : {}),
     });

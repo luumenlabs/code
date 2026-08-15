@@ -7,7 +7,17 @@
 	and nothing needs a change record.
 ]]
 
-local CoreGui = game:GetService("CoreGui")
+--[[
+	Nil in a playtest's DataModel, where the bridge is an ordinary game script
+	and CoreGui is not its to touch. Marks are a Studio-window affordance, so
+	there is nothing to fall back to — every use below checks.
+]]
+local CoreGui: Instance? = (function(): Instance?
+	local ok, service = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+	return ok and service or nil
+end)()
 local Selection = game:GetService("Selection")
 
 local Errors = require(script.Parent.Parent.Errors)
@@ -176,7 +186,16 @@ end
 -- ---------------------------------------------------------------------------
 
 local function container(): Folder
-	local existing = CoreGui:FindFirstChild(CONTAINER_NAME)
+	if CoreGui == nil then
+		Errors.throw(
+			"RUNTIME_CONTEXT_UNAVAILABLE",
+			"This DataModel has no CoreGui, so there is nowhere to draw a mark",
+			nil,
+			"Marks are drawn in the Studio window; ask the edit connection instead."
+		)
+	end
+
+	local existing = (CoreGui :: Instance):FindFirstChild(CONTAINER_NAME)
 
 	if existing ~= nil then
 		return existing
@@ -190,7 +209,11 @@ local function container(): Folder
 end
 
 local function clearMarks(): number
-	local folder = CoreGui:FindFirstChild(CONTAINER_NAME)
+	if CoreGui == nil then
+		return 0
+	end
+
+	local folder = (CoreGui :: Instance):FindFirstChild(CONTAINER_NAME)
 	if folder == nil then
 		return 0
 	end
