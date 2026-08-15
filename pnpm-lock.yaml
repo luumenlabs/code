@@ -213,6 +213,9 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
     devDependencies:
+      '@luumen/code-protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@types/react':
         specifier: ^18.3.17
         version: 18.3.31
