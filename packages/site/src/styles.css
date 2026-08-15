@@ -1,0 +1,260 @@
+@import "tailwindcss";
+@import "@fontsource-variable/dm-sans";
+@import "@fontsource-variable/syne";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+  The tokens below are the dark block from packages/app/src/renderer/styles.css.
+  Change one there without changing it here and the borrowed panels stop
+  matching the product.
+*/
+@source "../../app/src/renderer";
+
+:root {
+  --radius: 0.625rem;
+  --control-radius: 0.5rem;
+
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.96 0 0);
+  --card: color-mix(in srgb, var(--background) 96%, white);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.215 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.623 0.214 259.815);
+  --primary-foreground: oklch(0.97 0.014 254.604);
+
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.72 0.16 163);
+  --warning: oklch(0.79 0.16 72);
+
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: var(--primary);
+
+  /* Page-only: a text tier below the app's quietest, and the hairline grid. */
+  --dim: oklch(0.5 0 0);
+  --grid: oklch(1 0 0 / 3.5%);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-dim: var(--dim);
+
+  --font-sans: "DM Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: "Syne Variable", "DM Sans Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--control-radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    background: var(--background);
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background: rgb(255 255 255 / 10%);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display font-bold;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+}
+
+@layer components {
+  /* The app's own row and eyebrow, needed by the components borrowed from it. */
+  .row {
+    @apply rounded-md transition-colors;
+  }
+
+  .row:hover {
+    background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+
+  .row[data-active="true"] {
+    background: color-mix(in srgb, var(--foreground) 11%, transparent);
+  }
+
+  .eyebrow {
+    @apply text-[11.5px] font-semibold tracking-[0.08em] uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /*
+    A raised surface. The inset top line is what stops a 1px border on near-black
+    reading as a smudge.
+  */
+  .panel {
+    background: rgb(255 255 255 / 2.2%);
+    border: 1px solid var(--border);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5%),
+      0 1px 2px rgb(0 0 0 / 40%);
+  }
+
+  .btn,
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg text-[14.5px] font-medium whitespace-nowrap;
+    @apply h-11 px-5 transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-foreground text-background;
+    box-shadow: 0 1px 0 rgb(255 255 255 / 40%) inset;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 40%) inset,
+      0 8px 24px -8px rgb(255 255 255 / 25%);
+  }
+
+  .btn-ghost {
+    @apply text-muted-foreground border-border border;
+  }
+
+  .btn-ghost:hover {
+    @apply text-foreground border-input;
+    background: rgb(255 255 255 / 3%);
+  }
+}
+
+@layer utilities {
+  .grid-lines {
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 72px 72px;
+    background-position: center top;
+  }
+
+  /* Film grain. Flat black at this size bands on every panel; noise hides it. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.28;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .rise {
+    animation: rise 1s var(--ease) both;
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 0.8s var(--ease),
+      transform 0.8s var(--ease);
+  }
+
+  .reveal[data-shown="true"] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .rise,
+  .reveal {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

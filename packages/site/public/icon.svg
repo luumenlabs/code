@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Luu Code</title>
+  <defs>
+    <linearGradient id="surface" x1="128" y1="0" x2="896" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#262A34" />
+      <stop offset="0.45" stop-color="#14161B" />
+      <stop offset="1" stop-color="#0A0A0B" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(512 434) scale(392)">
+      <stop offset="0" stop-color="#3B82F6" stop-opacity="0.42" />
+      <stop offset="0.55" stop-color="#3B82F6" stop-opacity="0.10" />
+      <stop offset="1" stop-color="#3B82F6" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="filament" x1="512" y1="212" x2="512" y2="812" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B9D2FF" />
+      <stop offset="0.42" stop-color="#5B9BFF" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+    <linearGradient id="rim" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16" />
+      <stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0.03" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.06" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" fill="url(#surface)" />
+  <circle cx="512" cy="434" r="392" fill="url(#glow)" />
+
+  <g transform="translate(212 206) scale(25)">
+    <path
+      d="m5.868 15.583a8.938 8.938 0 0 1 -2.793-7.761 9 9 0 1 1 14.857 7.941 5.741 5.741 0 0 0 -1.594 2.237h-3.338v-7.184a3 3 0 0 0 2-2.816 1 1 0 0 0 -2 0 1 1 0 0 1 -2 0 1 1 0 0 0 -2 0 3 3 0 0 0 2 2.816v7.184h-3.437a6.839 6.839 0 0 0 -1.695-2.417zm2.132 4.417v.31a3.694 3.694 0 0 0 3.69 3.69h.62a3.694 3.694 0 0 0 3.69-3.69v-.31z"
+      fill="url(#filament)" />
+  </g>
+
+  <rect x="5" y="5" width="1014" height="1014" rx="227" fill="none" stroke="url(#rim)" stroke-width="10" />
+</svg>

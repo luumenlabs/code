@@ -17,6 +17,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev": "turbo run dev --filter=@luumen/code-app",
+    "site": "turbo run dev --filter=@luumen/code-site",
+    "site:build": "turbo run build --filter=@luumen/code-site",
     "serve": "turbo run build --filter=@luumen/code-server && node packages/server/bin/luu-code.js serve",
     "assets:icons": "pnpm --filter @luumen/code-app run icons",
     "plugin:install": "cd plugin && luu install",
