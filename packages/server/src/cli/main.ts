@@ -1,9 +1,6 @@
 /**
- * The `luu-code` command line.
- *
- * Enough to use Luu Code without the Electron app: run the server, check what
- * is connected, and print the MCP configuration for an external agent.
- * Spec sections 23 and 47.
+ * The `luu-code` command line: run the server, check what is connected, and
+ * print the MCP configuration for an external agent.
  */
 import { LuuCodeError, describeError } from "@luumen/code-protocol";
 import type { PermissionGroup, ServerEvent } from "@luumen/code-protocol";

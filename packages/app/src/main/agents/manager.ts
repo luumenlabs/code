@@ -1,14 +1,7 @@
 /**
  * Owns the coding-agent sessions — one per conversation, all running at once.
- *
- * There used to be exactly one. Opening another chat stopped it, which was
- * wrong twice over: the work you had started was thrown away, and the app said
- * "stopped" while the CLI was still draining its stream, so late events landed
- * in whichever conversation you had just switched to. A chat is a session; the
- * one you are looking at is a view, not a lifecycle.
- *
- * Every event carries the key of the session that produced it, so nothing
- * downstream has to guess which conversation it belongs to. Spec section 6.
+ * A chat is a session; the one on screen is a view, not a lifecycle. Every
+ * event carries the key of the session that produced it.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,11 +23,8 @@ export interface AgentManagerOptions {
   /** Passed to the MCP child so it attaches to this app's server. */
   luuCodeHome: string | undefined;
   /**
-   * Absolute path to the MCP stdio entry point.
-   *
-   * Resolved by the caller rather than with `createRequire` here: the main
-   * process is bundled, and Electron loads that bundle through the ESM→CJS
-   * translator, where `__filename` is not defined.
+   * Absolute path to the MCP stdio entry point. Resolved by the caller: the
+   * main process is bundled, and `__filename` is undefined in that bundle.
    */
   mcpScriptPath: string;
   /** `key` is the thread the event belongs to, never the one on screen. */
@@ -96,9 +86,8 @@ export class AgentManager {
   }
 
   private async discover(refresh: boolean): Promise<AgentInfo[]> {
-    // The advisory is a network call and never blocks the answer: it resolves
-    // to nulls rather than failing, so a machine with no internet discovers its
-    // CLIs exactly as before.
+    // The advisory is a network call that resolves to nulls rather than
+    // failing, so a machine with no internet still discovers its CLIs.
     this.agents = await withUpdateAdvisory(await discoverAgents(), refresh);
     await this.refreshModels();
     return this.agents;
@@ -150,11 +139,8 @@ export class AgentManager {
   }
 
   /**
-   * The model a running session is on.
-   *
-   * Changing it mid-conversation is applied to the live adapter, so a message
-   * sent after the change uses the model that was picked, not the one the
-   * session happened to start on.
+   * The model a running session is on. Applied to the live adapter, so the next
+   * message uses what was picked.
    */
   setModelSelection(key: string, selection: ModelSelection | null): void {
     const session = this.sessions.get(key);
@@ -164,11 +150,8 @@ export class AgentManager {
   }
 
   /**
-   * Brings up the session for a conversation, reusing the one already there.
-   *
-   * The user picks a model, not a CLI, so the CLI comes up on its own. A live
-   * session on the same CLI is kept: restarting it would throw away the
-   * conversation it is holding.
+   * Brings up the session for a conversation. A live session on the same CLI is
+   * kept — restarting it would throw away the conversation it is holding.
    */
   async ensure(key: string, options: SessionOptions): Promise<AgentSessionSnapshot> {
     const existing = this.sessions.get(key);
@@ -199,8 +182,7 @@ export class AgentManager {
       });
     }
 
-    // Ollama is the Codex CLI pointed at the daemon on this machine, so it is
-    // the same adapter with a different backend rather than one of its own.
+    // Ollama is the Codex CLI pointed at the daemon on this machine.
     const adapter: AgentAdapter =
       options.agent === "claude"
         ? new ClaudeAdapter()
@@ -226,8 +208,8 @@ export class AgentManager {
       mcp,
       mcpConfigPath: this.writeMcpConfig(mcp),
       permissionMode: this.permissionMode,
-      // Bound to the key rather than to "the current chat": by the time this
-      // fires the user may be looking at something else entirely.
+      // Bound to the key: by the time this fires the user may be looking
+      // at another chat.
       onEvent: (event) => this.handle(key, event),
     });
 
@@ -302,13 +284,9 @@ export class AgentManager {
   }
 
   /**
-   * Runs the MCP server with Electron's bundled Node, so a packaged app does
-   * not depend on the user having Node or the CLI installed globally.
-   *
-   * `key` rides along in the environment so every Roblox operation this session
-   * performs comes back labelled with the conversation that asked for it. Each
-   * chat has its own agent and they all share one server, so without the label
-   * their work is indistinguishable at the far end.
+   * Runs the MCP server with Electron's bundled Node, so a packaged app needs
+   * no global Node. `key` rides in the environment: every chat has its own
+   * agent and they share one server, so operations arrive labelled.
    */
   private mcpServerSpec(key?: string): McpServerSpec {
     const env: Record<string, string> = { ELECTRON_RUN_AS_NODE: "1" };

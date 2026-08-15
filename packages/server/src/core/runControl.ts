@@ -1,16 +1,11 @@
 /**
- * Playtest orchestration. Spec section 13.
+ * Playtest orchestration, owned by the server. A transition destroys the
+ * DataModel the request arrived in, so the server watches the run state
+ * instead; and the two halves live in different peers — only the edit DataModel
+ * can call `ExecutePlayModeAsync`, only a running one can call `EndTest`.
+ * `findPeer` decides where each request goes.
  *
- * The server owns this for two reasons. A transition destroys the DataModel the
- * request arrived in, so the connection that would report the outcome is gone
- * before it can — the server survives and watches the run state instead. And the
- * two halves live in different peers: only the edit DataModel can call
- * `ExecutePlayModeAsync`, only a running one can call `EndTest`. `findPeer`
- * decides where each request goes.
- *
- * Nothing here touches the desktop. It used to press F5 through the operating
- * system, taking over the user's window, because the in-Studio attempt went
- * through an API a plugin cannot call.
+ * Nothing here touches the desktop.
  */
 import { LuuCodeError } from "@luumen/code-protocol";
 import type { PlaytestMode, RunState } from "@luumen/code-protocol";
@@ -24,9 +19,7 @@ const log = createLogger("run");
 const POLL_INTERVAL_MS = 150;
 /**
  * How long to give a transition request itself. The handler returns as soon as
- * it has issued the call — it cannot wait for the outcome, because the call it
- * makes does not return until the playtest is over — so this only has to cover
- * the round trip, not the transition.
+ * it has issued the call, so this covers the round trip, not the transition.
  */
 const TRIGGER_TIMEOUT_MS = 8_000;
 /** Studio needs a moment to finish tearing a session down before it takes another. */
@@ -76,9 +69,9 @@ export class RunControl {
   }
 
   /**
-   * Losing the connection mid-flight is success, not failure: the DataModel that
-   * handled it has been replaced, which is what was asked for. Only a refusal
-   * Studio actually voiced comes back.
+   * Losing the connection mid-flight is success: the DataModel that handled it
+   * has been replaced, which is what was asked for. Only a refusal Studio
+   * actually voiced comes back.
    */
   private async trigger(
     op: "run.start" | "run.stop" | "run.multiplayer",
@@ -132,17 +125,10 @@ export class RunControl {
 
     if (!state.running) {
       /**
-       * Say what was actually observed, not what was assumed.
-       *
-       * "The playtest did not start" is a claim about Studio, and it has been
-       * wrong: the game was playing on screen while every peer kept reporting
-       * edit, so the agent read the timeout as a refusal and went looking for a
-       * reason in the place. What this knows is narrower and more useful —
-       * Studio accepted the request and no connected DataModel ever said it was
-       * running — so that is what it says, with the peers it heard from.
-       *
-       * A pending start narrows it: Studio took the request and has not
-       * returned, so retrying cannot help.
+       * Say what was observed, not what was assumed. "The playtest did not
+       * start" is a claim about Studio; what is known is that Studio accepted
+       * the request and no connected DataModel said it was running. A pending
+       * start narrows it further: retrying cannot help.
        */
       const starting = this.sessions.findPeer(target, isStarting) !== null;
 
@@ -183,15 +169,11 @@ export class RunControl {
     if (!initial.running && !starting) return initial;
 
     /**
-     * Only a running peer can end a playtest.
-     *
-     * This used to fall back to the peer parked in `ExecutePlayModeAsync` on
-     * the theory that whoever started the session could end it. Studio refuses:
-     * `EndTest` may only be called from the server DataModel of a running play
-     * session, and the edit DataModel is never that. So the fallback could not
-     * work, and what it produced was an UNSUPPORTED_CAPABILITY about a Studio
-     * API — which reads as a broken build rather than as what it is, a playtest
-     * that never connected back. Say the true thing instead.
+     * Only a running peer can end a playtest. `EndTest` may only be called from
+     * the server DataModel of a running play session, so the peer parked in
+     * `ExecutePlayModeAsync` is no fallback — it reports an
+     * UNSUPPORTED_CAPABILITY that reads as a broken build rather than a
+     * playtest that never connected back.
      */
     const peer =
       this.sessions.findPeer(target, isRunning) ??
@@ -203,7 +185,7 @@ export class RunControl {
             : "The running playtest has no connection to Luu Code, so it cannot be stopped from here.",
           {
             details: { state: initial, startPending: starting !== null },
-            hint: "Press Stop in Studio. The playtest's own DataModel never reached Luu Code, so the plugin probably did not load into it — reinstall it under Settings → Updates and restart Studio if this keeps happening.",
+            hint: "Press Stop in Studio. If this keeps happening, reinstall the plugin under Settings → Updates and restart Studio.",
           },
         );
       })();

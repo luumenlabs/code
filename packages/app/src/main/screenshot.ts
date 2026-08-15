@@ -1,16 +1,10 @@
 /**
- * Desktop capture through Electron.
+ * Desktop capture through Electron. desktopCapturer goes through the
+ * compositor, so the Studio window is captured without being brought to the
+ * front. The server falls back to a platform helper when the app is not running.
  *
- * This is one of the concrete advantages of owning the harness (spec section
- * 22): desktopCapturer goes through the compositor, so the Roblox Studio window
- * can be captured without bringing it to the front or stealing the user's
- * focus. The server falls back to a platform helper when the app is not
- * running.
- *
- * This is the fallback path. `view.screenshot` captures the viewport through
- * CaptureService inside Studio by default, which sees what the experience is
- * drawing rather than a window with Studio's interface around it; what is here
- * answers `source: "window"` and `source: "screen"`.
+ * This answers `source: "window"` and `source: "screen"`. `view.screenshot`
+ * captures the viewport through CaptureService inside Studio by default.
  */
 import { desktopCapturer, screen } from "electron";
 import type { DesktopCaptureProvider, DesktopCaptureRequest } from "@luumen/code-server";
@@ -23,8 +17,8 @@ export function createElectronDesktopCaptureProvider(): DesktopCaptureProvider {
     const scale = screen.getPrimaryDisplay().scaleFactor || 1;
     const bounds = screen.getPrimaryDisplay().bounds;
 
-    // Ask for a large thumbnail and downscale afterwards; requesting the final
-    // size directly makes the compositor do a low-quality resize.
+    // Requesting the final size directly makes the compositor do a low-quality
+    // resize, so downscale afterwards.
     const thumbnailSize = {
       width: Math.round(bounds.width * scale),
       height: Math.round(bounds.height * scale),

@@ -1,12 +1,9 @@
 --!nonstrict
 --[[
-	Handle registry. Spec section 30.
-
-	An agent that inspected an instance must be able to act on that exact
-	instance later, and must be told clearly when it no longer exists. Handles
-	are stamped with the realm epoch, which increments on every edit/run
-	transition, so a handle captured during a playtest can never be replayed
-	against the edit-time DataModel.
+	Handle registry. An agent that inspected an instance must be able to act on
+	that exact instance later, and be told clearly when it is gone. Handles
+	carry the realm epoch, which increments on every edit/run transition, so a
+	playtest handle cannot be replayed against the edit-time DataModel.
 ]]
 
 local Errors = require(script.Parent.Errors)

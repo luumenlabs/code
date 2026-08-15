@@ -25,17 +25,10 @@ export function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsSection, setSettingsSection] = React.useState<Section>("general");
   /**
-   * The change being read in place of the chat, by id rather than by record.
-   *
-   * By id because the record is not the app's to hold: it is reverted, the
-   * thread is switched, the journal is reloaded — and a copy kept here would go
-   * on showing a change that is no longer in it. Looking it up each render
-   * means the viewer closes by itself when the thing it was showing is gone.
-   *
-   * A list of them, because a row is every operation that went into one
-   * instance's change and the viewer shows the same diff the row did. Records
-   * that have since gone are dropped on the way through; when none are left,
-   * so is the viewer.
+   * The change being read in place of the chat, held as ids rather than
+   * records: looked up each render, the viewer closes by itself once what it
+   * was showing has gone. A list, because a row is every operation behind one
+   * instance's change.
    */
   const [viewing, setViewing] = React.useState<string[] | null>(null);
 
@@ -59,20 +52,16 @@ export function App(): React.JSX.Element {
   }, [harness]);
 
   /**
-   * Panel widths, live while dragging and stored once it stops.
-   *
-   * Local state drives the layout so a drag is smooth; the settings write only
-   * happens on release, because a settings file rewritten sixty times a second
-   * is a settings file that eventually loses.
+   * Panel widths, live while dragging and stored once it stops. Local state
+   * drives the layout so the drag is smooth; the settings write is on release.
    */
   const stored = harness.settings.layout;
   const [sidebarWidth, setSidebarWidth] = React.useState(stored.sidebarWidth);
   const [dockWidth, setDockWidth] = React.useState(stored.dockWidth);
   const dragging = React.useRef(false);
 
-  // Settings arrive after the first render, and can change from another window.
-  // Ignored mid-drag, so an echo of a value we just wrote cannot fight the
-  // pointer.
+  // Settings arrive after the first render. Ignored mid-drag, so an echo of a
+  // value just written cannot fight the pointer.
   React.useEffect(() => {
     if (dragging.current) return;
     setSidebarWidth(stored.sidebarWidth);
@@ -80,11 +69,8 @@ export function App(): React.JSX.Element {
   }, [stored.sidebarWidth, stored.dockWidth]);
 
   /**
-   * The row the three panes live in, measured.
-   *
-   * A stored width is what the user asked for on whatever window they asked it
-   * on; what fits is a question only this window can answer, and it changes
-   * every time the window is resized.
+   * The row the three panes live in, measured. A stored width is what the user
+   * asked for; what fits is a question only this window can answer.
    */
   const row = React.useRef<HTMLDivElement>(null);
   const [available, setAvailable] = React.useState(0);
@@ -102,25 +88,23 @@ export function App(): React.JSX.Element {
   const showDock = dockOpen && !settingsOpen;
   const fitted = fitPanels({ available, sidebar: sidebarWidth, dock: showDock ? dockWidth : 0 });
 
-  // The live journal first, because it is the copy that knows whether the
-  // change has since been put back; the thread's own history behind it, so a
-  // diff stays readable after the Studio window that made it has gone.
+  // The live journal first — it knows whether the change has since been put
+  // back — then the thread's stored history.
   const viewedRecords = (viewing ?? []).flatMap((id) => {
     const record = harness.changes.find((entry) => entry.id === id) ?? harness.history.find((entry) => entry.id === id);
     return record ? [record] : [];
   });
 
   const viewed = bundleFrom(viewedRecords);
-  // Reverting needs the window that made it, and one record of a run being
-  // gone from the journal is enough to make the whole row unrevertable.
+  // Reverting needs the window that made it, so one record missing from the
+  // journal makes the whole row unrevertable.
   const viewedIsLive =
     viewed !== null && viewedRecords.every((record) => harness.changes.some((entry) => entry.id === record.id));
 
   const sessions = harness.snapshot?.status.sessions ?? [];
   const place = sessions.find((entry) => entry.active) ?? sessions[0] ?? null;
 
-  // The first runtime error is worth interrupting for: it is usually the thing
-  // the agent is about to react to, and the user wants to see it too.
+  // A new runtime error is usually what the agent is about to react to.
   const errorCount = harness.output.filter((entry) => entry.type === "error").length;
   const lastErrorCount = React.useRef(errorCount);
 
@@ -132,9 +116,8 @@ export function App(): React.JSX.Element {
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
-      {/* A turn's diffs sit four components deep inside folds that have no use
-          for the harness, and the button that opens one over the chat is deeper
-          still. */}
+      {/* A turn's diffs sit four components deep, inside folds with no use for
+          the harness. */}
       <ChangesProvider harness={harness} onOpen={setViewing}>
         <div className="flex h-full flex-col">
           <TitleBar

@@ -1,9 +1,7 @@
 /**
- * Finding the coding agents the user already has. Spec section 44.
- *
- * Luu Code never asks for a provider API key. It looks for the CLI the user has
- * already installed and authenticated, and if it cannot find one it says so
- * plainly rather than offering to sell a way around it.
+ * Finding the coding agents the user already has. Luu Code never asks for a
+ * provider API key; it looks for an installed, authenticated CLI and says so
+ * plainly when there is none.
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -105,11 +103,8 @@ async function resolve(spec: AgentSpec): Promise<AgentInfo> {
 }
 
 /**
- * Every provider, in the order they are offered.
- *
- * Ollama is not a CLI, so it is not a spec: there is nothing on PATH to run
- * `--version` against. It is a daemon that either answers or does not, and the
- * Codex CLI is what drives it, so it is resolved after the two that are specs.
+ * Every provider, in the order they are offered. Ollama is a daemon rather than
+ * a CLI, and needs the resolved Codex to drive it, so it comes last.
  */
 export async function discoverAgents(): Promise<AgentInfo[]> {
   const clis = await Promise.all(SPECS.map(resolve));

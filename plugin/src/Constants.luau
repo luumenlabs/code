@@ -10,14 +10,9 @@ Constants.PLUGIN_VERSION = "0.1.0"
 Constants.PROTOCOL_VERSION = 1
 
 --[[
-	Which build this plugin came from.
-
-	"dev" in source, because a plugin built from a checkout is a dev plugin —
-	the release workflows stamp this the same way they stamp PLUGIN_VERSION. It
-	matters because all three can be installed at once, side by side in the same
-	Studio: the app installs LuuCode.rbxm, LuuCodeNightly.rbxm, and
-	LuuCodeDev.rbxm as separate files, and each needs its own icon, its own
-	toolbar, and its own widget so you can tell which one you are clicking.
+	Which build this plugin came from. "dev" in source; the release workflows
+	stamp it the same way they stamp PLUGIN_VERSION. All three install side by
+	side in one Studio, so each needs its own icon, toolbar, and widget.
 ]]
 Constants.CHANNEL = "dev"
 
@@ -67,13 +62,9 @@ Constants.ROUTES = {
 }
 
 --[[
-	Settings persisted through plugin:SetSetting.
-
-	plugin:SetSetting writes once per plugin for the whole machine, not per
-	Studio window and not per place, so the install id and the token are stored
-	under a key suffixed with the place identity. Two windows on different places
-	then hold different credentials, and the machine-wide store stops being a
-	single identity every open Studio claims at once.
+	Settings persisted through plugin:SetSetting, which writes once per plugin
+	for the whole machine. Keys are suffixed with the place identity, so two
+	windows on different places do not share one.
 ]]
 Constants.SETTING_INSTALL_ID = "luucode_install_id"
 Constants.SETTING_TOKEN = "luucode_token"

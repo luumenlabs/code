@@ -1,18 +1,9 @@
 /**
- * One change, given the whole chat column.
+ * One change, given the whole chat column. It takes the chat's place; the
+ * sidebar, the dock, and the title bar stay where they are.
  *
- * This was a modal. A modal is the wrong shape for reading a diff: it floats
- * over the conversation it came from at whatever size the viewport allowed,
- * dims the thing you are comparing it against, traps focus, and closes on the
- * stray Escape you meant for something else — all to show a document you want
- * to sit with. So it takes the chat's place instead, the way a file takes the
- * place of a diff list in every review tool, and the sidebar, the dock, and the
- * title bar stay exactly where they were. Going back is going back, not
- * dismissing.
- *
- * Split is the default here and only here: two columns need width, and the
- * width is the whole reason this exists. The rows in the transcript and the
- * dock keep the unified view, which is the one that survives a narrow column.
+ * Split is the default here and only here — two columns need the width. The
+ * rows in the transcript and the dock keep the unified view.
  */
 import * as React from "react";
 import { ArrowLeft, Columns2, History, Loader2, Rows2, Undo2 } from "lucide-react";
@@ -35,11 +26,9 @@ export function ChangeViewer({
   bundle: ChangeBundle;
   harness: Harness;
   /**
-   * Whether the Studio window that made this is still connected.
-   *
-   * False for a change read back from the thread file. The diff is the same
-   * document either way — reverting is the part that needs a live DataModel to
-   * write back into and a copy of the subtree to write.
+   * Whether the Studio window that made this is still connected. False for a
+   * change read back from the thread file: the diff is the same, the revert is
+   * what needs a live DataModel.
    */
   live: boolean;
   onClose: () => void;
@@ -47,8 +36,7 @@ export function ChangeViewer({
   const [split, setSplit] = React.useState(true);
 
   const records = bundle.records;
-  // The newest carries the path the instance is at now, and the sentence for
-  // the last thing done to it.
+  // The newest holds where the instance is now and what last happened to it.
   const record = records[records.length - 1]!;
   const pending = records.filter(isPending);
 
@@ -57,7 +45,6 @@ export function ChangeViewer({
   const reverted = pending.length === 0;
   const busy = records.some((entry) => harness.reverting.includes(entry.id));
 
-  // The one keyboard habit worth keeping from the dialog this replaced.
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") onClose();
@@ -93,8 +80,7 @@ export function ChangeViewer({
               </span>
             )}
           </div>
-          {/* The sentence the plugin wrote, in the one place there is room for
-              it: a header, once, rather than on forty rows. */}
+          {/* The sentence the plugin wrote, once, where there is room for it. */}
           <div className="flex items-baseline gap-2 text-[11.5px] text-muted-foreground">
             <span className="shrink-0">{record.summary}</span>
             <code className="selectable min-w-0 truncate font-mono text-muted-foreground/70">
@@ -117,7 +103,7 @@ export function ChangeViewer({
         {reverted ? (
           <span className="shrink-0 text-[11.5px] text-muted-foreground/70">Reverted</span>
         ) : !live ? (
-          <Hint label="Putting a change back needs the Studio window it was made in. That session has ended, so this is here to read.">
+          <Hint label="That Studio session has ended. This is here to read.">
             <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground/70">
               <History className="size-3.5" />
               Earlier session
@@ -129,8 +115,7 @@ export function ChangeViewer({
             size="sm"
             className="text-muted-foreground"
             disabled={busy || harness.reverting.length > 0}
-            // Every operation behind the diff, newest first — the same thing
-            // the row's own button does.
+            // Every operation behind the diff, newest first.
             onClick={() => void harness.revert(pending.map((entry) => entry.id))}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Undo2 />}

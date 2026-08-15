@@ -147,7 +147,7 @@ describe("tool calls", () => {
   it("reports a failure with its code and hint rather than throwing", async () => {
     const client = await connect(async () => {
       throw new LuuCodeError("STUDIO_NOT_CONNECTED", "Roblox Studio is not connected to Luu Code.", {
-        hint: "Open the place in Studio and approve the connection.",
+        hint: "Open the place in Roblox Studio; the plugin connects on its own.",
       });
     });
 
@@ -156,7 +156,7 @@ describe("tool calls", () => {
 
     expect(result.isError).toBe(true);
     expect(content[0]?.text).toContain("STUDIO_NOT_CONNECTED");
-    expect(content[0]?.text).toContain("approve the connection");
+    expect(content[0]?.text).toContain("connects on its own");
     await client.close();
   });
 

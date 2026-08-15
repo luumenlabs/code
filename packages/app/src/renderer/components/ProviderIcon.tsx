@@ -1,10 +1,4 @@
-/**
- * Provider marks.
- *
- * A user picking a model is really picking a vendor, and the vendor's own glyph
- * says that faster than the word "Claude" does. Inlined rather than fetched:
- * the picker must draw correctly with no network, and these never change.
- */
+/** Provider marks, inlined: the picker must draw with no network. */
 import * as React from "react";
 import type { AgentId } from "../../shared/agent.js";
 import { cn } from "@/lib/utils";

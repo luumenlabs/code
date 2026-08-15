@@ -1,11 +1,9 @@
 --!nonstrict
 --[[
-	Edit and playtest state. Spec sections 13 and 15.
-
-	Studio does not hand the plugin one stable DataModel. Starting a playtest
-	replaces it, and which realm the plugin lands in differs between Run and
-	Play. Everything the agent sees is stamped with the realm so a missing
-	LocalPlayer reads as "wrong realm", not as a bug in the game.
+	Edit and playtest state. Studio does not hand the plugin one stable
+	DataModel: a playtest replaces it, and which realm the plugin lands in
+	differs between Run and Play. Everything the agent sees is stamped with the
+	realm, so a missing LocalPlayer reads as "wrong realm", not as a bug.
 ]]
 
 local Players = game:GetService("Players")
@@ -32,24 +30,16 @@ end
 --[[
 	Is the experience up in this DataModel?
 
-	`RunService:IsRunning()` is the direct answer, and when it says yes it is
-	believed. It has been caught saying no with a playtest plainly running —
-	`{ running = false, playerCount = 1, realm = "edit" }`, reported from a
-	DataModel with a player standing in it. Nothing downstream survives that:
-	the server starts a playtest and then waits for a peer to say `running`,
-	so every `run.start` sat there until it timed out while Studio played the
-	game, and the state it reported blamed the edit realm for it.
+	`RunService:IsRunning()` is believed when it says yes. It has been caught
+	saying no with a playtest plainly running, which stalls every `run.start`
+	until it times out, so the flag is corroborated rather than trusted alone.
 
-	So the flag is corroborated with facts about this DataModel rather than
-	trusted alone. A `Player` cannot exist without a session — `Players` is
-	empty in edit and there is no way to put anything in it — and a DataModel
-	that is a server but not a client, or the reverse, is one half of a split
-	runtime, which edit never is. Either one means the simulation is up
-	whatever the flag says.
+	A `Player` cannot exist without a session, and a DataModel that is a server
+	but not a client, or the reverse, is half of a split runtime — which edit
+	never is. Either means the simulation is up whatever the flag says.
 
-	The gap left is Run mode in a Studio that also mis-reports the flag: no
-	players, one combined DataModel, nothing to corroborate with. That has not
-	been seen, and inventing a signal for it would mean guessing.
+	Run mode in a Studio that also mis-reports the flag has nothing to
+	corroborate with, and has not been seen.
 ]]
 local function detectRunning(): boolean
 	if RunService:IsRunning() then
@@ -123,13 +113,9 @@ function RunState.isReady(requireCharacter: boolean?): boolean
 end
 
 --[[
-	True when this peer is one DataModel of several.
-
-	Play Solo puts the server and the client in a single DataModel, so a peer
-	that is both is the only one there is. A peer that is one but not the other
-	belongs to a session Studio split across processes — a multiplayer test, or
-	Start Server with players attached — which is exactly when an agent has to
-	care which side it is talking to.
+	True when this peer is one DataModel of several. Play Solo puts server and
+	client in a single DataModel, so a peer that is both is the only one there
+	is. One but not the other means Studio split the session across processes.
 ]]
 local function isSplitSession(running: boolean): boolean
 	if not running then
@@ -169,12 +155,9 @@ local function emit()
 end
 
 --[[
-	Polls for edit/run transitions.
-
-	RunService exposes no reliable "mode changed" signal to plugins across all
-	Studio versions, and a plugin is often torn down and recreated across the
-	transition anyway. A cheap poll is both simpler and more robust than
-	chasing version-specific signals.
+	Polls for edit/run transitions. RunService exposes no reliable "mode changed"
+	signal to plugins across all Studio versions, and a plugin is often torn
+	down and recreated across the transition anyway.
 ]]
 function RunState.start()
 	-- Started here because every consumer of the run state reads `rendering`

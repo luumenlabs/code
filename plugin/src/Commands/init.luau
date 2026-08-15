@@ -223,18 +223,13 @@ function Commands.supports(op: string): boolean
 end
 
 --[[
-	Capability probe, run once per DataModel.
+	Capability probe, run once per DataModel, so an agent is never offered an
+	operation that cannot work here.
 
-	Reporting these honestly is what keeps agents from calling operations that
-	cannot work in the current environment. Spec section 49.
-
-	Cached because probing has a cost that is not obvious from the call site.
-	Several of these answer by trying the thing — opening an undo recording,
-	setting a breakpoint, constructing a VirtualInput — and the sync loop calls
-	this on every round trip. What that added up to was Studio being poked a few
-	times a second for the life of the session. Nothing here changes while a
-	DataModel is alive, so the probe belongs once per DataModel; `release`
-	drops it when Studio hands us a new one.
+	Cached because several of these answer by trying the thing — opening an undo
+	recording, setting a breakpoint, constructing a VirtualInput — and the sync
+	loop asks on every round trip. Nothing here changes while a DataModel is
+	alive; `release` drops the answers when Studio hands us a new one.
 ]]
 local cached: { string }? = nil
 
@@ -327,12 +322,9 @@ function Commands.prune()
 end
 
 --[[
-	Dropped when the DataModel is replaced. A mark adorns an instance in the world
-	it was made in, and a remembered camera describes one that no longer exists.
-
-	The capability answers go too: a playtest peer can do different things from
-	the edit one it replaced, and the next probe runs against the DataModel that
-	is actually there.
+	Dropped when the DataModel is replaced. A mark adorns an instance in the
+	world it was made in, and a remembered camera describes one that is gone.
+	The capability answers go too: a playtest peer can do different things.
 ]]
 function Commands.release()
 	ViewOps.release()

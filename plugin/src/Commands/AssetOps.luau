@@ -1,13 +1,9 @@
 --!nonstrict
 --[[
-	Bringing Creator Store assets into the place.
-
-	The search half is the server's — it is Roblox's web API and needs no Studio
-	— so all that happens here is the download and the parenting. LoadAsset
-	yields on the network and produces a detached container, which is why it runs
-	outside the undo recording: only the parenting is a change to the place, and
-	a recording left open across a slow download is one another edit can collide
-	with.
+	Bringing Creator Store assets into the place. The search half is the
+	server's, so what happens here is the download and the parenting. LoadAsset
+	runs outside the undo recording: only the parenting changes the place, and a
+	recording left open across a slow download is one another edit can hit.
 ]]
 
 local AssetService = game:GetService("AssetService")
@@ -35,16 +31,13 @@ end
 --[[
 	Whether this place will load an asset somebody else owns.
 
-	"Allow Loading Third Party Assets", under Game Settings → Security, is off in
-	every new place, and with it off Roblox refuses every Creator Store model
-	with a message about authorization that names neither the setting nor the
-	place. It is the single reason insertion fails on a free, public, script-free
-	model, and an agent told only "User is not authorized" concludes the asset
-	is the problem and goes looking for another one, which fails the same way.
+	"Allow Loading Third Party Assets", under Game Settings → Security, is off
+	in every new place, and Roblox then refuses every Creator Store model with a
+	message about authorization that names neither the setting nor the place.
 
-	Read through pcall and reported as unknown rather than as false: Roblox does
-	not document a property for this, so a build that does not expose one must
-	not be reported as a place with the setting turned off.
+	Read through pcall and reported as unknown rather than false: Roblox does
+	not document a property for this, and a build that does not expose one is
+	not a place with the setting turned off.
 ]]
 function AssetOps.thirdPartyAssetsAllowed(): boolean?
 	local ok, value = pcall(function()

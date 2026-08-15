@@ -1,9 +1,7 @@
 /**
- * Running a short-lived platform helper.
- *
- * Native integration exists only to reach the few Roblox Studio capabilities a
- * plugin cannot provide. Spec section 50 draws that line deliberately: this is
- * not a general computer-control layer.
+ * Running a short-lived platform helper. Native integration exists only to
+ * reach the few Studio capabilities a plugin cannot provide; this is not a
+ * general computer-control layer.
  */
 import { execFile } from "node:child_process";
 import { LuuCodeError } from "@luumen/code-protocol";

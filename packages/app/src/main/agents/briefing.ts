@@ -1,22 +1,10 @@
 /**
- * What the agent is told about where it is.
+ * What the agent is told about where it is. Both CLIs open assuming a source
+ * tree; the game is a live DataModel reachable only through this harness's
+ * tools, and the working directory is an empty scratch folder.
  *
- * Both CLIs open on the assumption they are in a source tree: a working
- * directory, files, a shell. Luu Code is not that. The game is a live DataModel
- * in a running copy of Roblox Studio, reachable only through this harness's
- * tools, and the working directory is an empty scratch folder that exists
- * solely because a child process needs one.
- *
- * Without being told, an agent asked to "check my game" does the reasonable
- * thing for the world it thinks it is in — lists files, greps for scripts,
- * finds nothing, and reports that the workspace is broken. It is not wrong; it
- * was never told what it was holding.
- *
- * Environment only. Prescribing how to work here made every request end in a
- * playtest; that belongs in the user's own rules.
- *
- * Kept in one place because both adapters need the same words, and two copies
- * of a system prompt drift the moment one is edited.
+ * Environment only — how to work here belongs in the user's own rules. Kept in
+ * one place because both adapters need the same words.
  */
 
 /** Everything the agent needs before its first turn. */
@@ -65,12 +53,9 @@ function section(text: string | null | undefined, tag: string, source: string): 
 }
 
 /**
- * The briefing, plus whichever layers of rules exist.
- *
- * Marked as the user's and placed after the harness text: an agent that cannot
- * tell the two apart will weigh a convention against a constraint of this
- * environment and pick either one. The place's rules come last because they are
- * the more specific of the two.
+ * The briefing, plus whichever layers of rules exist. Marked as the user's and
+ * placed after the harness text, so a convention is not weighed against a
+ * constraint of this environment. The place's rules come last, being narrower.
  */
 export function briefingFor(rules: AgentRules | null | undefined): string {
   const parts = [
@@ -90,10 +75,8 @@ ${parts.join("\n\n")}`;
 }
 
 /**
- * Codex takes its instructions in the prompt rather than as a system message,
- * so the briefing rides in front of the first message of a conversation and
- * never again — a resumed session already has it in context, and repeating it
- * every turn would spend tokens re-teaching what the agent already knows.
+ * Codex has no system-prompt channel, so the briefing rides in front of a
+ * conversation's first message and never again — a resumed session has it.
  */
 export function withBriefing(text: string, rules?: AgentRules | null): string {
   return `${briefingFor(rules)}\n\n---\n\n${text}`;

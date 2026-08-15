@@ -1,13 +1,7 @@
 /**
- * The diff itself, rendered by @pierre/diffs.
- *
- * The alignment, the hunking, the syntax highlighting, and the split view are
- * all the library's. What is left here is the two sides of the file and the
- * theme — which is the amount of diff code this product should own.
- *
- * It ships its own Shiki grammars and themes and makes no network calls, which
- * is the property that matters: Luu Code runs on 127.0.0.1 and a highlighter
- * that fetched a grammar would quietly break that promise.
+ * The diff itself, rendered by @pierre/diffs. The alignment, hunking,
+ * highlighting, and split view are the library's; what is here is the two sides
+ * of the file and the theme. It makes no network calls, which Luu Code needs.
  */
 import * as React from "react";
 import { MultiFileDiff } from "@pierre/diffs/react";
@@ -15,30 +9,13 @@ import { bundleDocument, lineCount } from "@/components/changeDocument";
 import type { ChangeBundle } from "@/components/changeDocument";
 import { cn } from "@/lib/utils";
 
-/**
- * Borrowed for the syntax colours only.
- *
- * A bundled theme is a whole palette: its own background, its own greys, its
- * own green and red, its own idea of how big code should be. Dropping all of
- * that into a window painted from `styles.css` is what made the diff read as a
- * screenshot of a different program — a blue-black panel with GitHub's green
- * in it, sitting inside a neutral card. Only the token colours are worth
- * taking; `SURFACE` takes back the rest.
- */
+/** Borrowed for the syntax colours only; `SURFACE` takes back the rest. */
 const THEME = { dark: "github-dark-default", light: "github-light-default" } as const;
 
 /**
  * Every surface, colour, and metric the diff shows, bound to the app's own.
- *
- * Custom properties inherit through a shadow root like anywhere else, so
- * `var(--background)` inside the component resolves to the same value the rest
- * of the window is painted with — including the light and dark flip, which the
- * app has already made. The library puts `unsafe` last in its own `@layer`
- * order for exactly this, so these win over the theme it generated.
- *
- * Additions and deletions are the app's success and destructive colours rather
- * than a green and a red of their own. A diff is not the one place in the
- * product where "this went well" should be a different green.
+ * Custom properties inherit through the shadow root, and the library puts
+ * `unsafe` last in its `@layer` order, so these win over its generated theme.
  */
 const SURFACE = `
 :host {
@@ -54,18 +31,12 @@ const SURFACE = `
 }
 `;
 
-/**
- * Below this, line numbers are furniture.
- *
- * A rename renders as one line on each side. Numbering it puts a gutter, a
- * rule, and the digit 1 around two words, which is most of the row spent on
- * saying that the row is the first one.
- */
+/** Below this, line numbers are furniture — a rename is one line each side. */
 const NUMBERED_FROM = 12;
 
 function useThemeType(): "dark" | "light" {
-  // Tailwind's `dark` variant is class-based here, so the class on <html> is the
-  // authority — not the OS preference, which the user may have overridden.
+  // Tailwind's `dark` variant is class-based here, so the class on <html> is
+  // the authority, not the OS preference.
   const [isDark, setDark] = React.useState(() => document.documentElement.classList.contains("dark"));
 
   React.useEffect(() => {
@@ -100,8 +71,7 @@ export function ChangeDiff({
       theme: THEME,
       themeType,
       diffStyle: split ? ("split" as const) : ("unified" as const),
-      // The row above already says which instance and what happened to it; a
-      // second header inside the diff repeating the filename is noise.
+      // The row above already names the instance and what happened to it.
       disableFileHeader: true,
       disableLineNumbers: longest < NUMBERED_FROM,
       overflow: "scroll" as const,

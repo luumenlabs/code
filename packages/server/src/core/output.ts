@@ -1,9 +1,6 @@
 /**
- * Studio output buffer. Spec section 14.
- *
- * Cursors are what make this useful to an agent: mark before a change, act,
- * then read only what appeared since. Without that the agent has to guess which
- * errors are new, which is exactly the manual step this product removes.
+ * Studio output buffer. Cursors are what make it useful to an agent: mark
+ * before a change, act, then read only what appeared since.
  */
 import type { OutputEntry, StudioRealm } from "@luumen/code-protocol";
 
@@ -83,8 +80,7 @@ export class OutputBuffer {
       matched = matched.filter((entry) => entry.message.toLowerCase().includes(needle));
     }
 
-    // Newest matters most, but the agent reads chronologically, so take the
-    // tail and hand it back in order.
+    // The newest matters most, but reads chronologically: take the tail, in order.
     const truncated = matched.length > limit;
     const page = truncated ? matched.slice(matched.length - limit) : matched;
 

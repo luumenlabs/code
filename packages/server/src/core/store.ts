@@ -1,14 +1,10 @@
 /**
- * The Creator Store, over Roblox's own toolbox endpoints.
+ * The Creator Store, over Roblox's own toolbox endpoints. Search answers with
+ * asset ids and nothing else, so every listing takes a second request for the
+ * details Studio's toolbox shows beside them — price and script count decide
+ * whether an asset can be inserted at all.
  *
- * Search answers with asset ids and nothing else, so every listing is a second
- * request for the details Studio's toolbox shows beside them. The two are kept
- * together here because a list of bare numbers is unusable: it cannot tell a
- * free two-hundred-triangle bush from a paid car with fourteen scripts in it,
- * and both of those decide whether the asset can be inserted at all.
- *
- * Unauthenticated. Nothing here reaches the user's account, so the store looks
- * the same as it does to a logged-out browser.
+ * Unauthenticated: the store looks the same as to a logged-out browser.
  */
 import { ASSET_KINDS, LuuCodeError } from "@luumen/code-protocol";
 import type { AssetKind, CommandResult, StoreAsset } from "@luumen/code-protocol";
@@ -58,11 +54,9 @@ export async function lookUpStoreAssets(ids: number[]): Promise<CommandResult<"a
 }
 
 /**
- * Details for a set of ids, in the order asked for.
- *
- * The endpoint drops ids it cannot describe and answers 404 only when it can
- * describe none of them, so both shapes mean the same thing here: whatever did
- * not come back is named rather than left as a shorter list.
+ * Details for a set of ids, in the order asked for. The endpoint drops ids it
+ * cannot describe and answers 404 only when it can describe none, so whatever
+ * did not come back is named rather than left as a shorter list.
  */
 async function describe(ids: number[]): Promise<{ assets: StoreAsset[]; missing: number[] }> {
   if (ids.length === 0) return { assets: [], missing: [] };
@@ -115,9 +109,8 @@ function toStoreAsset(entry: DetailEntry): StoreAsset | null {
     endorsed: asset.isEndorsed === true,
     scriptCount: asset.scriptCount ?? 0,
     mesh: mesh ? { triangles: mesh.triangles ?? 0, vertices: mesh.vertices ?? 0 } : null,
-    // Keyed off the kind rather than off the number being non-zero: Roblox
-    // rounds to whole seconds, so a footstep is a 0 that means "under a second"
-    // rather than a 0 that means "this is not audio".
+    // Keyed off the kind, not off the number: Roblox rounds to whole seconds,
+    // so a footstep is a 0 meaning "under a second".
     duration: kind === "audio" ? (asset.duration ?? 0) : null,
     votes: {
       up: entry.voting?.upVotes ?? 0,
@@ -140,11 +133,8 @@ function cut(text: string): string {
 }
 
 /**
- * One store request, with every way it can fail carrying the same code.
- *
- * The agent's recovery is the same for a timeout, a 500, and a body that is not
- * the JSON it should be: none of them are about the place or the request, and
- * the next move is to build the thing rather than to fix a parameter.
+ * One store request, with every way it can fail carrying the same code. A
+ * timeout, a 500, and a malformed body all leave the agent the same next move.
  */
 async function get<T>(url: URL, what: string, options: { emptyOn404?: boolean } = {}): Promise<T> {
   let response: Response;

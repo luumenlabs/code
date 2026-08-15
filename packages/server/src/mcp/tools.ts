@@ -1,17 +1,11 @@
 /**
- * MCP tool definitions. Spec sections 21 and 23.
- *
- * The MCP surface is a first-class way to use Luu Code, not a reduced one. It
- * exposes the same operations the first-party harness uses, described so an
- * external agent can work with Roblox Studio without knowing anything about the
- * Electron app.
+ * MCP tool definitions: the same operations the harness uses, described so an
+ * external agent can work with Roblox Studio knowing nothing about the app.
  *
  * The descriptions live here; the names live in the protocol's `TOOL_NAMES`,
- * beside the operations they belong to. That split is deliberate. A name is
- * part of an operation's identity — the permission controls, the settings the
- * user has saved, and the errors they read all key on it — while a description
- * is only ever read by an agent, and keeping several paragraphs of prose out of
- * the schema file leaves it readable.
+ * beside the operations. A name is part of an operation's identity — the
+ * permission controls, the saved settings, and the errors all key on it — while
+ * a description is only ever read by an agent.
  */
 import { COMMANDS, TOOL_NAMES } from "@luumen/code-protocol";
 import type { Op } from "@luumen/code-protocol";
@@ -24,10 +18,8 @@ export interface McpToolDefinition {
 }
 
 /**
- * The prose, in the order an agent should meet it.
- *
- * The name is not repeated here: it comes from `TOOL_NAMES` when the list is
- * built, so there is exactly one place a tool can be renamed.
+ * The prose, in the order an agent should meet it. Names come from
+ * `TOOL_NAMES` when the list is built, so a tool is renamed in one place.
  */
 const DESCRIBED: Array<{ op: Op; description: string }> = [
   {
@@ -312,13 +304,9 @@ const DESCRIBED: Array<{ op: Op; description: string }> = [
 ];
 
 /**
- * Every tool, named from the protocol.
- *
- * An op described here that `TOOL_NAMES` gives no name to is a mistake rather
- * than something to skip past quietly: it would be a tool with prose written
- * for it that no agent can call. The exhaustiveness the other way — a named op
- * with no description — is checked by a test, because it needs to fail the
- * build rather than only the tools that happen to be listed.
+ * Every tool, named from the protocol. An op described here that `TOOL_NAMES`
+ * gives no name to is a mistake, not something to skip past. The other
+ * direction — a named op with no description — is checked by a test.
  */
 export const MCP_TOOLS: McpToolDefinition[] = DESCRIBED.flatMap(({ op, description }) => {
   const name = TOOL_NAMES[op];

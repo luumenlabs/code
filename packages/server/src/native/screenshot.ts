@@ -1,20 +1,12 @@
 /**
- * Desktop capture. Spec sections 17 and 36.
+ * Desktop capture: the fallback path. `view.screenshot` captures the viewport
+ * through CaptureService inside Studio; this photographs pixels already on the
+ * screen, so it also catches the ribbon, the Explorer, and anything on top.
  *
- * This is the fallback path, not the main one: `view.screenshot` captures the
- * viewport through CaptureService inside Studio, which sees what the experience
- * is actually drawing and nothing around it. What is here photographs pixels
- * already on the screen, so it also catches the ribbon, the Explorer, and
- * anything sitting on top of Studio.
- *
- * It stays because the in-engine path has two real preconditions — the window
- * has to be drawing, and the place has to allow the Mesh/Image APIs — and
- * neither is something an agent can fix on its own. A caller that hits one of
- * those is told to ask for `window` instead.
- *
- * The Electron harness registers a better provider at startup (it can capture
- * an occluded window through the compositor); this platform path is what makes
- * headless MCP use work without it.
+ * The in-engine path needs a drawing window and the place's Mesh/Image API
+ * permission, neither of which an agent can fix, so a caller that hits one is
+ * told to ask for `window`. The Electron harness registers a better provider;
+ * this platform path is what makes headless MCP use work without it.
  */
 import { readFile, unlink } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
@@ -159,8 +151,8 @@ async function captureMac(request: DesktopCaptureRequest): Promise<ScreenshotRes
         args.push("-R", `${numbers[0]},${numbers[1]},${numbers[2]},${numbers[3]}`);
       }
     } catch (error) {
-      // Usually a missing Accessibility permission. Fall back to the full
-      // screen rather than failing the agent's whole verification step.
+      // Usually a missing Accessibility permission; the full screen is better
+      // than failing the agent's whole verification step.
       log.warn("Could not read the Studio window rect; capturing the full screen instead", error);
     }
   }
@@ -197,7 +189,7 @@ async function finalize(path: string, request: DesktopCaptureRequest, dimensions
     capturedAt: Date.now(),
     source: request.source,
     // A desktop capture photographs a window, not a DataModel, so there is no
-    // realm to report and claiming one would be an invention.
+    // realm to report.
     realm: null,
   };
 }

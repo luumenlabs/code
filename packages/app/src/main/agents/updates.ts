@@ -1,21 +1,10 @@
 /**
  * Whether the CLIs the user has are current, and how they would update them.
  *
- * Luu Code drives someone else's binary, so the version it finds is a fact
- * about their machine rather than about this build — and a stale CLI is the
- * quiet cause of a whole class of failures: a model the app offers that the CLI
- * cannot launch, a protocol field it does not send, a bug fixed upstream weeks
- * ago. Saying "2.1.224, 2.1.226 is out" costs one cached request and turns that
- * into something the user can act on.
- *
- * The update command is derived from where the binary actually is, because the
- * right one differs per install method and the wrong one fails in a way that
- * looks like the app is broken: `npm i -g` does nothing for a native install,
- * and `claude update` does not exist on an npm one.
- *
- * Everything here degrades to null. No network, a registry that is down, an
- * unparseable answer — the panel shows the installed version alone, which is
- * what it showed before any of this existed.
+ * The update command is derived from where the binary is: `npm i -g` does
+ * nothing for a native install, and `claude update` does not exist on an npm
+ * one. Everything here degrades to null — no network, a registry that is down,
+ * or an unparseable answer leaves the panel showing the installed version alone.
  */
 import { get } from "node:https";
 import { delimiter, join } from "node:path";
@@ -36,12 +25,8 @@ interface PackageSpec {
 }
 
 /**
- * Only the providers this app could sensibly update.
- *
- * Ollama is missing on purpose: it is not an npm package, it updates itself,
- * and the version that matters for a local model is the daemon's — which the
- * user manages the same way they manage the models. Telling them to run
- * `npm i -g` at it would be a wrong answer confidently given.
+ * Only the providers this app could sensibly update. Ollama is absent: it is no
+ * npm package and updates itself.
  */
 const PACKAGES: Partial<Record<AgentId, PackageSpec>> = {
   claude: {
@@ -61,10 +46,8 @@ const TIMEOUT_MS = 4_000;
 const cache = new Map<string, { at: number; version: string | null }>();
 
 /**
- * The latest published version, or null.
- *
- * `/latest` rather than the full packument: the full document for a CLI that
- * publishes daily is megabytes, and the only field wanted is `version`.
+ * The latest published version, or null. `/latest` rather than the full
+ * packument, which for a CLI that publishes daily runs to megabytes.
  */
 function fetchLatest(pkg: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -82,8 +65,7 @@ function fetchLatest(pkg: string): Promise<string | null> {
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
           body += chunk;
-          // A registry that answers with something enormous is not answering
-          // the question asked.
+          // A registry answering with something this large is not answering.
           if (body.length > 1_000_000) request.destroy();
         });
         response.on("end", () => {
@@ -128,11 +110,8 @@ function locate(command: string): string | null {
 }
 
 /**
- * How this particular copy is updated.
- *
- * Ordered narrowest first. npm is the fallback rather than a detection because
- * it is both the most common install and the one with the least distinctive
- * path — `~/AppData/Roaming/npm` on Windows, but a bare `/usr/bin` elsewhere.
+ * How this particular copy is updated. Narrowest first; npm is the fallback
+ * because its path is the least distinctive.
  */
 function updateCommand(spec: PackageSpec, command: string | null): string {
   const npm = `npm install -g ${spec.npm}@latest`;
@@ -153,15 +132,9 @@ function updateCommand(spec: PackageSpec, command: string | null): string {
 }
 
 /**
- * Adds "is there a newer one, and how would you get it" to what discovery found.
- *
- * Every provider is asked at once. A missing CLI is skipped — there is no
- * version to compare and the install hint already covers it — and so is one
- * this app does not install, which is left exactly as discovery found it.
- *
- * `force` comes from the Refresh button, which is the one place the user has
- * explicitly asked to check again; serving it an hour-old answer would make the
- * button look broken to someone who just updated in a terminal.
+ * Adds "is there a newer one, and how would you get it" to what discovery
+ * found. A missing CLI is skipped. `force` comes from the Refresh button, which
+ * must not serve an hour-old answer to someone who just updated in a terminal.
  */
 export async function withUpdateAdvisory(
   agents: AgentInfo[],

@@ -26,10 +26,8 @@ export interface CommandSpec {
   mutates: boolean;
   summary: string;
   /**
-   * Housekeeping the user did not ask for, and which gets no row in the
-   * transcript. Reserved for reads the app makes on its own behalf: a panel
-   * refreshing itself is not something the agent did to the place, and a
-   * conversation littered with the app's own bookkeeping is unreadable.
+   * No row in the transcript. Reserved for reads the app makes on its own
+   * behalf, such as a panel refreshing itself.
    */
   silent?: boolean;
 }
@@ -79,12 +77,9 @@ const searchParams = z
   });
 
 /**
- * `properties` is the name, because that is what `dm.get` calls the same thing.
- *
- * It used to be `names` alone, and an agent that had read one op's schema
- * generalised from it and lost a turn to INVALID_PARAMS. One concept with two
- * names across neighbouring tools is a trap the caller cannot see. `names` is
- * still accepted so nothing already written to it breaks.
+ * `properties` is the name, matching `dm.get`. One concept under two names
+ * across neighbouring tools is a trap the caller cannot see. `names` is still
+ * accepted, so anything already written to it keeps working.
  */
 const propertiesParams = z
   .object({
@@ -101,8 +96,7 @@ const selectionSetParams = z.object({ targets: z.array(targetSchema).max(200) })
  * Roblox exposes no property reflection to Luau, so the class is described by
  * asking a real instance of it: which members exist, what type each value is,
  * and whether a write takes. Names the caller supplies are probed alongside the
- * curated set, which is how a guessed property name is checked in one call
- * rather than one rejected write at a time.
+ * curated set, so a guessed property is checked in one call.
  */
 const classInfoParams = z
   .object({
@@ -264,10 +258,8 @@ const scriptGrepParams = z.object({
 });
 
 /**
- * The write half of grep. Renaming one function across forty scripts is
- * otherwise forty round trips and forty entries in the user's history; this is
- * one of each, and still one journal record per script so a bad pattern can be
- * taken back in a single action.
+ * The write half of grep: one round trip and one undo waypoint for a rename
+ * across forty scripts, with one journal record per script.
  */
 const scriptReplaceParams = z.object({
   pattern: z.string().min(1).describe("Text to find. Literal by default."),
@@ -349,10 +341,8 @@ const runMultiplayerParams = z
 
 /**
  * Simulated network conditions, through `settings():GetService("NetworkSettings")`.
- *
- * Replication bugs do not reproduce on a link with no latency, which is the
- * only link a Studio playtest has. Every field is read back after the write, so
- * a build that does not expose one is reported rather than assumed applied.
+ * A Studio playtest has no latency of its own, so replication bugs will not
+ * reproduce without this. Every field is read back after the write.
  */
 const runNetworkParams = z
   .object({
@@ -420,15 +410,11 @@ const execParams = z.object({
 });
 
 /**
- * Log breakpoints, through `ScriptDebuggerService`.
+ * Log breakpoints, through `ScriptDebuggerService`. These log and carry on; the
+ * stopping kind is not offered, since nothing here can resume a paused playtest
+ * and it would hang with both peers unreachable.
  *
- * These log and carry on; nothing here pauses a playtest. A breakpoint that
- * stops execution needs a debugger sitting on the other end to resume it, and
- * without one the playtest hangs with both peers unreachable — so the stopping
- * kind is not offered rather than offered and warned about.
- *
- * The point is to watch a line without editing the script it is on: no print to
- * add, none to forget to remove, and no journal record for a debugging aid.
+ * Watching a line takes no edit to the script it is on, and no journal record.
  */
 const breakpointsParams = z
   .object({
@@ -467,8 +453,7 @@ const breakpointsParams = z
     if (value.action === "set") {
       need("target");
       need("line");
-      // A breakpoint with nothing to log and nothing to stop for is a no-op that
-      // reports success, which is the worst of both.
+      // Otherwise it is a no-op that reports success.
       need("log");
     }
 
@@ -611,11 +596,9 @@ const perfSampleParams = z.object({
 });
 
 /**
- * Which Luau is expensive, from `ScriptProfilerService`.
- *
- * `perf.sample` answers whether the place is slow; this answers what is making
- * it slow. It only works on a running peer, because there is no game code to
- * profile in edit mode.
+ * Which Luau is expensive, from `ScriptProfilerService`. `perf.sample` answers
+ * whether the place is slow; this answers what is making it slow. Running peers
+ * only — there is no game code to profile in edit mode.
  */
 const perfScriptParams = z.object({
   durationMs: z
@@ -689,13 +672,9 @@ export type AssetKind = keyof typeof ASSET_KINDS;
 const assetKindSchema = z.enum(Object.keys(ASSET_KINDS) as [AssetKind, ...AssetKind[]]);
 
 /**
- * An asset id, however the caller came by it.
- *
- * A URL is accepted alongside a bare id because a web search hands back a store
- * page, and making the agent pick the number out of it first is a round trip
- * spent on string surgery. The longest run of digits is the id in every form
- * Roblox publishes — `/store/asset/1818/Tree`, `/library/1818/Tree`, and
- * `rbxassetid://1818` alike.
+ * An asset id, however the caller came by it. A URL is accepted alongside a
+ * bare id, since a web search hands back a store page. The longest run of
+ * digits is the id in every form Roblox publishes.
  */
 const assetIdSchema = z.union([z.number().int().positive(), z.string().min(1)]).transform((value, ctx) => {
   if (typeof value === "number") return value;
@@ -743,12 +722,9 @@ const assetInsertParams = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * A question, and what may be picked in answer to it.
- *
- * One option is refused. A choice of one is not a question, and the form it
- * would draw — a single button that has to be pressed — reads as a demand
- * rather than a decision. None is allowed and means the opposite: an open
- * question, answered by writing.
+ * A question, and what may be picked in answer to it. Exactly one option is
+ * refused: a choice of one is not a question. None means an open question,
+ * answered by writing.
  */
 const askQuestionParams = z
   .object({
@@ -773,13 +749,9 @@ const askQuestionParams = z
 const askParams = z.object({
   questions: z.array(askQuestionParams).min(1).max(4).describe("Ask everything you need at once; each gets its own block."),
   /**
-   * Four minutes, and no way to ask for longer.
-   *
-   * The answer travels back as the body of a held-open HTTP response, and
-   * Node's fetch abandons one that has sent no headers for five minutes. A wait
-   * longer than that would be given up on by the client rather than by us,
-   * which is the one failure the user cannot be told about — they would still
-   * be looking at the form.
+   * Four minutes, and no way to ask for longer. The answer comes back on a
+   * held-open HTTP response, and Node's fetch abandons one that has sent no
+   * headers for five minutes — a client-side give-up nobody can be told about.
    */
   timeoutMs: z
     .number()
@@ -809,11 +781,9 @@ const changesRevertParams = z.object({
 });
 
 /**
- * The Studio half of a revert.
- *
- * Records travel with the request rather than being held in the plugin, so the
- * server stays the single owner of the journal and the plugin only holds what
- * cannot be described in JSON — the copy of a destroyed subtree.
+ * The Studio half of a revert. Records travel with the request, so the server
+ * stays the single owner of the journal and the plugin holds only what JSON
+ * cannot describe — the copy of a destroyed subtree.
  */
 const changesApplyParams = z.object({
   records: z.array(z.any()).min(1).max(500),
@@ -1073,12 +1043,9 @@ export const COMMANDS = {
     mutates: false,
     summary: "Report whether the place is in edit mode or running, and which realm is observable.",
   },
-  // Playtest transitions are orchestrated by the server, not by Studio, for two
-  // reasons. The DataModel that receives the request is torn down by it, so the
-  // connection that would report the outcome is often gone before it can. And
-  // the peer that can start a playtest is never the peer that can stop one:
-  // starting belongs to the edit DataModel and stopping to the running one, so
-  // something outside both has to decide where each request goes.
+  // The server orchestrates playtest transitions: the DataModel that receives
+  // the request is torn down by it, and starting belongs to the edit peer while
+  // stopping belongs to the running one.
   "run.start": {
     params: runStartParams,
     executor: "server",
@@ -1228,8 +1195,8 @@ export const COMMANDS = {
     mutates: false,
     summary: "Capture the Roblox Studio window as an image.",
   },
-  // The camera and the adornments are the user's viewport, not their place:
-  // nothing here is journalled, because there is nothing to put back.
+  // The camera and the adornments are the viewport, not the place: nothing here
+  // is journalled, because there is nothing to put back.
   "view.focus": {
     params: focusParams,
     executor: "studio",
@@ -1331,8 +1298,7 @@ export const COMMANDS = {
     permission: "inspect",
     capability: null,
     mutates: false,
-    // The form in the conversation is the row. An activity line above it saying
-    // a question was asked would be the question told twice.
+    // The form in the conversation is already the row.
     silent: true,
     summary: "Put a question to the user and wait for the answer.",
   },
@@ -1343,8 +1309,7 @@ export const COMMANDS = {
     permission: "inspect",
     capability: null,
     mutates: false,
-    // Read from the server's own journal, so it answers with Studio closed —
-    // which is exactly when someone wants to read what was done to the place.
+    // Read from the server's own journal, so it answers with Studio closed.
     silent: true,
     summary: "List the DataModel changes recorded in this session, with what each one changed.",
   },
@@ -1444,13 +1409,12 @@ export const TOOL_NAMES = {
   "assets.info": "studio_asset_info",
   "assets.insert": "studio_insert_asset",
 
-  // Not a Studio tool and not named like one: this one reaches past the place
-  // to the person, and it is the only tool here that works with Studio closed.
+  // Not a Studio tool and not named like one: it reaches past the place to the
+  // person, and works with Studio closed.
   "ask.user": "ask_user",
 
-  // Read and written by the app's own review panel. An agent has the change
-  // journal stripped out of its results by design, so none of this is a tool it
-  // could use.
+  // The app's own review panel. An agent has the change journal stripped out of
+  // its results, so none of this is reachable as a tool.
   "changes.list": null,
   "changes.revert": null,
   "changes.apply": null,
@@ -1555,14 +1519,9 @@ export interface GrepFile {
 }
 
 /**
- * Whether what was just written compiles.
- *
- * Returned by every script write, because the alternative is that a missing
- * `end` is discovered by starting a playtest and reading the output — three
- * round trips to learn something the compiler knew at the moment of the write.
- * The write still happens: a script that does not compile yet is a normal state
- * to be in halfway through a change, and refusing it would make the next edit
- * impossible.
+ * Whether what was just written compiles. Returned by every script write; the
+ * write still happens, since a script that does not compile yet is a normal
+ * state halfway through a change.
  */
 export interface SyntaxCheck {
   ok: boolean;
@@ -1589,11 +1548,9 @@ export interface ReplaceFile {
 }
 
 /**
- * One member of a class, as the live engine reports it.
- *
- * `kind` separates the three things an agent can do with a name — read it, call
- * it, connect to it — because indexing an event and indexing a property look
- * identical until one of them fails.
+ * One member of a class, as the live engine reports it. `kind` separates the
+ * three things an agent can do with a name — read it, call it, connect to it —
+ * which look identical until one of them fails.
  */
 export interface ClassMember {
   name: string;
@@ -1756,13 +1713,9 @@ export interface MutationResult {
   /** Undo waypoint name recorded in Studio, when undo history was available. */
   undoLabel: string | null;
   /**
-   * Before and after, for the change journal.
-   *
-   * The server takes these out of the result before it reaches the agent. They
-   * are for the user's review panel, not for the model: the old source of a
-   * script it just rewrote is the single largest thing this protocol can carry,
-   * and handing it back to the agent that supplied the new one would double the
-   * cost of every write to say nothing it does not already know.
+   * Before and after, for the change journal. The server takes these out of the
+   * result before it reaches the agent: they are for the review panel, and a
+   * script's old source is the largest thing this protocol can carry.
    */
   changes?: import("./changes.js").ChangeDraft[];
 }
@@ -1783,12 +1736,9 @@ export interface SearchResult {
 }
 
 /**
- * One Creator Store listing.
- *
- * `scriptCount` and `free` are the two fields that decide whether an asset can
- * be used at all: a paid asset the user does not own will not insert, and a
- * model carrying scripts brings someone else's code into the place along with
- * the geometry.
+ * One Creator Store listing. `scriptCount` and `free` decide whether an asset
+ * can be used: a paid asset the user does not own will not insert, and a model
+ * carrying scripts brings someone else's code into the place.
  */
 export interface StoreAsset {
   id: number;
@@ -1797,8 +1747,7 @@ export interface StoreAsset {
   description: string;
   /**
    * Null for an asset outside the kinds this searches — a shirt, a plugin, a
-   * badge. An id an agent found on the web can be any of them, and calling one
-   * a model because it was asked for a model would be a guess.
+   * badge. An id found on the web can be any of them.
    */
   kind: AssetKind | null;
   /** Roblox's own asset type number, which says what it is when `kind` does not. */
@@ -1897,8 +1846,8 @@ export interface CommandResults {
     truncated: boolean;
   };
 
-  // `multiplayerPhase` is "idle" rather than absent when there is no session, so
-  // it never has to be told apart from a plugin too old to report one.
+  // "idle" rather than absent when there is no session, so it is never confused
+  // with a plugin too old to report one.
   "run.state": RunState & { mode: PlaytestMode | null; multiplayerPhase: MultiplayerPhase };
   "run.start": RunState & { ready: boolean };
   "run.stop": RunState;
@@ -1920,9 +1869,8 @@ export interface CommandResults {
     realm: StudioRealm;
   };
 
-  // `delivered: true` and nothing else would be a claim these operations are
-  // not in a position to make. The realm says which world the input went into,
-  // which is the part an agent can check against what it expected.
+  // The realm says which world the input went into, which an agent can check
+  // against what it expected. `delivered` alone would claim more than is known.
   "input.key": { delivered: true; key: string; action: string; realm: StudioRealm };
   "input.text": { delivered: true; length: number; realm: StudioRealm };
   "input.mouse": { delivered: true; position: { x: number; y: number }; realm: StudioRealm };

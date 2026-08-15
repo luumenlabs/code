@@ -1,10 +1,7 @@
 /**
- * The single path every Roblox operation takes.
- *
- * Validation, permissions, capability gating, routing, and the activity log all
- * live here so the harness and MCP get identical behaviour. An external agent
- * connected over MCP is not a second-class client; it runs through this exact
- * code. Spec sections 21 and 25.
+ * The single path every Roblox operation takes. Validation, permissions,
+ * capability gating, routing, and the activity log all live here, so the
+ * harness and an external MCP client get identical behaviour.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -80,10 +77,8 @@ export interface ExecuteContext {
   sessionId?: string;
   realm?: StudioRealm;
   /**
-   * The conversation this was issued for, when the caller knows of one.
-   *
-   * Several coding agents share this server, one per chat in the app, and the
-   * operation stream is common to all of them. This is how their work is told
+   * The conversation this was issued for, when the caller knows of one. Several
+   * agents share this server, one per chat, and this is how their work is told
    * apart. An external MCP client has no chat and sends nothing.
    */
   chat?: string;
@@ -153,15 +148,13 @@ export class Dispatcher {
     };
 
     // A silent operation is the app reading its own bookkeeping, and produces
-    // no row at either end — a running row that is never resolved would be
-    // worse than none at all.
+    // no row at either end.
     if (!silent) this.deps.bus.emit({ type: "activity", activity });
 
     try {
       const raw = await this.route(op, params, context, activity);
-      // The journal comes off here, before anything else sees the result: what
-      // the agent gets back must not carry the old source of the script it just
-      // rewrote.
+      // The journal comes off before anything else sees the result: the agent
+      // must not get back the old source of the script it just rewrote.
       const { changes, result } = takeChanges(raw);
       const normalized = nilTagsToNulls(result);
 
@@ -198,11 +191,9 @@ export class Dispatcher {
   }
 
   /**
-   * Files what an operation changed, and tells the app.
-   *
-   * Failures are not journalled: an operation that raised either did nothing or
-   * was rolled back by the recording it ran inside, and a record of a change
-   * that did not happen is a revert button that breaks something.
+   * Files what an operation changed, and tells the app. Failures are not
+   * journalled: an operation that raised either did nothing or was rolled back
+   * by the recording it ran inside.
    */
   private journal(op: Op, changes: unknown, activity: ActivityEvent, context: ExecuteContext): void {
     if (changes === null || changes === undefined) return;
@@ -265,11 +256,10 @@ export class Dispatcher {
 
     if (state?.available) return;
 
-    // Being unable to reach the Studio window at all is the real story, and it
-    // deserves its own code: an agent can act on "not connected" or "that window
-    // closed", but "capability unavailable" sends it looking for a Studio
-    // feature that was never the problem. Checked after the report so anything
-    // that works without Studio, like a screenshot, is untouched.
+    // "Not connected" and "that window closed" are things an agent can act on;
+    // "capability unavailable" sends it after a Studio feature that was never
+    // the problem. Checked after the report, so anything that works without
+    // Studio is untouched.
     const unreachable = this.deps.sessions.targetError(context);
     if (unreachable) throw unreachable;
 
@@ -357,10 +347,9 @@ export class Dispatcher {
           includeReverted: params.includeReverted as boolean,
         });
 
-      // The document's storage format is the protocol's, not Studio's, so the
-      // plugin moves a script source and the wrapper is put on and taken off
-      // here. Fields are read defensively: a plugin too old to know the
-      // operation is the same answer as a place with no rules.
+      // The plugin moves a script source; the protocol's wrapper goes on and
+      // comes off here. Read defensively: a plugin too old for the operation
+      // answers the same as a place with no rules.
       case "rules.get": {
         const answer = (await this.sendToStudio(op, params, context)) as Record<string, unknown>;
         const source = typeof answer.source === "string" ? answer.source : null;
@@ -376,9 +365,8 @@ export class Dispatcher {
       case "rules.set":
         return this.sendToStudio(op, { source: wrapRules(params.text as string) }, context);
 
-      // Held open for as long as the user takes. Nothing else in the dispatcher
-      // waits on a person, so this is the one operation whose timeout is not a
-      // guess about a machine.
+      // Held open for as long as the user takes; this is the one operation
+      // whose timeout is not a guess about a machine.
       case "ask.user":
         return this.deps.ask.request({
           chat: context.chat,
@@ -410,13 +398,9 @@ export class Dispatcher {
   }
 
   /**
-   * Puts recorded changes back.
-   *
-   * The work is Studio's — only it can read the live values, and only it holds
-   * the copies of deleted subtrees — so this resolves the ids, hands the records
-   * over, and files what came back. Ordering is the one thing that cannot be
-   * left to the caller: `resolve` returns newest first, because a run of changes
-   * to one instance only composes when the last write is taken back first.
+   * Puts recorded changes back. The work is Studio's, so this resolves the ids,
+   * hands the records over, and files what came back. `resolve` returns newest
+   * first: a run of changes to one instance only composes in that order.
    */
   private async revert(
     ids: string[],
@@ -517,8 +501,7 @@ export class Dispatcher {
 
   /**
    * The in-engine path is the default and never silently falls back to the
-   * desktop one: they photograph different things, and "is this GUI centred?"
-   * gets a wrong answer from the wrong picture. A failure names the alternative.
+   * desktop one: they photograph different things. A failure names the other.
    */
   private async screenshot(
     request: { source: "viewport" | "window" | "screen"; maxWidth: number },
@@ -538,13 +521,9 @@ export class Dispatcher {
   }
 
   /**
-   * The in-engine path, aimed at whichever peer has a window to photograph.
-   *
-   * During a playtest that is the client, because the server DataModel does not
-   * render at all; in edit mode it is the edit peer. A peer whose window is
-   * minimised is skipped rather than sent to, since capture there waits for a
-   * frame that never arrives and then reports a timeout that says nothing about
-   * the real cause.
+   * The in-engine path, aimed at whichever peer has a window to photograph: the
+   * client during a playtest, the edit peer otherwise. A minimised window is
+   * skipped, since capture there waits for a frame that never arrives.
    */
   private async captureViewport(maxWidth: number, context: ExecuteContext): Promise<ScreenshotResult> {
     let peers: PeerRef[];
@@ -552,13 +531,11 @@ export class Dispatcher {
     try {
       peers = this.deps.sessions.peers(context);
     } catch (error) {
-      // Studio being unreachable is a fine reason to fail, but the caller asked
-      // for a picture and there may still be a way to take one. Say so, rather
-      // than leaving them with a connection error and no next step.
+      // Studio is unreachable, but there may still be a way to take a picture.
       throw new LuuCodeError("SCREENSHOT_FAILED", LuuCodeError.from(error).message, {
         hint: this.deps.getDesktopCaptureProvider()
           ? 'Capturing the viewport needs the Studio plugin. Use source "window" to photograph the Studio window from the desktop instead.'
-          : "Open the place in Studio and approve the Luu Code connection panel.",
+          : "Open the place in Roblox Studio; the plugin connects on its own.",
         cause: error,
       });
     }
@@ -608,9 +585,8 @@ export class Dispatcher {
   }
 
   /**
-   * Output is stored per Studio session, and read through the same routing as
-   * everything else — a chat reads the output of the window it is working in,
-   * not of whichever one is selected on screen.
+   * Output is stored per Studio session and read through the same routing as
+   * everything else: a chat reads the output of the window it works in.
    */
   private sessionKey(context: ExecuteContext): string {
     return this.deps.sessions.sessionKeyFor(context);
@@ -618,11 +594,8 @@ export class Dispatcher {
 }
 
 /**
- * Studio's answer, made safe to read.
- *
- * Luau omits a nil field rather than sending null, so an outcome with nothing to
- * say arrives without a `reason` at all — and every consumer of this type is
- * entitled to find one there.
+ * Studio's answer, made safe to read. Luau omits a nil field rather than
+ * sending null, so an outcome with nothing to say arrives with no `reason` key.
  */
 function normalizeOutcomes(raw: unknown): RevertOutcome[] {
   if (!Array.isArray(raw)) return [];
@@ -653,13 +626,10 @@ function pick(context: ExecuteContext): SessionTarget {
 }
 
 /**
- * A realm the caller asked for by parameter, which outranks the one implied by
- * the connection they happen to be on.
- *
- * `runtime.exec` is the operation that needs this. During a playtest the client
- * and the server see different worlds, and running a probe in whichever
- * DataModel was selected answered about the wrong one roughly half the time —
- * plausibly enough that the mistake was not obvious.
+ * A realm the caller asked for by parameter, outranking the one implied by
+ * their connection. `runtime.exec` needs it: during a playtest the client and
+ * the server see different worlds, and a probe in the wrong one answers
+ * plausibly and wrongly.
  */
 function realmFor(params: Record<string, any>): StudioRealm | undefined {
   const realm = params.realm;
@@ -674,9 +644,8 @@ function timeoutFor(op: Op, params: Record<string, any>): number {
     return params.timeoutMs + 5_000;
   }
 
-  // An operation that watches for a span cannot answer during it. Without this
-  // a thirty-second measurement is abandoned at fifteen, and the failure names
-  // Studio rather than the duration the caller chose.
+  // An operation that watches for a span cannot answer during it, so the span
+  // is added to the budget rather than counted against it.
   if (typeof params.durationMs === "number") {
     return params.durationMs + (SLOW_OPS[op] ?? DEFAULT_TIMEOUT_MS);
   }

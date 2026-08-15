@@ -43,10 +43,8 @@ export function Composer({
 
   /**
    * The question the agent is waiting on, and the answer being built for it.
-   *
-   * Drafts are kept here rather than in the panel because the box below is
-   * where the written answer is typed — the two halves of one answer, and the
-   * rule that one clears the other only works if they share a state.
+   * Drafts live here rather than in the panel: the box below is where a written
+   * answer is typed, and one has to be able to clear the other.
    */
   const ask = harness.pendingAsk;
   const [index, setIndex] = React.useState(0);
@@ -57,9 +55,7 @@ export function Composer({
   const answered = question ? resolveDraft(question, draft) !== null : false;
   const last = ask ? index >= ask.questions.length - 1 : true;
 
-  // Every question answered, wherever you are standing. Going back to change
-  // one and then having to click Next past answers you have already given
-  // would be the form making you prove it twice.
+  // Every question answered, wherever you are standing in the set.
   const complete = ask?.questions.every((entry) => resolveDraft(entry, drafts[entry.id]) !== null) ?? false;
 
   // A new question starts at the top with nothing filled in.
@@ -137,8 +133,7 @@ export function Composer({
 
     for (const entry of ask.questions) {
       const answer = resolveDraft(entry, drafts[entry.id]);
-      // Nothing is sent half-filled: the agent would read a missing answer as
-      // an answer, which is the guess this whole tool exists to prevent.
+      // Never half-filled: a missing answer would read to the agent as one.
       if (answer === null) return;
       answers.push({ questionId: entry.id, question: entry.question, answer });
     }
@@ -148,9 +143,8 @@ export function Composer({
 
   /**
    * Send once nothing is outstanding, otherwise go to whatever still is.
-   *
    * Stepping to the next index would strand you on the last question with an
-   * earlier one blank and a button that does nothing.
+   * earlier one blank.
    */
   const advance = (): void => {
     if (!ask || !question || !answered) return;
@@ -164,23 +158,21 @@ export function Composer({
     if (outstanding !== -1) setIndex(outstanding);
   };
 
-  // Drafts are kept per question id, so stepping back and forth keeps every
-  // answer already given rather than clearing the ones you walked past.
+  // Drafts are kept per question id, so stepping back and forth keeps them.
   const back = (): void => setIndex((current) => Math.max(0, current - 1));
   const next = (): void => {
     if (answered && !last) setIndex((current) => current + 1);
   };
 
-  // Read by the auto-advance timer, which would otherwise fire against the
-  // draft as it was before the option was picked.
+  // The auto-advance timer would otherwise fire against the draft as it was
+  // before the option was picked.
   const advanceRef = React.useRef(advance);
   advanceRef.current = advance;
 
   const onToggle = React.useCallback((entry: AskQuestion, label: string): void => {
     setDrafts((current) => ({ ...current, [entry.id]: toggleOption(entry, current[entry.id], label) }));
 
-    // One choice is the whole answer, so picking it moves on rather than
-    // waiting for a press of Next that has nothing left to decide.
+    // One choice is the whole answer, so picking it moves on.
     if (!entry.multiple) window.setTimeout(() => advanceRef.current(), 200);
   }, []);
 
@@ -194,8 +186,7 @@ export function Composer({
 
   return (
     <div className="shrink-0 px-7 pt-1 pb-5">
-      {/* Same width as the transcript's column, so the box lines up with the
-          conversation above it rather than sitting a little wider. */}
+      {/* Same width as the transcript's column, so the two line up. */}
       <div className="mx-auto w-full max-w-[804px]">
         <div
           onDragOver={(event) => {
@@ -313,8 +304,8 @@ export function Composer({
               </Button>
             </Hint>
 
-            {/* Stopping while a question is up dismisses it as well, so the
-                agent is told the user refused rather than left it to time out. */}
+            {/* Stopping while a question is up dismisses it too, so the agent
+                is told rather than left to time out. */}
             {harness.busy && (
               <Hint label={ask ? "Dismiss and stop" : "Stop"}>
                 <Button

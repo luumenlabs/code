@@ -22,15 +22,14 @@ local RunState = require(script.RunState)
 local Ui = require(script.Ui)
 
 -- Named for the channel, so a release, a nightly, and a dev plugin installed
--- together are three toolbars you can tell apart rather than one with three
--- identical buttons in it.
+-- together are three toolbars rather than one with three identical buttons.
 local label = Constants.label()
 
 RunState.start()
 
 -- The connection comes up first and the panel cannot take it down: Studio loads
--- this again in the playtest's DataModel, where building the toolbar and widget
--- against ids that already exist threw and left that DataModel unconnected.
+-- this again in the playtest's DataModel, where building a toolbar and widget
+-- against ids that already exist throws.
 Client.start(plugin)
 
 plugin.Unloading:Connect(function()
@@ -38,17 +37,12 @@ plugin.Unloading:Connect(function()
 end)
 
 --[[
-	The panel belongs to the edit DataModel and only to it.
+	The panel belongs to the edit DataModel and only to it. Studio runs this
+	again inside each DataModel a playtest creates, and they share one widget —
+	so a playtest peer that drew the panel would leave it behind, frozen, when
+	that DataModel died.
 
-	Studio runs this again inside each DataModel a playtest creates, and those
-	instances were building the panel too — into the same widget, since Studio
-	hands back the one it already has for an id. The last one to build won, so
-	the panel on screen belonged to a playtest peer: it reported "Playtest ·
-	client" from a Client of its own, and when the playtest ended that DataModel
-	died and left the panel behind, frozen on the last thing it had to say.
-
-	The connection above is deliberately outside this. Every peer connects; only
-	one of them draws.
+	The connection above is outside this: every peer connects, one draws.
 ]]
 local panelOk, panelProblem = pcall(function()
 	if RunService:IsRunning() then
@@ -69,9 +63,7 @@ local panelOk, panelProblem = pcall(function()
 		toggleButton:SetActive(widget.Enabled)
 	end)
 
-	-- The pressed state follows the panel and nothing else. It used to follow the
-	-- connection too, so the button lit up while a pairing code was waiting;
-	-- with nothing to approve there is nothing for it to announce.
+	-- The pressed state follows the panel and nothing else.
 	widget:GetPropertyChangedSignal("Enabled"):Connect(function()
 		toggleButton:SetActive(widget.Enabled)
 	end)

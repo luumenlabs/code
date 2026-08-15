@@ -1,9 +1,7 @@
 /**
- * Asking the user, end to end through the dispatcher.
- *
- * No fake plugin anywhere in here, deliberately: a question is the one
- * operation that has nothing to do with Studio, and it has to work with Studio
- * closed. Every test below runs against a server with no session connected.
+ * Asking the user, end to end through the dispatcher. No fake plugin in here: a
+ * question is the one operation that has to work with Studio closed, so every
+ * test runs against a server with no session connected.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

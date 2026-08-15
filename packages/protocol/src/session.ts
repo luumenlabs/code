@@ -5,23 +5,19 @@
 /**
  * Which DataModel a plugin connection is attached to.
  *
- * Studio does not keep one stable DataModel across a playtest. Starting "Run"
- * keeps a server DataModel with no player; starting "Play" produces a client
- * DataModel where LocalPlayer and PlayerGui exist. The plugin reports which one
- * it is in so an agent never mistakes a missing LocalPlayer for a bug.
- * Spec sections 13 and 15.
+ * Studio does not keep one stable DataModel across a playtest. "Run" keeps a
+ * server DataModel with no player; "Play" produces a client DataModel where
+ * LocalPlayer and PlayerGui exist. The plugin reports which one it is in, so a
+ * missing LocalPlayer is never mistaken for a bug.
  */
 export type StudioRealm = "edit" | "server" | "client" | "unknown";
 
 export type PlaytestMode = "play" | "run";
 
 /**
- * How far a `StudioTestService` multiplayer session has got.
- *
- * `ExecuteMultiplayerTestAsync` yields for the whole life of the test, so the
- * edit peer that called it cannot answer questions about it. The phase is
- * tracked alongside instead, and is what `run.multiplayer` with action "status"
- * reports.
+ * How far a `StudioTestService` multiplayer session has got. The edit peer
+ * cannot answer — `ExecuteMultiplayerTestAsync` yields for the life of the test
+ * — so the phase is tracked alongside and reported by `run.multiplayer`.
  */
 export type MultiplayerPhase = "idle" | "starting" | "running" | "completed" | "failed";
 
@@ -34,32 +30,25 @@ export interface RunState {
   mode: PlaytestMode | null;
   realm: StudioRealm;
   /**
-   * Increments on every edit/run transition. Handles are stamped with the epoch
-   * they were created in, so a runtime handle can never be replayed against an
-   * edit-time instance. Spec section 30.
+   * Increments on every edit/run transition. Handles carry the epoch they were
+   * created in, so a runtime handle cannot be replayed against an edit-time
+   * instance.
    */
   epoch: number;
   /** True once a LocalPlayer and character exist, where applicable. */
   ready: boolean;
   /**
-   * Players present in this DataModel. Zero in Run mode and in edit, one in an
-   * ordinary Play session, and however many joined a multiplayer test.
-   *
-   * Absent from plugins older than this field, which is why every reader treats
-   * it as optional rather than defaulting it to zero: "no answer" and "no
-   * players" are different things.
+   * Players present in this DataModel. Absent from plugins older than this
+   * field, and readers keep it optional: "no answer" is not "no players".
    */
   playerCount?: number;
   /** True when this peer belongs to a StudioTestService multiplayer session. */
   multiplayer?: boolean;
   /**
-   * Whether the Studio window is drawing frames.
-   *
-   * A minimized window keeps running scripts but suspends rendering *and* input
-   * processing, so virtual input silently does nothing and a screenshot never
-   * completes. Reported so those two can fail with the real reason instead of a
-   * timeout or a false success. Absent on a peer that has no render loop to
-   * watch, such as a multiplayer test's server DataModel.
+   * Whether the Studio window is drawing frames. A minimized window keeps
+   * running scripts but suspends rendering and input, so virtual input does
+   * nothing and a screenshot never completes — reported so both can fail with
+   * the real reason. Absent on a peer with no render loop.
    */
   rendering?: boolean;
   /**
@@ -88,26 +77,16 @@ export interface PlaceInfo {
   /** True when the place has never been saved or published. */
   unsaved: boolean;
   /**
-   * A stable identifier for this game, decided by the plugin.
-   *
-   * Absent when Studio has nothing durable to key on — an unpublished place
-   * belonging to no universe has no id, and Studio does not expose the file it
-   * was opened from. Names are deliberately not used as a fallback: two places
-   * called "Baseplate" are two places, and merging them silently mixed their
-   * conversations together. Also absent from plugins older than this field.
+   * A stable identifier for this game, decided by the plugin. Absent when
+   * Studio has nothing durable to key on, and absent from older plugins. Names
+   * are never a fallback: two places called "Baseplate" are two places.
    */
   identity?: string;
   /**
-   * Where `name` came from, because the two are not equally trustworthy.
-   *
-   * `published` is the name Roblox has on file for the place id, resolved
-   * after the handshake. `datamodel` is `game.Name`, which is the only thing
-   * available for a place that has never been published — and which Studio
-   * does not keep in step with anything. A place made with File → New is
-   * called "Place1" forever, whatever the file it was saved to is called, and
-   * the tab title Studio shows is the file name, which no plugin API exposes.
-   *
-   * Absent from plugins older than this field.
+   * Where `name` came from. `published` is what Roblox has on file for the
+   * place id, resolved after the handshake. `datamodel` is `game.Name`, which
+   * Studio keeps in step with nothing — a File → New place stays "Place1"
+   * whatever it was saved as. Absent from older plugins.
    */
   nameSource?: "published" | "datamodel";
   /** The user or group that owns the experience. 0 when unpublished. */

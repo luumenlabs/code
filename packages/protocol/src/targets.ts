@@ -1,5 +1,5 @@
 /**
- * How an operation names the instance it wants to act on. Spec sections 10.3 and 30.
+ * How an operation names the instance it wants to act on.
  *
  * A target is a single string so agents only have to learn one concept:
  *

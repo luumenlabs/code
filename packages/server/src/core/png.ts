@@ -1,10 +1,7 @@
 /**
- * RGBA to PNG.
- *
- * The plugin reads the viewport's pixels but cannot encode them: PNG is deflate
- * and Luau has no compressor, so raw pixels cross the wire and Node's zlib does
- * the rest. Hand-rolled rather than a dependency, because a native image library
- * in a server shipping on three platforms is out of proportion to sixty lines.
+ * RGBA to PNG. The plugin reads the viewport's pixels but cannot encode them —
+ * PNG is deflate and Luau has no compressor — so raw pixels cross the wire and
+ * Node's zlib does the rest.
  */
 import { deflateSync } from "node:zlib";
 
@@ -45,10 +42,8 @@ function chunk(type: string, body: Buffer): Buffer {
 }
 
 /**
- * Encodes 8-bit RGBA pixels, row-major and top-down.
- *
- * Filter type 0 on every scanline: real filters buy about a quarter off the size
- * for a pass per row, and an agent is waiting on this.
+ * Encodes 8-bit RGBA pixels, row-major and top-down. Filter type 0 on every
+ * scanline: real filters cost a pass per row, and an agent is waiting.
  */
 export function encodePng(rgba: Buffer, width: number, height: number): Buffer {
   const expected = width * height * 4;

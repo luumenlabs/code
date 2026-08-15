@@ -1,9 +1,7 @@
 /**
- * The MCP server that fronts the Roblox integration.
- *
- * It is a thin adapter: every call goes through the same dispatcher the
- * first-party harness uses, so an external agent gets identical validation,
- * permissions, and failure reporting. Spec section 21.
+ * The MCP server that fronts the Roblox integration. A thin adapter: every call
+ * goes through the same dispatcher the harness uses, so an external agent gets
+ * identical validation, permissions, and failure reporting.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -15,14 +13,10 @@ import { MCP_TOOLS, findTool, toolSchema } from "./tools.js";
 export interface McpBackend {
   execute(op: string, params: unknown, context: { origin: "mcp" }): Promise<unknown>;
   /**
-   * Operations the user has turned off.
-   *
-   * A tool that is off is left out of the list rather than offered and refused:
-   * an agent picks from what it is shown, and a menu with entries that always
-   * fail wastes a call and a turn each time. Asked once per list request rather
-   * than per tool, and asked fresh, because the answer changes while an agent
-   * is running. Optional, so a backend that does not model permissions — the
-   * tests do not — advertises everything.
+   * Operations the user has turned off, left out of the list rather than
+   * offered and refused: an agent picks from what it is shown. Asked once per
+   * list request and asked fresh, since the answer changes while an agent runs.
+   * Optional, so a backend that does not model permissions advertises all.
    */
   blockedOps?(): Promise<readonly string[]>;
   /** Fires when that answer changes, so the client knows to ask again. */
@@ -45,18 +39,15 @@ studio_status reports whether Studio is connected and which place is open; nothi
 
 export function createMcpServer(backend: McpBackend): Server {
   const server = new Server(MCP_SERVER_INFO, {
-    // listChanged is declared because the user can turn a tool off while an
-    // agent is mid-conversation. Without the notification the client keeps
-    // offering the list it fetched when it connected, and the first the agent
-    // hears of the change is a refusal.
+    // listChanged, because the user can turn a tool off mid-conversation.
+    // Without it the client keeps the list it fetched when it connected.
     capabilities: { tools: { listChanged: true } },
     instructions: INSTRUCTIONS,
   });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // A backend that cannot answer advertises everything. Hiding tools because
-    // a permissions lookup failed would look identical to the user having
-    // turned them off, and an agent would take the shorter menu at face value.
+    // A backend that cannot answer advertises everything: hiding tools because
+    // a lookup failed is indistinguishable from the user turning them off.
     const blocked = new Set((await backend.blockedOps?.().catch(() => [])) ?? []);
 
     return {
@@ -82,10 +73,8 @@ export function createMcpServer(backend: McpBackend): Server {
     }
 
     try {
-      // Not short-circuited on `allowed` here. A client working from a list it
-      // fetched before the user changed something should get the dispatcher's
-      // refusal, which names the tool and says where to turn it back on —
-      // rather than a second, thinner version of the same message from here.
+      // Not short-circuited on `allowed`: a client working from a stale list
+      // should get the dispatcher's refusal, which says where to turn it on.
       const result = await backend.execute(tool.op, request.params.arguments ?? {}, { origin: "mcp" });
       return successResult(tool.op, result);
     } catch (error) {
@@ -97,8 +86,7 @@ export function createMcpServer(backend: McpBackend): Server {
 }
 
 function successResult(op: string, result: unknown): CallToolResult {
-  // Screenshots go back as an image block so multimodal agents can actually
-  // look at them, which is the entire point of capturing one.
+  // Screenshots go back as an image block, so a multimodal agent can look.
   if (op === "view.screenshot") {
     const shot = result as ScreenshotResult;
     return {
@@ -122,11 +110,9 @@ function successResult(op: string, result: unknown): CallToolResult {
 }
 
 /**
- * Says which of the three pictures this is.
- *
- * They are not interchangeable: a viewport capture is what the experience is
- * drawing, and a window capture has Studio's own chrome around it, which moves
- * every coordinate in the image.
+ * Says which of the three pictures this is. A viewport capture is what the
+ * experience is drawing; a window capture has Studio's chrome around it, which
+ * moves every coordinate in the image.
  */
 function describeCapture(shot: ScreenshotResult): string {
   if (shot.source === "viewport") return `Captured the ${shot.realm ?? "Studio"} viewport`;

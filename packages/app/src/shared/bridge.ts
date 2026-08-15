@@ -1,9 +1,6 @@
 /**
- * The contract between the renderer and the main process.
- *
- * Kept narrow on purpose: the renderer can drive Roblox operations, the agent
- * session, and its own conversation history, and nothing else. Spec section 39
- * rules out turning this into a general local tooling surface.
+ * The contract between the renderer and the main process: Roblox operations,
+ * the agent session, and the conversation history, and nothing else.
  */
 import type { CapabilityReport, Op, PermissionGroup, ServerEvent, SessionStatus } from "@luumen/code-protocol";
 import type {
@@ -30,11 +27,8 @@ export interface HarnessSnapshot {
   /** The open conversation's session. Chats each have their own. */
   session: AgentSessionSnapshot;
   /**
-   * Every conversation's agent state, keyed by thread id.
-   *
-   * Conversations run in parallel, so "is something working" is a question per
-   * chat rather than per app — the sidebar needs all of them to know which rows
-   * to spin.
+   * Every conversation's agent state, keyed by thread id. Conversations run in
+   * parallel, so the sidebar needs all of them to know which rows to spin.
    */
   agentStates: Record<string, AgentState>;
   serverPort: number;
@@ -61,17 +55,13 @@ export interface LuuCodeBridge {
 
   /**
    * Sends a message, starting the CLI behind the chosen model if it is not
-   * already running. There is no separate "start the agent" step: the user
-   * picks a model, and the CLI that serves it follows.
+   * already running. There is no separate "start the agent" step.
    */
   sendMessage(text: string, attachments?: Attachment[]): Promise<void>;
   /** Stops the turn in the open conversation. Others keep working. */
   interruptAgent(): Promise<void>;
 
-  /**
-   * Applies a model together with its options, and with it the CLI that serves
-   * it. One call, because they are one choice.
-   */
+  /** Applies a model, its options, and with them the CLI that serves it. */
   applyModel(selection: import("./models.js").ModelSelection): Promise<import("./models.js").ModelSelection>;
 
   minimizeWindow(): Promise<void>;
@@ -80,7 +70,7 @@ export interface LuuCodeBridge {
   isWindowMaximized(): Promise<boolean>;
   onWindowStateChanged(listener: (maximized: boolean) => void): () => void;
 
-  // Conversation history. Spec section 45.
+  // Conversation history.
   /** Starts a draft. Returns null: nothing is stored until the first message. */
   newThread(): Promise<null>;
   openThread(id: string): Promise<Thread | null>;
@@ -121,17 +111,13 @@ export interface LuuCodeBridge {
   openReleases(): Promise<void>;
   revealPluginFolder(): Promise<void>;
 
-  /** Runs a Roblox operation from the UI, for the manual controls. */
   /**
-   * `chat` decides which Studio window this runs against, the same way an
-   * agent's own operations are routed. Omitted, it goes to the default.
+   * Runs a Roblox operation from the UI, for the manual controls. `chat` picks
+   * the Studio window; omitted, it goes to the default.
    */
   execute(op: string, params?: unknown, chat?: string): Promise<unknown>;
 
-  /**
-   * Empties Studio's output buffer without writing a row into the conversation:
-   * the user pressed Clear, so the transcript has nothing to record.
-   */
+  /** Empties Studio's output buffer without writing a row into the conversation. */
   clearStudioOutput(chat?: string): Promise<void>;
 
   onServerEvent(listener: (event: ServerEvent) => void): () => void;
@@ -150,9 +136,8 @@ export interface LuuCodeBridge {
   onVersionStatus(listener: (status: VersionStatus) => void): () => void;
   onModelSelectionChanged(listener: (selection: import("./models.js").ModelSelection) => void): () => void;
   /**
-   * The main process persists the transcript; this echoes what it stored, with
-   * the conversation it was stored against. Entries for a chat that is not open
-   * are already on disk and arrive with it when it is.
+   * Echoes what the main process stored, with the conversation it was stored
+   * against. Entries for a chat that is not open arrive with it when it opens.
    */
   onTranscript(listener: (payload: { threadId: string; entry: TranscriptEntry }) => void): () => void;
 }

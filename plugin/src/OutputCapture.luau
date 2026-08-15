@@ -1,11 +1,8 @@
 --!nonstrict
 --[[
-	Studio output capture. Spec section 14.
-
-	The point of this module is that the user should never have to copy an error
-	out of the Output window and paste it into the agent. Entries are buffered
-	locally and shipped up on the next sync, with the realm attached so the
-	agent knows whether it is reading a server or client failure.
+	Studio output capture, so nobody has to copy an error out of the Output
+	window by hand. Entries are buffered locally and shipped on the next sync,
+	with the realm attached so the agent knows which side failed.
 ]]
 
 local LogService = game:GetService("LogService")
@@ -31,11 +28,9 @@ local SEED_LIMIT = 300
 
 --[[
 	Messages taken from the log history, so the live listener does not report
-	them a second time.
-
-	MessageOut is deferred by a frame, so a message printed just before the
-	connection is made can still arrive through it. Keyed by second and text,
-	held only for as long as a deferred message could still be in flight.
+	them twice. MessageOut is deferred by a frame, so one printed just before
+	the connection can still arrive through it. Keyed by second and text, held
+	only while a deferred message could still be in flight.
 ]]
 local seeded: { [string]: boolean } = {}
 local seedGuardUntil = 0
@@ -98,12 +93,9 @@ local function push(messageType: string, message: string, stack: string?, second
 end
 
 --[[
-	Adopts what Studio already has in its log.
-
-	A runtime peer's plugin loads after the place's own scripts have started, so
-	everything printed up to that point — which is where a startup error lives —
-	is only ever visible in Studio's Output window. Without this the agent asks
-	why the place failed to start and is handed an empty buffer.
+	Adopts what Studio already has in its log. A runtime peer's plugin loads
+	after the place's own scripts have started, so everything printed up to that
+	point — including a startup error — would otherwise never be seen.
 ]]
 local function seedFromHistory()
 	local ok, history = pcall(function()

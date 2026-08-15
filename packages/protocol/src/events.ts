@@ -27,12 +27,9 @@ export type ServerEvent =
   | { type: "capabilities"; report: CapabilityReport }
   | { type: "activity"; activity: ActivityEvent }
   /**
-   * Journal records that were added or moved on, upserted by id.
-   *
-   * A revert re-sends the record it put back rather than announcing a removal:
-   * the row stays in the panel, struck through, because "this was changed and
-   * then taken back" is a different and more useful thing to be told than
-   * nothing at all.
+   * Journal records that were added or moved on, upserted by id. A revert
+   * re-sends the record it put back rather than announcing a removal, so the
+   * row stays in the panel struck through.
    */
   | { type: "changes"; records: ChangeRecord[] }
   /** Every record for a Studio window, dropped, because the window is gone. */
@@ -40,7 +37,7 @@ export type ServerEvent =
 
 /**
  * A single Roblox operation, described in Roblox terms rather than protocol
- * terms. This is what the harness renders in the transcript. Spec section 33.
+ * terms. This is what the harness renders in the transcript.
  */
 export interface ActivityEvent {
   id: string;
@@ -48,13 +45,9 @@ export interface ActivityEvent {
   /** Who issued it, so the user can tell the harness agent from an MCP client. */
   origin: "harness" | "mcp" | "internal";
   /**
-   * Which conversation asked for it, when the caller said.
-   *
-   * The app runs a coding agent per chat, all at once, and this operation
-   * stream is shared by every one of them. Without the label there is no way to
-   * tell whose work an operation is, and it would be filed against whichever
-   * chat happened to be on screen. Null for an external MCP client, which has
-   * no conversation in this app to belong to.
+   * Which conversation asked for it, when the caller said. The app runs a
+   * coding agent per chat and they share this stream. Null for an external MCP
+   * client, which has no conversation here to belong to.
    */
   chat: string | null;
   /** Human-readable summary, for example "Changed Source on ServerScriptService.Shop". */
@@ -67,9 +60,6 @@ export interface ActivityEvent {
   error: WireError | null;
   /** Instances the operation touched, for click-through in the UI. */
   instances: InstanceRef[];
-  /**
-   * Present for screenshots so the harness can show what the agent saw in the
-   * conversation, rather than leaving the user to guess. Spec section 22.
-   */
+  /** Present for screenshots, so the conversation can show what the agent saw. */
   image: { data: string; mimeType: string; width: number; height: number } | null;
 }

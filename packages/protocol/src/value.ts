@@ -57,13 +57,10 @@ const VALUE_DESCRIPTION = [
 ].join(" ");
 
 /**
- * Deliberately unconstrained.
- *
- * The authoritative decoder lives in the Studio plugin, which knows every
- * datatype the running Studio build supports and reports a precise
- * INVALID_PARAMS when a value does not fit. Modelling the recursive union here
- * instead would add nothing at runtime and would collapse to `any` in the JSON
- * Schema that MCP clients read, replacing this description with nothing useful.
+ * Deliberately unconstrained. The authoritative decoder is in the Studio
+ * plugin, which knows every datatype the running build supports and reports a
+ * precise INVALID_PARAMS. A recursive union here would collapse to `any` in the
+ * JSON Schema MCP clients read, replacing this description with nothing.
  */
 export const rbxValueSchema = z.any().describe(VALUE_DESCRIPTION) as z.ZodType<RbxValue>;
 

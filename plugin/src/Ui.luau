@@ -1,13 +1,8 @@
 --!nonstrict
 --[[
-	The Studio-side connection panel.
-
-	It reports and does not act. There is one question left for it to answer —
-	is Studio connected — because the connection is the product and this panel
-	is not. It carried a Reconnect and a Forget this pairing button, and a
-	six-digit code to approve; the buttons did nothing the retry loop was not
-	already doing within ten seconds, and the code asked the user to vouch for
-	one half of a program to its other half. Recovery belongs in the app.
+	The Studio-side connection panel. It reports and does not act: the one
+	question it answers is whether Studio is connected, and recovery belongs in
+	the app. The retry loop reconnects within ten seconds either way.
 
 	Tokens come from Theme.luau, a port of the app's stylesheet, because the two
 	are usually on screen side by side.
@@ -33,9 +28,8 @@ local function studioVersion(): string
 		return "unknown"
 	end
 
-	-- "0.733.0.7330989" is four components of build metadata, of which two are
-	-- the version anyone means. The rest costs a line of a very narrow panel to
-	-- say nothing a person reads.
+	-- "0.733.0.7330989" is four components, of which two are the version anyone
+	-- means, in a very narrow panel.
 	local major, minor = string.match(tostring(result), "^(%d+)%.(%d+)")
 	return major and string.format("%s.%s", major, minor) or tostring(result)
 end
@@ -65,12 +59,9 @@ function Ui.create(hostPlugin: Plugin)
 	widget.Title = Constants.label()
 	widget.Name = "LuuCode" .. Constants.suffix()
 
-	-- Studio hands back the same widget for an id it has already seen, and it
-	-- runs this plugin again in the playtest's DataModel. Building a second
-	-- panel into the widget leaves two stacked on each other, the newer one
-	-- wired to a Client that belongs to a DataModel on its way out — which is
-	-- how the panel ends up a blank rectangle after pressing Play. The old one
-	-- goes before the new one is built.
+	-- Studio hands back the same widget for an id it has seen, and runs this
+	-- plugin again in the playtest's DataModel. Building a second panel into it
+	-- leaves two stacked, the newer wired to a Client on its way out.
 	for _, existing in ipairs(widget:GetChildren()) do
 		existing:Destroy()
 	end
@@ -121,9 +112,8 @@ function Ui.create(hostPlugin: Plugin)
 
 	-- Details -----------------------------------------------------------------
 	--
-	-- The same four the app's Studio panel lists, in the same order. No Port row:
-	-- the port is only worth knowing when nothing is connecting, and the message
-	-- above names it when that happens.
+	-- The same four the app's Studio panel lists, in the same order. No Port
+	-- row: the message above names the port when nothing is connecting.
 
 	Theme.spacer(scroll, Theme.space.tight, 60)
 
@@ -146,9 +136,7 @@ function Ui.create(hostPlugin: Plugin)
 		local place = state.place
 		placeName.Text = place and place.name or "No place open"
 
-		-- The status word already says "Connected"; repeating it underneath is
-		-- noise in a panel this narrow. A message only earns its card when it
-		-- tells the user something the status does not.
+		-- A message earns its card only when it says what the status does not.
 		local message = state.message
 		messageCard.Visible = type(message) == "string" and #message > 0 and state.status ~= "connected"
 		messageText.Text = message or ""
@@ -162,8 +150,7 @@ function Ui.create(hostPlugin: Plugin)
 			modeValue.Text = "Edit"
 		end
 
-		-- An unpublished place has neither id. The rows are hidden rather than
-		-- filled with a zero, which looks like an id and is not one.
+		-- An unpublished place has neither id, and a zero looks like one.
 		local hasPlaceId = place ~= nil and type(place.placeId) == "number" and place.placeId > 0
 		placeRow.Visible = hasPlaceId
 		placeValue.Text = hasPlaceId and tostring(place.placeId) or ""

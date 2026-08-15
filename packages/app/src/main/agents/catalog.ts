@@ -1,12 +1,7 @@
 /**
- * What models the user can actually run.
- *
- * Hardcoding a model list guarantees it is wrong: a slug is added, one is
- * retired, and the app quietly offers something that no longer exists while
- * hiding something that does. Codex answers this question itself over the
- * app-server protocol, so Luu Code asks rather than guesses. Claude Code has no
- * equivalent call, so its catalogue is declared but gated on the installed CLI
- * version.
+ * What models the user can actually run. Codex answers over the app-server
+ * protocol, so it is asked. Claude Code has no equivalent call, so its
+ * catalogue is declared and gated on the installed CLI version.
  */
 import type { AgentInfo } from "../../shared/agent.js";
 import { CLAUDE_MODELS, CODEX_FALLBACK_MODELS, compareVersions } from "../../shared/models.js";
@@ -59,11 +54,7 @@ export interface CatalogResult {
   problem: string | null;
 }
 
-/**
- * "gpt-5.6-sol" reads as a slug; "GPT-5.6-Sol" reads as a product. Codex sends
- * the latter inconsistently cased, so it is normalised the same way the CLI's
- * own clients do.
- */
+/** Codex sends the display name inconsistently cased. */
 function displayName(model: CodexModel): string {
   return model.displayName.replace(/^gpt/i, "GPT").replace(/-([a-z])/g, (_, letter: string) => `-${letter.toUpperCase()}`);
 }
@@ -138,11 +129,9 @@ function applyPreferredDefault(models: ModelInfo[]): ModelInfo[] {
 }
 
 /**
- * A single JSON-RPC conversation with `codex app-server`.
- *
- * The process is started, asked what it can do, and shut down again. It is not
- * kept alive: this runs on a refresh, not on every turn, and a lingering child
- * is one more thing to leak when the app quits.
+ * A single JSON-RPC conversation with `codex app-server`. The process is
+ * started, asked what it can do, and shut down again — this runs on a refresh,
+ * not on every turn.
  */
 async function askCodex(command: string, timeoutMs: number): Promise<CodexModel[]> {
   const child = spawnAgent(command, ["app-server"], process.cwd());
@@ -204,8 +193,7 @@ async function askCodex(command: string, timeoutMs: number): Promise<CodexModel[
     });
     notify("initialized", undefined);
 
-    // Signed out, Codex answers `model/list` with an empty catalogue rather
-    // than an error, which would look like "no models exist".
+    // Signed out, Codex answers `model/list` with an empty catalogue, not an error.
     const account = await request<{ account: unknown; requiresOpenaiAuth?: boolean }>("account/read", {});
     if (!account.account) {
       throw new Error("Codex is not signed in. Run `codex` once in a terminal to authenticate.");
@@ -262,11 +250,8 @@ export async function discoverCodexModels(
 }
 
 /**
- * Claude Code's models for the installed version.
- *
- * A model the CLI is too old to launch is not offered at all: showing it and
- * failing on send would be a worse trade than a shorter list plus an upgrade
- * note in settings.
+ * Claude Code's models for the installed version. A model the CLI is too old to
+ * launch is left out rather than shown and failed on send.
  */
 export function claudeModelsFor(version: string | null): ModelInfo[] {
   const installed = version?.match(/\d+(?:\.\d+)*/)?.[0] ?? null;
@@ -286,8 +271,7 @@ export async function discoverModels(agents: AgentInfo[]): Promise<CatalogResult
 
   const claudeModels = claude?.installed ? claudeModelsFor(claude.version) : [];
 
-  // Asked together: the local daemon answers in milliseconds and Codex takes
-  // seconds, and there is no reason for the fast one to wait behind it.
+  // Asked together: the local daemon answers in milliseconds, Codex in seconds.
   const [codexResult, ollamaModels] = await Promise.all([
     codex?.installed && codex.command
       ? discoverCodexModels(codex.command)

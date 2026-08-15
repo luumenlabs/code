@@ -1,27 +1,14 @@
 /**
- * Keeping the pieces on the same version.
- *
- * Luu Code is three things that have to agree: the app, the Studio plugin, and
- * the MCP server a terminal talks to. When they drift, the failures are the
- * confusing kind — a capability that used to work, an operation the plugin does
- * not recognise. So the app carries the plugin and the MCP server it was built
- * with, and updates them together rather than leaving three downloads to keep
- * in step by hand.
- *
- * Each channel updates only from itself: a nightly never offers a release build
- * and a release never offers a nightly.
+ * Keeping the pieces on the same version. The app carries the Studio plugin and
+ * the MCP server it was built with, and updates them together. Each channel
+ * updates only from itself.
  */
 import { compareVersions } from "./models.js";
 import type { AgentInfo } from "./agent.js";
 
 /**
- * Which build this is.
- *
- * `dev` is a checkout running from source. It is a channel rather than a flag
- * because it needs the same separation the other two have from each other: its
- * own icon, its own window, its own state on disk. Sharing any of those with an
- * installed build is how you end up reading the wrong app's threads, or
- * debugging a window that was never the one you started.
+ * Which build this is. `dev` is a checkout running from source, with its own
+ * icon, window, and state on disk.
  */
 export type Channel = "release" | "nightly" | "dev";
 
@@ -82,13 +69,9 @@ export function updateWaiting(status: UpdateStatus): boolean {
 }
 
 /**
- * Whether an installed CLI is older than what npm publishes.
- *
- * Behind is the only state worth counting. A null `latestVersion` means the
- * registry was unreachable, which is not the same as up to date and must never
- * read like a problem with the user's machine. Not installed is not counted
- * either: that is a provider the user has chosen not to have, not one that has
- * fallen behind.
+ * Whether an installed CLI is older than what npm publishes. A null
+ * `latestVersion` means the registry was unreachable, which is not up to date
+ * and must not read as a problem. Not installed does not count either.
  */
 export function agentBehind(agent: AgentInfo): boolean {
   if (!agent.installed || !agent.version || !agent.latestVersion) return false;
@@ -97,14 +80,8 @@ export function agentBehind(agent: AgentInfo): boolean {
 
 /**
  * Whether the Studio plugin is missing, or older than the copy this build
- * carries.
- *
- * Dev is excluded for the same reason it is excluded from auto-install: there
- * the plugin belongs to `luu dev`, which rebuilds it on every save, so the file
- * on disk disagreeing with the app is the normal state rather than something to
- * point at. Same rule as `PluginManager.needsInstall` in the main process — the
- * mark and the automatic install must never disagree about whether there is
- * anything to do.
+ * carries. Dev is excluded: there `luu dev` owns the plugin file. Must stay in
+ * step with `PluginInstaller.needsInstall` in the main process.
  */
 export function pluginWaiting(status: PluginStatus, channel: Channel): boolean {
   if (channel === "dev") return false;

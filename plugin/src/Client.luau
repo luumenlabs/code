@@ -1,10 +1,7 @@
 --!nonstrict
 --[[
-	Session lifecycle and the sync loop. Spec sections 8, 26, and 29.
-
-	The plugin handshakes and is connected. There was an approval step — a code
-	shown here and confirmed in the app — and it is gone: both ends are one
-	program on one machine, and the code asked the user to vouch for themselves.
+	Session lifecycle and the sync loop. The plugin handshakes and is connected;
+	there is no approval step.
 
 	Two threads share the session:
 
@@ -12,9 +9,8 @@
 	    down the moment an agent issues one;
 	  * the pusher wakes on results and output and delivers them immediately.
 
-	Splitting them matters. With a single loop, a result produced while a poll
-	was parked would sit unsent until the poll expired, and every agent call
-	would inherit that delay.
+	With a single loop, a result produced while a poll was parked would sit
+	unsent until the poll expired.
 ]]
 
 local HttpService = game:GetService("HttpService")
@@ -87,14 +83,11 @@ local function baseUrl(): string
 end
 
 --[[
-	A stable id for the game, so Luu Code never files two places as one.
-
-	The place id is the real identity when there is one. An unpublished place
-	that still belongs to a universe has a game id, which is the next best
-	thing. A place with neither has nothing durable to key on — Studio does not
-	expose the file it was opened from — and returning the name instead would
-	merge every "Baseplate" on the machine into a single history. Saying nothing
-	is the honest answer; the harness files those under Unknown.
+	A stable id for the game, so Luu Code never files two places as one. The
+	place id, then the universe's game id. A place with neither has nothing
+	durable to key on, and the name would merge every "Baseplate" on the machine
+	into one history — so this says nothing and the harness files those under
+	Unknown.
 ]]
 local function placeIdentity(): string?
 	if game.PlaceId > 0 then
@@ -110,25 +103,17 @@ end
 
 --[[
 	The name Roblox has on file for this place, once we have asked for it.
-
-	`game.Name` is the DataModel's name and Studio keeps it in step with
-	nothing. A place made with File → New is called "Place1", and saving it to
-	Gun System.rbxl renames the file and the tab, not the DataModel — so the
-	name Luu Code showed was whatever the place happened to be called the day it
-	was created. The published name is the fix, and only a published place has
-	one; Studio exposes no API for the file a local place was opened from, so
-	there is nothing better to offer that case than being clear about it.
+	`game.Name` is the DataModel's name, which Studio keeps in step with
+	nothing: a File → New place stays "Place1" however the file is saved. Only a
+	published place has a better answer, and no API exposes a local file's name.
 ]]
 local publishedName: string? = nil
 
 --[[
-	Asks Roblox what the place id is called.
-
-	Two spellings because this plugin runs on Studio builds either side of the
-	rename, and the older one is the deprecated method rather than nothing at
-	all. Both are wrapped: the call reaches Roblox, so it fails when Studio is
-	offline, signed out, or looking at an id that no longer resolves — none of
-	which is worth a message, because the local name is already on screen.
+	Asks Roblox what the place id is called. Two spellings, because this plugin
+	runs on Studio builds either side of the rename. Both are wrapped: the call
+	reaches Roblox and fails offline, signed out, or on an id that no longer
+	resolves, none of which is worth a message.
 ]]
 local function fetchPublishedName(): string?
 	if game.PlaceId == 0 then
@@ -158,11 +143,9 @@ local function fetchPublishedName(): string?
 end
 
 --[[
-	"Enum.CreatorType.Group" → "Group".
-
-	Through tostring rather than `.Name` because selene's Roblox standard
-	library does not model the enum item behind `game.CreatorType`, and a
-	string this shape is what crosses the wire either way.
+	"Enum.CreatorType.Group" → "Group". Through tostring rather than `.Name`:
+	selene's Roblox standard library does not model the enum item behind
+	`game.CreatorType`.
 ]]
 local function creatorType(): string
 	local value = tostring(game.CreatorType)
@@ -195,18 +178,13 @@ local function placeInfo(): any
 end
 
 --[[
-	Resolves the published name in the background, then tells everyone.
-
-	Off the handshake path on purpose: this is a Roblox round trip, and a name
-	is not worth making a connection wait for one. The session comes up under
-	`game.Name` and corrects itself a moment later — through the pusher, which
-	already exists to carry a run-state change, rather than by reconnecting to
-	change one string.
+	Resolves the published name in the background, then tells everyone. Off the
+	handshake path: the session comes up under `game.Name` and corrects itself
+	through the pusher a moment later.
 
 	Three attempts, because Studio's network is often not ready in the first
-	seconds after a plugin loads, and then it stops: a place whose id does not
-	resolve will not start resolving, and a retry loop against Roblox is not
-	something to leave running for the life of a session.
+	seconds after a plugin loads, and then it stops — an id that does not
+	resolve will not start.
 ]]
 local function resolvePlaceName()
 	if game.PlaceId == 0 then
@@ -241,24 +219,17 @@ local function readStudioVersion(): string
 end
 
 --[[
-	This Studio window, for as long as it is open.
-
-	Nothing Studio exposes tells one open window from another: plugin settings
-	are machine-wide, so every window reads back the same install id and the same
-	token. That made two open windows one session on the server, where each
-	handshake evicted the other's connection.
-	A value generated per plugin runtime is the missing half of the identity —
-	the install id says which game, this says which window.
+	This Studio window, for as long as it is open. Plugin settings are
+	machine-wide, so every window reads back the same install id — a value
+	generated per plugin runtime is the other half of the identity. The install
+	id says which game, this says which window.
 ]]
 local windowId = HttpService:GenerateGUID(false)
 
 --[[
-	Scopes a persisted setting to the open place, so an approval is remembered
-	for that game rather than for the machine.
-
-	Returns nil for a place with no durable identity. Those get no persisted
-	credential at all: the alternative is one shared key, which would let any
-	unsaved place inherit an approval granted to a different one.
+	Scopes a persisted setting to the open place, so it belongs to that game
+	rather than to the machine. Nil for a place with no durable identity: one
+	shared key would let any unsaved place inherit another's value.
 ]]
 local function settingKey(name: string): string?
 	local identity = placeIdentity()
@@ -269,12 +240,9 @@ local function settingKey(name: string): string?
 end
 
 --[[
-	Persisted per place, so reconnecting after a Studio restart does not ask the
-	user to approve the same game again. Spec section 29.
-
-	An unsaved place falls back to the window id, which is not persisted, so it
-	pairs again on every Studio launch. That is the honest answer for a place
-	Luu Code cannot recognise twice — see placeIdentity above.
+	Persisted per place, so a Studio restart reconnects as the same game. An
+	unsaved place falls back to the window id, which is not persisted, since
+	there is nothing durable to recognise it by — see placeIdentity above.
 ]]
 local function installId(): string
 	local key = settingKey(Constants.SETTING_INSTALL_ID)
@@ -293,12 +261,9 @@ local function installId(): string
 end
 
 --[[
-	The session token, held for as long as the connection is.
-
-	It used to be written to plugin settings so an approval could survive a
-	Studio restart. Nothing is being remembered now — the server issues one on
-	every handshake — so keeping a copy on disk would only leave a dead
-	credential behind.
+	The session token, held for as long as the connection is. Never written to
+	plugin settings: the server issues one on every handshake, so a stored copy
+	would only be a dead credential.
 ]]
 local function saveToken(token: string)
 	state.token = token
@@ -352,8 +317,7 @@ local function handshake(): boolean
 		state.sessionId = body.sessionId
 		state.endpointId = body.endpointId
 		saveToken(body.token)
-		-- The green "Connected", the place name, and the mode below it already
-		-- say everything. A sentence repeating them is noise in a 280px panel.
+		-- "Connected", the place name, and the mode below it already say it.
 		setStatus("connected", "")
 		return true
 	end
@@ -411,8 +375,8 @@ local function sync(wait: boolean): boolean
 
 	if not response.ok then
 		if response.status == 401 or response.status == 404 then
-			-- The server no longer knows this session. Pair again rather than
-			-- retrying forever against something that will never answer.
+			-- The server no longer knows this session. Handshake again rather
+			-- than retrying against something that will never answer.
 			Client.forgetSession()
 			setStatus("disconnected", "Luu Code lost this session. Connecting again.")
 		else
@@ -508,9 +472,8 @@ function Client.start(hostPlugin: Plugin)
 		state.port = storedPort
 	end
 
-	-- Tokens are no longer persisted, so anything a previous build wrote is a
-	-- dead credential sitting in the user's plugin settings. Cleared on the way
-	-- past rather than left to rot.
+	-- Tokens are not persisted, so anything a previous build wrote is a dead
+	-- credential in the user's plugin settings.
 	pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, nil)
 	pluginRef:SetSetting(Constants.SETTING_TOKEN, nil)
 
@@ -527,14 +490,12 @@ function Client.start(hostPlugin: Plugin)
 		wake:Fire()
 		notify()
 		-- Marks adorn instances in the DataModel they were made in, and a
-		-- remembered camera position describes a world that no longer exists.
-		-- Dropped here rather than in RunState, which Commands depends on.
+		-- remembered camera describes a world that no longer exists.
 		Commands.release()
 	end)
 
-	-- Started alongside the connection rather than inside it: the answer is the
-	-- same whether or not Luu Code is running, and having it in flight already
-	-- means the first handshake often carries the right name.
+	-- Started alongside the connection, so the first handshake often already
+	-- carries the right name.
 	resolvePlaceName()
 
 	task.spawn(loop)
@@ -552,8 +513,8 @@ function Client.stop()
 	generation += 1
 	wake:Fire()
 	OutputCapture.stop()
-	-- Adornments live in CoreGui, which outlives this plugin. Left behind on
-	-- unload they would sit in the user's viewport with nothing to remove them.
+	-- Adornments live in CoreGui, which outlives this plugin; left behind they
+	-- would sit in the viewport with nothing to remove them.
 	Commands.release()
 	setStatus("disconnected", "Disconnected")
 end

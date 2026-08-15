@@ -1,11 +1,8 @@
 /**
- * Which unavailable capabilities are worth hiding a tool for.
- *
- * This is the line the MCP tool list is drawn on, and getting it wrong is bad
- * in both directions. Hide too much and an agent with Studio closed has no tool
- * that can tell it Studio is closed, so a shorter menu reads as the user having
- * cut it. Hide too little and it is offered tools that fail every single time,
- * which is what sent one off to reimplement an insert through studio_exec.
+ * Which unavailable capabilities are worth hiding a tool for — the line the MCP
+ * tool list is drawn on. Hide too much and an agent with Studio closed has no
+ * tool that can tell it so; hide too little and it is offered tools that fail
+ * every time.
  */
 import { DEFAULT_PERMISSIONS, unavailableOps } from "@luumen/code-protocol";
 import type { CapabilityId } from "@luumen/code-protocol";

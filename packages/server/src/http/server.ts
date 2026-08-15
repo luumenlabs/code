@@ -6,9 +6,7 @@
  *   /mcp       external MCP clients
  *   everything else, the first-party harness and the CLI
  *
- * The listener binds to loopback. Remote access is not a configuration option
- * here; enabling it would turn a local trust decision into a network one.
- * Spec section 26.
+ * The listener binds to loopback. Remote access is not a configuration option.
  */
 import { createServer } from "node:http";
 import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
@@ -182,8 +180,7 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
     try {
       deps.settings.setToolAllowed(body.op, body.allowed);
     } catch (error) {
-      // Asking to turn off an essential operation is a caller mistake, not a
-      // server failure, and it deserves the reason rather than a 500.
+      // A caller mistake, not a server failure, so it gets the reason.
       sendError(res, new LuuCodeError("INVALID_PARAMS", (error as Error).message), 400);
       return;
     }
@@ -214,9 +211,8 @@ function authorize(deps: HttpDeps, req: IncomingMessage, url: URL): boolean {
 }
 
 async function handleMcp(deps: HttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  // Stateless: one server and transport per request. There is no cross-request
-  // state worth keeping, and it means a client reconnecting mid-session simply
-  // works.
+  // Stateless: one server and transport per request, so a client reconnecting
+  // mid-session works.
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   const server = createMcpServer({
     execute: (op, params, context) => deps.dispatcher.execute(op, params, context),

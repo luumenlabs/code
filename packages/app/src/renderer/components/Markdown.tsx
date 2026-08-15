@@ -5,22 +5,13 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 /**
- * Agent output, rendered as the Markdown it actually is.
+ * Agent output, rendered as the Markdown it is. `react-markdown` builds React
+ * elements from an AST and never sets innerHTML, so a model emitting a
+ * `<script>` tag produces the text of one.
  *
- * Both CLIs write Markdown — headings, lists, tables, inline code — and the
- * earlier hand-rolled pass understood only fenced blocks, so everything else
- * arrived as literal `**bold**` and `- ` bullets. That was a deliberate call to
- * avoid a parser and its attack surface; `react-markdown` answers the second
- * half of it, because it builds React elements from an AST and never sets
- * innerHTML. Raw HTML in the source is escaped rather than parsed, so a model
- * emitting a `<script>` tag produces the text of one.
- *
- * `remark-breaks` is here to preserve what the old renderer did: Markdown folds
- * a single newline into a space, which would silently reflow a two-line answer
- * into one. In a chat transcript the line the model wrote is the line to show.
- *
- * The element map keeps the app's own scale. Prose defaults are built for
- * articles, and an `h1` sized for one would tower over a 14px conversation.
+ * `remark-breaks` keeps a single newline as a line break: in a transcript, the
+ * line the model wrote is the line to show. The element map holds the app's own
+ * scale, since prose defaults are built for articles.
  */
 const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
 
@@ -50,11 +41,9 @@ const MARKDOWN_COMPONENTS: Components = {
   em: ({ children }) => <em className="italic">{children}</em>,
 
   /**
-   * Off to the browser, never into this window.
-   *
-   * `target="_blank"` routes the click through the main process's window-open
-   * handler, which hands it to the OS and denies the window. A bare href would
-   * be a same-window navigation, and the app has no way back from one.
+   * Off to the browser, never into this window. `target="_blank"` routes the
+   * click through the main process's window-open handler; a bare href would be
+   * a same-window navigation the app has no way back from.
    */
   a: ({ href, children }) => (
     <a
@@ -90,8 +79,7 @@ const MARKDOWN_COMPONENTS: Components = {
     <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5">{children}</pre>
   ),
 
-  // GitHub-flavoured tables. Scrolled rather than squeezed: the column is only
-  // ~800px, and a wrapped table cell is harder to read than a sideways one.
+  // Scrolled rather than squeezed; the column is only ~800px wide.
   table: ({ children }) => (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full border-collapse text-[13px]">{children}</table>

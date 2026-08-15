@@ -1,15 +1,11 @@
 --!nonstrict
 --[[
-	Runtime execution. Spec section 16.
-
-	Roblox gates `loadstring` behind a place setting, and flipping that setting
-	would quietly change the user's project. Instead the source is compiled by
+	Runtime execution. Roblox gates `loadstring` behind a place setting, and
+	flipping it would change the user's project, so the source is compiled by
 	creating a ModuleScript inside the plugin's own container and requiring it:
-	nothing is added to the place, nothing replicates, and nothing lands in the
-	undo history.
+	nothing is added to the place, replicates, or lands in the undo history.
 
-	This is a powerful capability and is presented as one. It runs at plugin
-	security in whichever DataModel the plugin is currently attached to.
+	It runs at plugin security, in whichever DataModel the plugin is attached to.
 ]]
 
 local Errors = require(script.Parent.Errors)
@@ -60,13 +56,9 @@ end
 
 --[[
 	Compiles source without running it, for the check returned by every script
-	write.
-
-	The body goes inside a function that is never called, so `require` compiles
-	the whole chunk and executes only the `return`. That is what makes this safe
-	to run against code the agent has just written and has no intention of
-	executing yet. The wrapper is vararg because a top-level `...` is legal in a
-	Script and would not compile inside a fixed-argument function.
+	write. The body goes inside a function that is never called, so `require`
+	compiles the whole chunk and executes only the `return`. The wrapper is
+	vararg because a top-level `...` is legal in a Script.
 
 	One line of wrapper means every line the compiler names is one too high.
 ]]

@@ -1,21 +1,10 @@
 /**
- * What a tool call is, in a line.
+ * What a tool call is, in a line: a verb and its object — "Edit ·
+ * ModelChip.tsx", "Ran · pnpm check". The whole call is still one click away.
  *
- * A Roblox operation reaches the transcript as an `ActivityEvent` and already
- * says what it did to the place. Everything else the agent runs — reading a
- * file, a shell command, another MCP server's tool — arrives as a name and a
- * bag of JSON, and rendering that verbatim is how a turn ends up as a wall of
- * `Edit: {"replace_all":false,"file_path":"D:\\Dev\\...` with the one
- * interesting word cut off at the right edge.
- *
- * So each call is reduced to a verb and its object: "Edit · ModelChip.tsx",
- * "Ran · pnpm check". The whole call is still one click away, unchanged — this
- * is the summary, not a replacement for it.
- *
- * Unknown tools are the normal case, not the exception: the agent may be
- * driving anything the user has connected. They get the generic treatment
- * rather than a fallback that looks broken, which is why the last branch here
- * is written as carefully as the named ones.
+ * A Roblox operation never reaches here; it arrives as an `ActivityEvent`.
+ * Everything else is a name and a bag of JSON, and an unknown tool is the
+ * normal case, so the generic branch is written as carefully as the named ones.
  */
 
 export interface ToolSummary {
@@ -52,11 +41,8 @@ function text(value: unknown): string {
 }
 
 /**
- * A path as someone reading the transcript thinks of it.
- *
- * `D:\Dev\ROBLOX\Luumen\Code\packages\app\src\renderer\components\composer\ModelChip.tsx`
- * is thirteen segments of which one is the answer. The parent is kept because
- * `index.ts` on its own names nothing.
+ * A path as someone reading the transcript thinks of it. The parent is kept
+ * because `index.ts` on its own names nothing.
  */
 export function shortPath(value: string): string {
   const parts = value.split(/[\\/]+/).filter(Boolean);
@@ -73,10 +59,7 @@ function firstLine(value: string): string {
 
 /**
  * The generic summary: the arguments that carry meaning, as `key: value`.
- *
- * Objects and arrays are left out rather than stringified — a nested blob in a
- * one-line summary is noise wearing the shape of information, and the open row
- * has it in full.
+ * Objects and arrays are left out; the open row has them in full.
  */
 function describeArgs(input: unknown): string {
   const entries = Object.entries(args(input))
@@ -147,8 +130,8 @@ export function describeTool(name: string, input: unknown): ToolSummary {
   if (name.startsWith("mcp__")) {
     const { server, tool } = mcpToolName(name);
     const detail = describeArgs(input);
-    // The server is worth naming: "read instance" means something different
-    // coming from Luu Code than from whatever else the user has connected.
+    // The server is named: "read instance" means one thing from Luu Code and
+    // another from whatever else the user has connected.
     return { label: tool, detail: detail ? `${server} · ${detail}` : server, icon: "mcp" };
   }
 

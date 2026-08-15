@@ -31,7 +31,7 @@ You bring Claude Code, Codex, or a model on your own machine through Ollama. Luu
 ## Install
 
 1. **[Download Luu Code](https://github.com/luumenlabs/code/releases/latest)** and run the installer — Windows.
-2. Open **Settings → Updates**, press **Install** next to the Studio plugin, and restart Studio. The app carries the matching plugin, so there is no `.rbxm` to hunt down.
+2. Open **Settings → Updates**, press **Install** next to the Studio plugin, and restart Studio. The app carries the matching plugin.
 3. Have **Claude Code** or **Codex** installed and signed in. Luu Code drives whichever you have.
 
 Running models locally? Pull one that supports tool calling in **Ollama** and it appears in the model picker beside the rest. Ollama models are run by the Codex CLI, so keep that installed too.
@@ -70,7 +70,7 @@ Luu Code works through Studio. It does not read or write your files.
 
 ## Prefer your own terminal?
 
-The same Roblox tools are available over MCP, so you can skip the app. The server ships inside Luu Code — nothing to install, no npm package to keep in sync. **Settings → Connection** has the exact command for your install, ready to paste into Claude Code or `~/.codex/config.toml`.
+The same Roblox tools are available over MCP, so you can skip the app. The server ships inside Luu Code; there is nothing to install. **Settings → Connection** has the exact command for your install, ready to paste into Claude Code or `~/.codex/config.toml`.
 
 It joins a running Luu Code server, or starts one. Only Studio has to be open.
 

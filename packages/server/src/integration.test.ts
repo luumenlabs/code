@@ -350,9 +350,8 @@ describe("multiple Studio windows", () => {
     const sessions = server.status().sessions;
     expect(sessions.filter((entry) => entry.installId === "install-pair")).toHaveLength(2);
 
-    // Both are still reachable. This is the regression: the second handshake
-    // used to evict the first window's endpoint as a replaced connection,
-    // because two windows in edit mode look like one realm colliding.
+    // Both are still reachable: two windows in edit mode look like one realm
+    // colliding, and the second handshake must not evict the first.
     expect(answered(await server.execute("dm.services", {}, { sessionId: first.sessionId }))).toBe("window-pair-1");
     expect(answered(await server.execute("dm.services", {}, { sessionId: second.sessionId }))).toBe("window-pair-2");
 
@@ -990,10 +989,9 @@ describe("playtest", () => {
   });
 
   /**
-   * The old path swallowed this. A refusal from Studio meant "fall back to
-   * pressing the shortcut through the operating system", so a genuine problem
-   * became a keystroke into whatever had focus and the agent was told the stop
-   * had worked.
+   * A refusal from Studio must not be worked around: falling back to a
+   * keystroke sends it into whatever has focus and reports a stop that never
+   * happened.
    */
   it("surfaces a refusal from Studio instead of working around it", async () => {
     plugin = await connectPlugin();
@@ -1102,9 +1100,9 @@ describe("playtest", () => {
    * is playing on screen, the edit peer is parked in ExecutePlayModeAsync, and
    * nothing that can call EndTest ever connected.
    *
-   * This used to send the stop to the parked edit peer, which Studio refuses —
-   * EndTest only works from a running session's server DataModel — so the user
-   * was told a Studio API was unsupported, which is not what went wrong.
+   * The stop must not go to the parked edit peer: EndTest only works from a
+   * running session's server DataModel, so Studio refuses and the user is told
+   * a Studio API is unsupported, which is not what went wrong.
    */
   it("says the playtest never connected rather than blaming a Studio API", async () => {
     plugin = await connectPlugin();

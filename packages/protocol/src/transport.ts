@@ -43,12 +43,9 @@ export interface StudioHelloRequest {
   installId: string;
   /**
    * Identifies the Studio window, generated fresh each time the plugin starts.
-   *
-   * Plugin settings are stored once per plugin for the whole machine, so the
-   * install id cannot tell two open windows apart — before this existed they
-   * both resolved to one session and each handshake evicted the other's
-   * connection. Absent from plugins older than this field, which then behave as
-   * they always did: one window at a time.
+   * Plugin settings are stored once per machine, so the install id cannot tell
+   * two open windows apart. Absent from older plugins, which then get one
+   * window at a time.
    */
   windowId?: string;
   pluginVersion: string;
@@ -60,13 +57,9 @@ export interface StudioHelloRequest {
 }
 
 /**
- * The handshake connects or it says why.
- *
- * There is no approval step. Both halves of Luu Code run on one machine as one
- * user, and a code to be compared between two windows of the same program was
- * ceremony rather than a boundary. The token below is a session handle, not a
- * credential the user grants: the server issues it here and the plugin quotes
- * it back on every sync so a connection can be told from a stale one.
+ * The handshake connects or it says why. There is no approval step: both halves
+ * run on one machine as one user. The token is a session handle, quoted back on
+ * every sync so a live connection can be told from a stale one.
  */
 export type StudioHelloResponse =
   | {
@@ -109,12 +102,9 @@ export interface StudioSyncRequest {
   /** Capability list, resent whenever it changes. */
   capabilities?: CapabilityId[];
   /**
-   * The place, redescribed.
-   *
-   * The published name is a Roblox lookup, and a connection is not worth
-   * holding open for one — so the handshake goes out with whatever the plugin
-   * knows locally and the better answer rides the next sync. Only the
-   * description may move; the identity is fixed for the life of a session.
+   * The place, redescribed. The published name is a Roblox lookup, so the
+   * handshake goes out with what the plugin knows locally and the better answer
+   * rides the next sync. The identity is fixed for the life of a session.
    */
   place?: PlaceInfo;
 }

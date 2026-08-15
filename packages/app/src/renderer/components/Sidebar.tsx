@@ -1,10 +1,6 @@
 /**
- * Conversation history: projects and their threads. Spec section 45.
- *
- * A project is the folder the agent runs in; threads are the durable
- * conversations inside it. Everything here is on disk, so closing the app does
- * not lose the work, and reopening a thread resumes the coding agent's own
- * session where it can.
+ * Conversation history: projects and their threads. Everything here is on disk,
+ * and reopening a thread resumes the agent's own session where it can.
  */
 import * as React from "react";
 import {
@@ -66,9 +62,8 @@ export function Sidebar({
   const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
   const connected = (harness.snapshot?.status.sessions.length ?? 0) > 0;
 
-  // Everything inside Settings that wants dealing with, as one number. The app's
-  // own update is not in it: that already has a row of its own directly above,
-  // and counting it twice would make one thing look like two.
+  // Everything inside Settings that wants dealing with, as one number. The
+  // app's own update has its own row above and is not in it.
   const waiting = settingsWaiting(harness);
 
   const toggle = (projectId: string): void => {
@@ -102,8 +97,7 @@ export function Sidebar({
           New chat
         </Button>
 
-        {/* Opens the palette rather than filtering in place: searching is a
-            thing you do to the whole app, not just to this list. */}
+        {/* Opens the palette: search covers the whole app, not just this list. */}
         <button
           onClick={onSearch}
           className="flex h-7 items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -142,9 +136,7 @@ export function Sidebar({
                       key={thread.id}
                       thread={thread}
                       active={harness.activeThreadId === thread.id}
-                      // Chats run in parallel, so this is asked of the thread
-                      // rather than of the app: a conversation still working
-                      // spins here whether or not you are looking at it.
+                      // Asked of the thread, not the app: chats run in parallel.
                       running={isBusyState(harness.agentStates[thread.id])}
                       renaming={renaming === thread.id}
                       onOpen={() => {
@@ -168,8 +160,7 @@ export function Sidebar({
         </div>
       </ScrollArea>
 
-      {/* Settings belongs at the bottom of the sidebar, out of the way of the
-          conversation but always reachable. */}
+      {/* Settings sits at the bottom, out of the way but always reachable. */}
       <div className="shrink-0 border-t border-sidebar-border p-2">
         <UpdateNotice harness={harness} onOpen={onOpenUpdates} />
 
@@ -188,13 +179,8 @@ export function Sidebar({
 }
 
 /**
- * What a heading actually stands for.
- *
- * Worth spelling out, because the heading is a name and the grouping is not:
- * chats are filed against the place's id, so two places called Baseplate keep
- * separate histories and a place renamed on the website keeps its own. The one
- * case where that fails is a place Roblox has no id for, and the tooltip says
- * so rather than leaving "Unknown" to be read as a bug.
+ * What a heading stands for. The heading is a name; the grouping is the place's
+ * id, so two places called Baseplate keep separate histories.
  */
 function projectTitle(project: Project): string {
   if (project.placeId > 0) {
@@ -206,16 +192,10 @@ function projectTitle(project: Project): string {
     return `Universe ${identity.replace("game:", "")} — not published as a place yet`;
   }
 
-  return "Places Roblox has no id for. Luu Code cannot tell them apart, so they share this heading.";
+  return "Places Roblox has no id for. They cannot be told apart, so they share this heading.";
 }
 
-/**
- * Sits above Settings when there is a newer build.
- *
- * A version behind is not an error and never interrupts what the user is doing,
- * so it is a quiet row in the one place they already look for app-level things
- * — and it opens straight onto the button that acts on it.
- */
+/** Sits above Settings when there is a newer build, and opens onto it. */
 function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => void }): React.JSX.Element | null {
   const update = harness.versions?.update;
   if (!update || !updateWaiting(update)) return null;
@@ -249,11 +229,8 @@ function UpdateNotice({ harness, onOpen }: { harness: Harness; onOpen: () => voi
 }
 
 /**
- * Archived conversations, folded away and rendered small.
- *
- * The point of archiving is to get something out of your eyeline without
- * losing it, so these are deliberately quieter than a live thread: one line,
- * dimmed, no project heading. Opening one still works exactly as before.
+ * Archived conversations, folded away and rendered small: one line, dimmed, no
+ * project heading. Opening one works as it always did.
  */
 function ArchivedSection({
   harness,
@@ -363,9 +340,7 @@ function ThreadRow({
   }
 
   return (
-    // Two lines rather than one. A title at 12px squeezed between a timestamp
-    // and a menu was legible but not scannable, and the sidebar is how you find
-    // a conversation from last week.
+    // Two lines, so the title is not squeezed between a timestamp and a menu.
     <div className="row group flex items-start gap-1.5 py-1.5 pr-0.5 pl-2" data-active={active}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
         <span className="flex w-full items-center gap-2">
@@ -380,17 +355,8 @@ function ThreadRow({
         </span>
 
         <span className="flex w-full items-center gap-2 text-[11.5px] text-muted-foreground/70">
-          {/*
-            Which agent this conversation belongs to, in the icon column under
-            the one above it.
-
-            It goes here rather than on the title line because the title line
-            is where running lives, and which agent is working is exactly the
-            thing you want to know while it is. The box is kept whether or not
-            there is a mark to put in it: a thread from before Luu Code recorded
-            the agent would otherwise pull its own second line 12px left of
-            every other one.
-          */}
+          {/* Which agent the conversation belongs to. The box is kept even when
+              empty, so a thread with no recorded agent still lines up. */}
           <span className="flex size-3 shrink-0 items-center justify-center">
             {thread.agent && <ProviderIcon provider={thread.agent} className="size-3" />}
           </span>
@@ -413,8 +379,7 @@ function ThreadRow({
         </span>
       </button>
 
-      {/* One click, on the row you are already pointing at — the menu still has
-          it, but tidying up a finished chat should not cost two clicks. */}
+      {/* One click on the row; the menu has it too. */}
       <Hint label="Archive">
         <Button
           variant="ghost"

@@ -1,16 +1,11 @@
 --!nonstrict
 --[[
-	Simulated network conditions, through NetworkSettings.
-
-	A Studio playtest runs its client and server in one process on a link with no
-	latency, which is the one link the finished game never has. Replication
-	bugs — prediction that never reconciles, a remote fired before the instance
-	it names has replicated, two clients disagreeing about who got there first —
-	do not reproduce until there is a delay to reproduce them in.
+	Simulated network conditions, through NetworkSettings. A Studio playtest runs
+	client and server in one process on a link with no latency, which is the one
+	link the finished game never has, so replication bugs do not reproduce.
 
 	Every field is read back after the write. A build that does not have one is
-	named in `unavailable` rather than reported as a zero the caller would read
-	as "no latency".
+	named in `unavailable` rather than reported as a zero.
 ]]
 
 local Errors = require(script.Parent.Parent.Errors)

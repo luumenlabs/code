@@ -1,14 +1,12 @@
 --!nonstrict
 --[[
-	Synthetic input into the running experience. Spec sections 18 and 51.
-
+	Synthetic input into the running experience.
 	`UserInputService:CreateVirtualInput()` feeds the engine's real input
 	pipeline and never touches the user's own mouse or keyboard.
 
-	Not VirtualInputManager: its Send* methods are RobloxScriptSecurity and raise
-	from a plugin. The old check only asked whether the service could be fetched,
-	which always succeeds, so the session advertised input.virtual and delivered
-	nothing. Availability is probed by constructing the object.
+	Not VirtualInputManager: its Send* methods are RobloxScriptSecurity and
+	raise from a plugin. Availability is probed by constructing the object,
+	since fetching the service always succeeds.
 ]]
 
 local GuiService = game:GetService("GuiService")

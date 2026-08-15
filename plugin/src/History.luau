@@ -1,6 +1,6 @@
 --!nonstrict
 --[[
-	Undo integration. Spec section 27.
+	Undo integration.
 
 	Every mutation runs inside a ChangeHistoryService recording so the user can
 	undo the agent's work with Ctrl+Z like any other Studio edit. Recording is
@@ -45,16 +45,12 @@ end
 --[[
 	Whether Studio will give us an undo waypoint.
 
-	Answered once and remembered, because asking is not free: the only way to
-	find out is to open a recording and cancel it, and cancelling one rolls
-	Studio back to where the recording began — which includes putting the
-	selection back. Asked on every sync, as it was, that quietly cleared
-	whatever the user had selected every few seconds and made Studio unusable
-	while the plugin was installed.
+	Answered once and remembered: the only way to find out is to open a
+	recording and cancel it, and cancelling rolls Studio back to where the
+	recording began — including the user's selection.
 
 	The answer is a property of the Studio build and the DataModel, so one probe
-	per DataModel is all it was ever worth. `History.forget` drops it when the
-	DataModel is replaced.
+	per DataModel is enough. `History.forget` drops it on a replacement.
 ]]
 local available: boolean? = nil
 

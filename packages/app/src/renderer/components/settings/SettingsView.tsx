@@ -1,10 +1,6 @@
 /**
- * Settings.
- *
- * Deliberately short: every row here is something a user has a reason to
- * change. Anything Luu Code can work out for itself — which CLIs exist, which
- * models they offer, which place is connected — is shown as fact, not asked as
- * a question.
+ * Settings. Anything Luu Code can work out for itself — which CLIs exist, which
+ * models they offer, which place is connected — is shown as fact, not asked.
  */
 import * as React from "react";
 import {
@@ -103,8 +99,7 @@ export function SettingsView({
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* The thread list stays where it is, so the sections run across the top
-          rather than adding a second sidebar beside the first. */}
+      {/* The thread list stays put, so the sections run across the top. */}
       <div className="flex h-topbar shrink-0 items-center gap-1 border-b px-3">
         <Button variant="ghost" size="icon-sm" onClick={onClose} title="Back to chat">
           <ArrowLeft />
@@ -121,9 +116,8 @@ export function SettingsView({
           >
             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             {label}
-            {/* The same count the Settings button carried, split back into the
-                sections it was made of — so pressing the mark always lands on
-                the thing it was counting. */}
+            {/* The same count the Settings button carried, split into its
+                sections, so following the mark lands on what it counted. */}
             <Notice count={id === "providers" ? waiting.providers : id === "updates" ? waiting.plugin : 0} />
           </button>
         ))}
@@ -151,21 +145,15 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
   const installed = harness.snapshot?.agents.filter((agent) => agent.installed).map((agent) => agent.id) ?? [];
   const candidates = models.filter((model) => installed.includes(model.provider));
 
-  /**
-   * What "leave it to Luu Code" actually resolves to.
-   *
-   * The default is a specific model, so it says which one. Hiding it behind
-   * "Automatic" only raises the question it was trying to avoid.
-   */
+  // The default is a specific model, so the option names it rather than
+  // reading "Automatic".
   const autoProvider = autoTitleProvider(installed) ?? "codex";
-  // A local provider names no model of its own — whichever one is pulled is the
-  // one it would use, so the catalogue answers for it.
+  // A local provider names no model of its own, so the catalogue answers.
   const autoSlug =
     DEFAULT_TITLE_MODEL[autoProvider] ?? candidates.find((model) => model.provider === autoProvider)?.slug;
   const autoLabel = `${models.find((model) => model.slug === autoSlug)?.name ?? autoSlug ?? "None"} · default`;
 
-  // The model implies the CLI, here as everywhere else: picking GPT means Codex
-  // runs the call, picking Claude means Claude Code does.
+  // The model implies the CLI, here as everywhere else.
   const chooseTitleModel = (slug: string): void => {
     const provider = models.find((model) => model.slug === slug)?.provider;
     harness.updateSettings({
@@ -229,10 +217,8 @@ function General({ harness }: { harness: Harness }): React.JSX.Element {
 const MAX_RULES_CHARS = 16_000;
 
 /**
- * Rules for every place.
- *
- * Held in local state and written on a pause: bound straight to settings, every
- * keystroke would be a file write and a broadcast racing the cursor.
+ * Rules for every place. Held in local state and written on a pause; bound
+ * straight to settings, every keystroke would be a file write.
  */
 function Rules({ harness }: { harness: Harness }): React.JSX.Element {
   const stored = harness.settings.globalRules;
@@ -286,12 +272,8 @@ function Rules({ harness }: { harness: Harness }): React.JSX.Element {
 }
 
 /**
- * The version, when there is a newer one — and the command, one click away.
- *
- * The badge is the whole affordance: amber and carrying an arrow, it says an
- * update exists without spending a line of the panel on it, and the command
- * only appears for someone who has decided to act on it. Opening upward keeps
- * it over the row it belongs to rather than over the provider below.
+ * The version, when there is a newer one, with the update command one click
+ * away. Opens upward so it covers its own row rather than the provider below.
  */
 function UpdateBadge({ agent }: { agent: AgentInfo }): React.JSX.Element {
   return (
@@ -311,7 +293,7 @@ function UpdateBadge({ agent }: { agent: AgentInfo }): React.JSX.Element {
         <div className="border-b px-3 py-2.5">
           <div className="text-[13.5px] font-medium">{agent.latestVersion} is out</div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-            Luu Code only offers models your version can launch.
+            Older versions offer fewer models.
           </p>
         </div>
 
@@ -408,10 +390,7 @@ function Providers({ harness }: { harness: Harness }): React.JSX.Element {
   );
 }
 
-/**
- * The group switch is what most people will use; the tools under it are folded
- * away because six rows is a page you can read and fifty is a reference.
- */
+/** Groups on the page; the tools under each one are folded away. */
 function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
   const report = harness.snapshot?.capabilities;
   const [open, setOpen] = React.useState<PermissionGroup | null>(null);
@@ -443,7 +422,7 @@ function Permissions({ harness }: { harness: Harness }): React.JSX.Element {
                   <span className="flex items-center gap-2">
                     <span className="text-[13.5px] font-medium">{PERMISSION_COPY[group].label}</span>
                     {/* Counted against the group switch too, so one that is off
-                        reads 0 of 9 rather than listing tools that cannot run. */}
+                        reads 0 of 9. */}
                     <span className="text-[11.5px] text-muted-foreground tabular-nums">
                       {tally.allowed} of {tally.total}
                     </span>
@@ -494,7 +473,7 @@ function ToolList({
             </div>
 
             {essential ? (
-              <Hint label="Always on — how an agent reports trouble, and asks rather than guesses.">
+              <Hint label="Always on — how an agent reports what is wrong.">
                 <Lock className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
               </Hint>
             ) : (
@@ -513,12 +492,8 @@ function ToolList({
 }
 
 /**
- * Versions, in one place.
- *
- * The app, the Studio plugin, and the MCP command are three copies of the same
- * release, and every confusing failure in this product comes from them being
- * three different ones. So they are shown together, with the same version
- * number visible on each.
+ * Versions, in one place. The app, the Studio plugin, and the MCP command are
+ * three copies of the same release, so each shows its version.
  */
 function Updates({ harness }: { harness: Harness }): React.JSX.Element {
   const versions = harness.versions;
@@ -534,7 +509,7 @@ function Updates({ harness }: { harness: Harness }): React.JSX.Element {
   return (
     <Panel
       title="Updates"
-      description="The app, the Studio plugin, and the MCP command ship together, so they can never disagree on a version."
+      description="The app, the Studio plugin, and the MCP command ship together."
     >
       <AppUpdate harness={harness} status={versions.update} />
       <StudioPlugin harness={harness} status={versions.plugin} />
@@ -548,14 +523,7 @@ const CHANNEL_LABEL: Record<Channel, string> = {
   dev: "Dev",
 };
 
-/**
- * Only the surprising channels say anything.
- *
- * A release build explaining that it updates from the release channel is a
- * sentence every user reads once and learns nothing from. A nightly that never
- * offers a release, and a dev build with its own chats, are the two cases where
- * someone would otherwise think something is broken.
- */
+/** Only the surprising channels say anything. */
 const CHANNEL_NOTE: Partial<Record<Channel, string>> = {
   nightly: "Nightly builds only update to other nightlies, and install beside a release build.",
   dev: "Running from source, with its own chats, settings, and Studio plugin.",
@@ -651,11 +619,9 @@ function AppUpdate({ harness, status }: { harness: Harness; status: UpdateStatus
 }
 
 /**
- * The plugin, installed by the app rather than downloaded by hand.
- *
- * This writes into the user's Roblox Studio folder, which is not the app's
- * property, so nothing happens here until a button is pressed or the switch is
- * turned on.
+ * The plugin, installed by the app rather than downloaded by hand. This writes
+ * into the user's Studio folder, so nothing happens until a button is pressed
+ * or the switch is turned on.
  */
 function StudioPlugin({ harness, status }: { harness: Harness; status: PluginStatus }): React.JSX.Element {
   const [busy, setBusy] = React.useState(false);
@@ -672,13 +638,10 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
   const matched = status.installed && status.installedVersion === status.bundledVersion;
   const canInstall = status.supported && status.bundledVersion !== null;
   const isDev = harness.snapshot?.channel === "dev";
-  // The same test the mark on the tab was counted from, so following it lands
-  // on a row that is visibly the thing it promised.
+  // The same test the mark on the tab was counted from.
   const waiting = pluginWaiting(status, harness.snapshot?.channel ?? "release");
 
-  // The main process already says why it cannot install, when it cannot. The
-  // renderer used to carry its own copy of one of those sentences, which meant
-  // two places could disagree about the reason.
+  // The main process already says why it cannot install, when it cannot.
   const detail =
     status.message ??
     (!status.installed
@@ -694,9 +657,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
           <div className="flex items-center gap-2">
             <Blocks className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="text-[13.5px] font-medium">Studio plugin</span>
-            {/* Worn in the same amber as a provider that has fallen behind: to
-                the user these are one kind of thing — a piece of Luu Code that
-                is not the version the rest of it is. */}
+            {/* The same amber as a provider that has fallen behind. */}
             {matched ? (
               <Badge variant="success">
                 <CircleCheck className="size-3" />
@@ -734,8 +695,7 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
 
       {status.directory && (
         <p className="mt-1.5 truncate font-mono text-[11.5px] text-muted-foreground">
-          {/* Windows and macOS disagree about the separator, and this is a real
-              path the user may want to go and look at. */}
+          {/* Windows and macOS disagree about the separator. */}
           {status.directory}
           {status.directory.includes("\\") ? "\\" : "/"}
           {status.fileName}
@@ -746,10 +706,8 @@ function StudioPlugin({ harness, status }: { harness: Harness; status: PluginSta
         <div className="min-w-0">
           <div className="text-[13.5px] font-medium">Keep the plugin matching the app</div>
           <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
-            {/* On a dev build the plugin belongs to `luu dev`, which rebuilds it
-                on every save. Reinstalling over that would undo the watch. */}
             {isDev
-              ? "Off on a dev build: `luu dev` owns the plugin here and rebuilds it on every save."
+              ? "Off on a dev build — `luu dev` owns the plugin here."
               : "Reinstalls it whenever Luu Code updates. Studio loads the new one next time it starts."}
           </p>
         </div>
@@ -786,14 +744,11 @@ function Connection({ harness }: { harness: Harness }): React.JSX.Element {
       <Fact label="Server" value={`127.0.0.1:${snapshot?.serverPort ?? "—"}`} />
       <Fact label="Studio windows" value={sessions.length === 0 ? "None connected" : `${sessions.length} connected`} />
 
-      {/* The MCP server ships inside the app, so these point at the app's own
-          copy. Nothing to install, and it can never be a different version
-          from the app that printed it. */}
+      {/* These point at the copy of the MCP server that shipped with the app. */}
       <div className="border-b py-4">
         <div className="text-[13.5px] font-medium">Use these tools from your own terminal</div>
         <p className="mt-0.5 mb-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
-          Any MCP-capable agent can drive the same Roblox operations. Nothing to install — this runs the copy that
-          shipped with the app.
+          Any MCP-capable agent can drive the same Roblox operations. Nothing to install.
         </p>
 
         <Snippet
@@ -873,10 +828,8 @@ function Row({
 }
 
 /**
- * The command line as a TOML table.
- *
- * The command and its script are two separate values to Codex, so the single
- * quoted string the Claude form uses has to be taken back apart.
+ * The command line as a TOML table. Codex wants the command and its script as
+ * separate values, so the single quoted string is taken back apart.
  */
 function codexSnippet(command: string): string {
   const parts = command.match(/"[^"]*"|\S+/g) ?? [];

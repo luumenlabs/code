@@ -1,14 +1,6 @@
 /**
- * Window controls, drawn by the app.
- *
- * Windows' native overlay cannot be styled beyond two colours, so it always
- * read as a strip of someone else's chrome bolted to the title bar. Drawing
- * them means they match the rest of the surface — same hover, same radius, same
- * muted foreground — and the close button can go red on hover like every other
- * Windows app.
- *
- * macOS keeps its traffic lights; they are part of the platform's identity and
- * users expect them where they are.
+ * Window controls, drawn by the app: Windows' native overlay takes only two
+ * colours. macOS keeps its traffic lights.
  */
 import * as React from "react";
 import { Minus, Square, X } from "lucide-react";
@@ -69,9 +61,7 @@ function ControlButton({
       title={label}
       onClick={onClick}
       className={cn(
-        // Near enough square at the bar's height. Windows' own buttons are
-        // 46x32 and read as squares; the same width against a 56px bar read as
-        // three tall slabs, which is what the height came down for.
+        // Near enough square at this bar's height; Windows' own are 46x32.
         "grid h-full w-[44px] place-items-center text-muted-foreground transition-colors",
         danger ? "hover:bg-[#e81123] hover:text-white" : "hover:bg-accent hover:text-foreground",
       )}

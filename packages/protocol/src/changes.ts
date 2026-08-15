@@ -1,21 +1,12 @@
 /**
  * The change journal: what was done to the DataModel, and how to put it back.
+ * A record of individual mutations, captured by the Studio plugin inside the
+ * same recording that puts the edit in Studio's undo stack.
  *
- * There is no working tree here to diff against. A place lives in Studio's
- * memory, the user is editing it at the same time as the agent, and nothing in
- * this product can or should stop them. So this is not a file history — it is a
- * record of individual mutations, captured by the only code that can see both
- * sides of one: the Studio plugin, inside the same recording that puts the edit
- * in Studio's undo stack.
- *
- * That is why every record carries `after` as well as `before`. `before` is what
- * a revert writes; `after` is what the place should still look like if nobody
- * has touched it since. Before anything is put back the two are compared against
- * what is there now, and a change the user has since edited themselves is
- * reported as a conflict rather than quietly overwritten. Reverting is not undo:
- * Studio's undo stack is linear and shared with the user's own work, and the
- * question this answers — "take back that one thing the agent did" — is not one
- * a stack can answer.
+ * Every record carries `after` as well as `before`. `before` is what a revert
+ * writes; `after` is what the place should still look like. Both are compared
+ * against what is there now, and a change the user has since edited is reported
+ * as a conflict. Reverting is not undo — Studio's stack is linear and shared.
  */
 import type { Op } from "./commands.js";
 import type { InstanceRef } from "./targets.js";
@@ -51,18 +42,11 @@ export interface SourceChange {
 }
 
 /**
- * A whole instance, as it was.
+ * A whole instance, as it was. Carried by create and delete, which have only
+ * one side, so the diff is the entire thing added or removed — class,
+ * properties, attributes, tags, source, and everything under it.
  *
- * Carried by create and delete, which have only one side: there is no
- * before-and-after to line up, so the diff is the entire thing added or the
- * entire thing removed — its class, its properties, its attributes, its tags,
- * its source if it is a script, and everything under it. Anything less is a
- * count of descendants pretending to be a review.
- *
- * Bounded when it is taken, and it says where it stopped. A user reading
- * "Deleted Map" needs to see what was in Map, but a place-sized subtree is not
- * something to put on the wire, and quietly showing the first few children as
- * though they were all of them is the failure worth avoiding.
+ * Bounded when it is taken, and it says where it stopped.
  */
 export interface InstanceSnapshot {
   name: string;
@@ -81,11 +65,8 @@ export interface InstanceSnapshot {
 }
 
 /**
- * A mutation, as the plugin reports it.
- *
- * The plugin knows what changed; it does not know which conversation asked or
- * which activity row the change belongs to. The server stamps those on the way
- * into the journal.
+ * A mutation, as the plugin reports it. The plugin knows what changed but not
+ * which conversation asked; the server stamps that on the way into the journal.
  */
 export interface ChangeDraft {
   kind: ChangeKind;

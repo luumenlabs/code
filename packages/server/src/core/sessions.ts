@@ -1,7 +1,4 @@
-/**
- * Studio session registry: connection lifecycle and command routing.
- * Spec sections 8, 26, 29, and 30.
- */
+/** Studio session registry: connection lifecycle and command routing. */
 import { randomUUID } from "node:crypto";
 import {
   LuuCodeError,
@@ -36,13 +33,9 @@ const log = createLogger("sessions");
 const SWEEP_INTERVAL_MS = 5_000;
 
 /**
- * How long a connection may go quiet before it stops counting as live.
- *
- * The plugin's long poll comes back and is re-sent at least every
- * SYNC_HOLD_MS, so anything appreciably past one hold is a DataModel that is
- * gone. Deliberately shorter than SESSION_STALE_MS: dropping an endpoint is
- * destructive and worth being slow about, but believing a dead one about what
- * Studio is doing right now is not.
+ * How long a connection may go quiet before it stops counting as live. The
+ * plugin re-sends its long poll at least every SYNC_HOLD_MS, so anything past
+ * one hold is a DataModel that has gone. Shorter than SESSION_STALE_MS.
  */
 const ENDPOINT_LIVE_MS = SYNC_HOLD_MS + 10_000;
 
@@ -82,11 +75,9 @@ interface SessionRecord {
 }
 
 /**
- * Which Studio window a caller means.
- *
- * An explicit session id wins. Otherwise the chat decides, because chats run
- * concurrently and each one is working in a particular place. Only a caller
- * with neither — an external MCP client, say — falls back to the default.
+ * Which Studio window a caller means. An explicit session id wins, then the
+ * chat, since chats run concurrently in different places. A caller with neither
+ * falls back to the default.
  */
 export interface SessionTarget {
   sessionId?: string;
@@ -94,12 +85,9 @@ export interface SessionTarget {
 }
 
 /**
- * What a chat is working in.
- *
- * The session id alone would not survive Studio restarting: the window that
- * comes back is a new session, and the chat would be stranded against an id
- * that no longer exists. The install id and place identity are recorded so the
- * same game can be recognised when it returns.
+ * What a chat is working in. The session id alone would not survive Studio
+ * restarting, so the install id and place identity are recorded too and the
+ * same game is recognised when it returns.
  */
 interface ChatBinding {
   sessionId: string;
@@ -115,12 +103,8 @@ export interface SessionEvents {
 
 /**
  * One live plugin connection, named well enough to send a command straight to
- * it.
- *
- * Studio runs the plugin separately in the edit DataModel and in each one a
- * playtest creates, and only the edit peer can start a playtest while only a
- * running peer can end one. Which connection a request reaches is part of the
- * operation, not a routing preference.
+ * it. Studio runs the plugin separately in the edit DataModel and in each one a
+ * playtest creates, and only some of them can serve a given operation.
  */
 export interface PeerRef {
   sessionId: string;
@@ -168,14 +152,9 @@ export class SessionRegistry {
   // -------------------------------------------------------------------------
 
   /**
-   * Connects, every time.
-   *
-   * There was an approval step here: a six-digit code shown in Studio and in
-   * the app, compared by the user before the first command could run. Both ends
-   * are one program on one machine, run by one person, and the code was asking
-   * them to vouch for themselves. The token below is still issued and still
-   * checked on every sync — it is what tells one connection from a stale one —
-   * but it is a handle the server hands out, not permission the user grants.
+   * Connects, every time. There is no approval step: both ends are one program
+   * on one machine. The token is issued and checked on every sync, which is
+   * what tells a live connection from a stale one.
    */
   hello(request: StudioHelloRequest): StudioHelloResponse {
     const windowId = windowIdOf(request);
@@ -190,9 +169,7 @@ export class SessionRegistry {
     const endpoint = this.addEndpoint(session, request.run, request.capabilities);
 
     // The window that just connected is the clearest statement of which Studio
-    // the user means, for callers that name none. The approval used to do this;
-    // without it the default stuck to the first window ever seen and stayed
-    // there after that window was gone.
+    // a caller naming none means.
     this.activeSessionId = session.id;
 
     log.info(`Studio connected: ${request.place.name} (${endpoint.realm})`);
@@ -261,19 +238,14 @@ export class SessionRegistry {
   }
 
   /**
-   * The same game, described better.
+   * The same game, described better. The plugin resolves the published place
+   * name after the handshake, so the first description is often `game.Name`.
+   * Only the description may move — a different identity is a different game,
+   * and a session that changed which place it stood for would relabel every
+   * chat bound to it.
    *
-   * The plugin resolves the published place name after the handshake, so the
-   * first thing this server is told about a place is often `game.Name` and the
-   * real one arrives on a later sync. Only the description is allowed to move:
-   * a payload naming a different identity is a different game, and a session
-   * that quietly changed which place it stood for would relabel every chat
-   * bound to it and every change filed against it.
-   *
-   * Compared field by field rather than by serialising: the plugin builds this
-   * from a Lua table, whose key order is whatever the hash gave, so two
-   * encodings of one unchanged place are not the same string — and a status
-   * event on every poll is a re-render of the whole window twice a second.
+   * Compared field by field, not by serialising: the plugin builds this from a
+   * Lua table whose key order is whatever the hash gave.
    */
   private applyPlace(session: SessionRecord, place: PlaceInfo | undefined): void {
     if (!place) return;
@@ -371,10 +343,8 @@ export class SessionRegistry {
     const endpoint = options.peer ? this.requireEndpoint(session, options.peer.endpointId) : this.resolveEndpoint(session, options.realm);
 
     // Bound here rather than at resolution, so a chat is pinned by the first
-    // command it actually sends and not by a status or capability probe. A
-    // command aimed at a named peer never rebinds: a playtest's DataModel is a
-    // transient connection, and following a chat into one would strand it the
-    // moment the playtest ended.
+    // command it sends and not by a status probe. A command aimed at a named
+    // peer never rebinds: a playtest's DataModel is transient.
     if (options.chat && !options.peer) this.bindChat(options.chat, session);
 
     const command: StudioCommand = {
@@ -426,11 +396,8 @@ export class SessionRegistry {
 
   /**
    * Every live plugin connection for the game the caller is working in, own
-   * session first.
-   *
-   * Scoped by install id rather than session: a playtest's DataModel generates a
-   * fresh window id and handshakes as a session of its own, but it is the same
-   * game in the same Studio.
+   * session first. Scoped by install id: a playtest's DataModel handshakes as a
+   * session of its own but is the same game in the same Studio.
    */
   peers(target: SessionTarget = {}): PeerRef[] {
     const session = this.resolveSession(target);
@@ -475,14 +442,10 @@ export class SessionRegistry {
   }
 
   /**
-   * Follows a chat to the window it has been working in.
-   *
-   * The one thing this must never do is quietly answer with a different game.
-   * A chat mid-task holds instance handles, a script it is editing, and an idea
-   * of what is running; pointing it at whatever else happens to be open would
-   * apply all of that to the wrong place, and nothing in the transcript would
-   * say so. Studio restarting is the exception worth handling, because the
-   * window that comes back is the same game under a new id.
+   * Follows a chat to the window it has been working in. It must never answer
+   * with a different game: a chat mid-task holds handles and a script it is
+   * editing. Studio restarting is the one exception, since the window that
+   * comes back is the same game under a new id.
    */
   private resolveBinding(chat: string, bound: ChatBinding): SessionRecord {
     const live = this.sessions.get(bound.sessionId);
@@ -495,16 +458,15 @@ export class SessionRegistry {
       return successor;
     }
 
-    // Still registered but with nothing live behind it — mid-playtest
-    // transition, most likely. The endpoint check reports that far better than
-    // a guess about which window the user meant.
+    // Still registered but with nothing live behind it — a mid-playtest
+    // transition, most likely.
     if (live) return live;
 
     throw new LuuCodeError("STUDIO_NOT_CONNECTED", `The Studio window this chat was working in (${bound.placeName}) is no longer connected.`, {
       details: { chat, place: bound.placeName, sessionId: bound.sessionId },
       hint: this.sessions.size > 0
         ? "Reopen that place in Studio, or point this chat at a connected one with session.select."
-        : "Open the place in Studio and approve the Luu Code connection panel.",
+        : "Open the place in Roblox Studio; the plugin connects on its own.",
     });
   }
 
@@ -545,7 +507,7 @@ export class SessionRegistry {
     if (active) return active;
 
     throw new LuuCodeError("STUDIO_NOT_CONNECTED", "Roblox Studio is not connected to Luu Code.", {
-      hint: "Open the place in Studio and approve the Luu Code connection panel.",
+      hint: "Open the place in Roblox Studio; the plugin connects on its own.",
     });
   }
 
@@ -559,11 +521,9 @@ export class SessionRegistry {
   }
 
   /**
-   * The error routing would fail with, or null if it would succeed.
-   *
-   * Capability checks run before anything is sent, and "this capability is
-   * unavailable" is the wrong story when the real problem is that the window
-   * the chat belongs to has closed.
+   * The error routing would fail with, or null if it would succeed. Capability
+   * checks run first, and "this capability is unavailable" is the wrong story
+   * when the chat's window has closed.
    */
   targetError(target: SessionTarget = {}): LuuCodeError | null {
     try {
@@ -604,21 +564,15 @@ export class SessionRegistry {
   // -------------------------------------------------------------------------
 
   /**
-   * The session a peer that is already running belongs to.
+   * The session a peer that is already running belongs to. Studio loads the
+   * plugin again inside the playtest's DataModel, which generates its own
+   * window id — so by window alone a playtest looks like a second Studio window
+   * and gets a session of its own, leaving the chat bound to the edit session
+   * unable to see it.
    *
-   * Studio loads the plugin again inside the playtest's DataModel, and that
-   * instance generates its own window id — so by window alone a playtest looks
-   * like a second Studio window and is given a session of its own. The chat is
-   * bound to the edit session, which is then the only one it can see: run.start
-   * waits for a running peer that is filed somewhere else and times out with
-   * just the edit peer in the list, and run.stop finds nothing that can call
-   * EndTest. Every playtest failed this way, and nothing about it looked like a
-   * matter of identity.
-   *
-   * The pending start is what ties the two together: the edit peer is parked in
-   * ExecutePlayModeAsync and says so, and that is the window that asked to
-   * play. Falling back to the install id covers a playtest the user started by
-   * hand, where no peer was waiting on one.
+   * The pending start ties the two together: the edit peer parked in
+   * ExecutePlayModeAsync is the window that asked to play. The install id is
+   * the fallback for a playtest the user started by hand.
    */
   private sessionForRuntimePeer(request: StudioHelloRequest): string | null {
     if (request.run?.running !== true) return null;
@@ -632,9 +586,8 @@ export class SessionRegistry {
 
     if (asked) return asked.id;
 
-    // Only where there is no ambiguity. Two windows on one place share an
-    // install id, and filing a playtest under the wrong one would have a chat
-    // watching a playtest that is not the one it started.
+    // Only where there is no ambiguity: two windows on one place share an
+    // install id, and the wrong one leaves a chat watching another's playtest.
     return candidates.length === 1 ? (candidates[0]?.id ?? null) : null;
   }
 
@@ -647,9 +600,8 @@ export class SessionRegistry {
     const existing = this.sessions.get(sessionId);
 
     if (existing) {
-      // The install id is refreshed along with the place: a window that has had
-      // a different place opened in it is a different game, and leaving the old
-      // id behind would have chats follow the session into it.
+      // Refreshed along with the place: a window with a different place open is
+      // a different game, and chats must not follow the session into it.
       existing.installId = request.installId;
       existing.place = request.place;
       existing.studioVersion = request.studioVersion;
@@ -681,9 +633,8 @@ export class SessionRegistry {
 
   private addEndpoint(session: SessionRecord, run: RunState, capabilities: CapabilityId[]): EndpointRecord {
     // Studio replaces the plugin's DataModel on every edit/run transition, so a
-    // stale connection for the same realm is dead by definition. This is scoped
-    // to one session for a reason: two Studio windows are both in the edit realm
-    // and neither replaced the other.
+    // stale connection for the same realm is dead. Scoped to one session: two
+    // Studio windows are both in the edit realm and neither replaced the other.
     for (const [id, existing] of session.endpoints) {
       if (existing.realm === run.realm) {
         this.failEndpoint(existing, new LuuCodeError("STUDIO_NOT_CONNECTED", "Studio replaced this connection."));
@@ -736,11 +687,9 @@ export class SessionRegistry {
 
     for (const [sessionId, session] of this.sessions) {
       for (const [endpointId, endpoint] of session.endpoints) {
-        // A park used to exempt an endpoint from sweeping outright, on the
-        // grounds that it is holding an open request. But a park is re-opened
-        // every SYNC_HOLD_MS, so one that has been silent past the stale window
-        // is a socket nobody is on the other end of — which is how a finished
-        // playtest's peers stayed in the session indefinitely.
+        // A park is re-opened every SYNC_HOLD_MS, so one silent past the stale
+        // window is a socket with nobody on the other end. Holding an open
+        // request is not on its own a reason to survive the sweep.
         if (now - endpoint.lastSeen < SESSION_STALE_MS) continue;
 
         log.info(`Studio connection went quiet (${endpoint.realm}); dropping it`);
@@ -827,12 +776,9 @@ export class SessionRegistry {
   }
 
   /**
-   * Points a chat at a Studio window, and moves the default along with it.
-   *
-   * Moving the default too is what makes the picker behave the way it looks:
-   * the user chose a window while looking at a chat, so that chat goes there,
-   * and the next chat they open starts there rather than somewhere older. Chats
-   * already bound elsewhere keep working where they are.
+   * Points a chat at a Studio window, and moves the default along with it, so
+   * the next new chat starts there too. Chats already bound elsewhere keep
+   * working where they are.
    */
   selectSession(sessionId: string, chat?: string): void {
     const session = this.sessions.get(sessionId);
@@ -855,10 +801,8 @@ export class SessionRegistry {
 
     this.forget(session);
 
-    // Chats bound here keep their binding, and say so if asked to do anything.
-    // Silently moving them onto whatever else is connected is the failure this
-    // whole path exists to prevent — disconnecting a window is not an
-    // instruction to redirect the work that was happening in it.
+    // Chats bound here keep their binding and say so if asked to do anything.
+    // Disconnecting a window is not an instruction to redirect its work.
 
     this.bus.emit({ type: "session.disconnected", sessionId, reason: "Disconnected by the user" });
     this.emitStatus();
@@ -876,15 +820,9 @@ export class SessionRegistry {
       .sort((left, right) => right.lastSeen - left.lastSeen);
 
     // Only a connection that is still answering gets to say what mode the
-    // session is in.
-    //
-    // A playtest's DataModels are destroyed when it ends, and until they age
-    // out their endpoints are still here claiming realm "client" and
-    // `running: true`. `selectEndpoint` prefers a running peer over the edit
-    // one, so a session sitting in edit mode went on reporting "Playtest ·
-    // client" — in the app, in the plugin's panel, and to the agent. The edit
-    // peer was right there and fresher, and was outvoted by a peer that no
-    // longer existed.
+    // session is in. A finished playtest's endpoints linger until they age out,
+    // still claiming realm "client" and `running: true`, and `selectEndpoint`
+    // prefers a running peer.
     const live = endpoints.filter((endpoint) => Date.now() - endpoint.lastSeen <= ENDPOINT_LIVE_MS);
     const primary = selectEndpoint({ ...emptyPublicSession(session), endpoints: live });
 
@@ -921,9 +859,8 @@ export class SessionRegistry {
 }
 
 /**
- * Falls back to the install id for plugins built before windowId existed. Those
- * behave exactly as they used to — one session per machine — instead of failing
- * to connect against a newer server.
+ * Falls back to the install id for plugins built before windowId existed, which
+ * then get one session per machine rather than failing to connect.
  */
 function windowIdOf(request: StudioHelloRequest): string {
   return request.windowId ?? request.installId;

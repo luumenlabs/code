@@ -1,23 +1,14 @@
 --!nonstrict
 --[[
-	Reading and writing script source.
+	Reading and writing script source. Its own module because the script
+	commands and the change journal both need it and must not drift.
 
-	Its own module because two callers need it and they must not drift: the
-	script commands, and the change journal that has to read a script before an
-	edit and write it back when the user reverts one. The rules below are not
-	obvious and getting them wrong is silent, so there is exactly one copy.
+	Not called `Source`: modules are reached as `script.Parent.<Name>`,
+	`script.Parent` is the plugin's root Script, and Roblox resolves properties
+	before children — so `script.Parent.Source` is that script's own text.
 
-	Not called `Source`, which is what it wants to be called. Every module here
-	is reached as `script.Parent.<Name>`, `script.Parent` is the plugin's root
-	Script, and `Source` is a property of every Script — so the index would hand
-	back that script's own text instead of this module, and `require` would fail
-	on a string. Roblox resolves properties before children, and the error it
-	produces names neither.
-
-	Reads prefer ScriptEditorService so the agent sees what the user sees,
-	including edits open in a tab but not yet committed to the instance. Writes
-	go back through the same service for the same reason: assigning Source
-	directly can be discarded without error when the script is open.
+	Reads and writes both go through ScriptEditorService, so the agent sees
+	edits open in a tab, and a write is not discarded when the script is open.
 ]]
 
 local ScriptEditorService = game:GetService("ScriptEditorService")

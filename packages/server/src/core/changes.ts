@@ -1,28 +1,17 @@
 /**
- * The change journal.
+ * The change journal. Every mutating operation comes back from Studio
+ * describing both sides of the write; those are kept here, filed against the
+ * Studio window they happened in and the conversation that asked for them.
  *
- * Every mutating operation comes back from Studio with a description of what it
- * did on both sides of the write. This is where those are kept, filed against
- * the Studio window they happened in and the conversation that asked for them,
- * so the app can show the user what an agent changed and offer to put any of it
- * back.
+ * Held in memory. A revertable record only means anything beside the live
+ * DataModel it describes: the handles resolve there, the plugin holds the copy
+ * of a deleted subtree, and the conflict check compares against that place.
  *
- * Held in memory, deliberately. A *revertable* record is only meaningful next
- * to the live DataModel it describes: the handles resolve there, the copy of a
- * deleted subtree is held by that plugin, and the conflict check compares
- * against that place as it is now. Persisting this list would produce a panel
- * full of buttons that cannot work, which is worse than an empty one that says
- * why.
+ * The diff does outlive the window — the app keeps its own copy against the
+ * conversation, in `Thread.changes`. Both halves are needed: this one to put
+ * something back, that one to read it. Do not fold either into the other.
  *
- * The diff is not the same thing, and it does outlive the window. The app keeps
- * its own copy against the conversation that asked for it — see
- * `Thread.changes` in `packages/app/src/shared/threads.ts` — so a transcript
- * read back tomorrow still shows what was done, with no Revert on it. Both
- * halves are needed: this one to put something back, that one to read it. Do
- * not resolve the apparent duplication by moving either into the other.
- *
- * The records never reach the agent. The dispatcher takes them out of the result
- * on the way past — see `takeChanges`.
+ * The records never reach the agent; the dispatcher strips them in `takeChanges`.
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -37,12 +26,8 @@ import type {
 } from "@luumen/code-protocol";
 
 /**
- * How much history one Studio window keeps.
- *
- * Generous, because a long session's early changes are exactly the ones a user
- * comes looking for, and a record is small unless it carries a script. The
- * oldest go first when it fills, and `dropped` says so rather than letting the
- * list quietly become a lie about how much was done.
+ * How much history one Studio window keeps. The oldest go first when it fills,
+ * and `dropped` says so rather than letting the list understate what was done.
  */
 const MAX_RECORDS_PER_SESSION = 2000;
 
@@ -116,8 +101,7 @@ export class ChangeJournal {
     });
 
     const limit = filter.limit ?? matching.length;
-    // Newest kept when there are too many: the tail of a long session is what
-    // the user is reviewing.
+    // Newest kept when there are too many.
     const records = matching.slice(Math.max(0, matching.length - limit));
 
     return {
@@ -128,12 +112,9 @@ export class ChangeJournal {
   }
 
   /**
-   * The records behind a set of ids, newest first.
-   *
-   * Newest first is not a display choice; it is the order a revert has to run
-   * in. Two changes to one property compose only when the later one is taken
-   * back before the earlier one, and putting a deleted instance back before
-   * undoing the rename that followed it would restore it under the wrong name.
+   * The records behind a set of ids, newest first — the order a revert has to
+   * run in. Restoring a deleted instance before undoing the rename that
+   * followed it would put it back under the wrong name.
    */
   resolve(ids: string[]): { records: ChangeRecord[]; missing: string[] } {
     const records: ChangeRecord[] = [];

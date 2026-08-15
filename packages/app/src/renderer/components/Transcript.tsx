@@ -1,9 +1,7 @@
 /**
- * The conversation, with Roblox activity shown inline.
- *
- * Studio operations appear in Roblox language rather than as tool identifiers,
- * and screenshots the agent captured are shown where they happened, so the user
- * can follow the work without reading protocol traffic. Spec sections 7 and 33.
+ * The conversation, with Roblox activity shown inline. Studio operations appear
+ * in Roblox language rather than as tool identifiers, and a screenshot the
+ * agent captured is shown where it happened.
  */
 import * as React from "react";
 import {
@@ -97,13 +95,11 @@ export function Transcript({
   const pinned = React.useRef(true);
 
   React.useEffect(() => {
-    // Only follow along when the user is already at the bottom; yanking them
-    // away from something they are reading is worse than a missed message.
+    // Only follow along when the user is already at the bottom.
     if (!pinned.current) return;
     const element = viewport.current;
     if (element) element.scrollTop = element.scrollHeight;
-    // `busy` too: the working line appearing changes the height, and the point
-    // of it is to be seen.
+    // `busy` too: the working line appearing changes the height.
   }, [items, busy]);
 
   const onScroll = (): void => {
@@ -128,20 +124,15 @@ export function Transcript({
          under the title bar — see `.fade-under-topbar`. */
       viewportClassName="fade-under-topbar"
     >
-      {/* The column width matches the composer's card, so the conversation and
-          the box you answer in line up down both edges.
-
-          The top inset is the fade's own height, so a conversation short enough
-          to sit still is never dimmed by an effect meant for one that is
-          scrolling. */}
+      {/* The column width matches the composer's card. The top inset is the
+          fade's own height, so a short conversation is never dimmed. */}
       <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-7 pt-[var(--transcript-fade)] pb-7">
         {turns.map((turn, index) => (
           <Turn
             key={turn[0]!.id}
             items={turn}
             busy={busy}
-            // The turn in progress has the live "Working for" line under it
-            // already; a second, frozen clock beside it would be nonsense.
+            // The turn in progress already has the live "Working for" line.
             live={busy && index === turns.length - 1}
           />
         ))}
@@ -154,25 +145,21 @@ export function Transcript({
 
 /**
  * One exchange: what the user asked, and everything the agent did about it.
- *
- * While the turn is running you watch it happen, row by row. Once it lands, the
- * answer is the only thing you came for — so the working-out folds behind a
- * single line above it, and what is left on screen is the message and the two
- * facts about it: how long it took, and when it finished.
+ * A running turn is shown row by row; once it lands, the working-out folds
+ * behind a single line above the answer.
  */
 function Turn({ items, busy, live }: { items: TimelineItem[]; busy: boolean; live: boolean }): React.JSX.Element {
   const asked = items.filter((item) => item.kind === "user");
   const rest = items.filter((item) => item.kind !== "user");
 
   // The last thing the agent said is the answer; everything before it is how it
-  // got there. A turn that never got that far — it errored, or it only did
-  // things — has nothing to promote, so nothing is folded away either.
+  // got there. A turn with no answer has nothing to fold behind.
   const answerAt = rest.map((item) => item.kind).lastIndexOf("assistant");
   const working = answerAt === -1 ? [] : rest.slice(0, answerAt);
   const answer = answerAt === -1 ? rest : rest.slice(answerAt);
 
-  /* Every operation in the turn, folded or not. What each of them changed is
-     shown together underneath, outside the folds — see `TurnChanges`. */
+  /* Every operation in the turn, folded or not. `TurnChanges` shows what they
+     changed together underneath, outside the folds. */
   const activityIds = React.useMemo(
     () => items.filter((item) => item.kind === "activity").map((item) => item.activity.id),
     [items],
@@ -216,11 +203,8 @@ function Rows({ items, busy }: { items: TimelineItem[]; busy: boolean }): React.
 }
 
 /**
- * "Worked for 1m 12s", and everything that took behind it.
- *
- * The rows inside are listed flat rather than grouped again: they are already
- * one click away, and making the third tool call of a finished turn cost two
- * clicks is how a disclosure stops being worth opening.
+ * "Worked for 1m 12s", and everything that took behind it. The rows inside are
+ * flat rather than grouped again — they are already one click away.
  */
 function WorkFold({
   items,
@@ -255,10 +239,8 @@ function WorkFold({
 }
 
 /**
- * When it finished, and the whole thing on the clipboard.
- *
- * A turn that is only the message you typed has nothing to report and nothing
- * worth copying back to yourself.
+ * When it finished, and the whole thing on the clipboard. A turn that is only
+ * the typed message has nothing to report.
  */
 function TurnFooter({ items }: { items: TimelineItem[] }): React.JSX.Element | null {
   const work = items.filter((item) => item.kind !== "user");
@@ -278,10 +260,8 @@ function TurnFooter({ items }: { items: TimelineItem[] }): React.JSX.Element | n
 }
 
 /**
- * How long the turn ran.
- *
- * Restored transcripts and older entries can be missing timestamps, and a
- * negative or absurd span is worse than no span at all.
+ * How long the turn ran. Restored transcripts can be missing timestamps, and no
+ * span reads better than a negative one.
  */
 function span(items: TimelineItem[]): number | null {
   const first = items[0]!;
@@ -295,11 +275,8 @@ function clockTime(at: number): string {
 }
 
 /**
- * Splits the timeline where the user spoke.
- *
- * Anything before the first message of a restored conversation — a notice, a
- * Roblox operation an external agent performed — is a turn of its own rather
- * than being dropped or attached to the first thing the user said afterwards.
+ * Splits the timeline where the user spoke. Anything before the first message —
+ * a notice, an external agent's operation — becomes a turn of its own.
  */
 function splitTurns(items: TimelineItem[]): TimelineItem[][] {
   const turns: TimelineItem[][] = [];
@@ -313,12 +290,8 @@ function splitTurns(items: TimelineItem[]): TimelineItem[][] {
 }
 
 /**
- * What the copy button puts on the clipboard: the whole turn.
- *
- * Prose alone was the wrong answer. "It could not find the instance" is only
- * useful next to the call that could not find it, and pasting a reply into an
- * issue without the operations behind it throws away the half that explains it.
- * The message you typed is left out — you have that already.
+ * What the copy button puts on the clipboard: the whole turn, operations
+ * included. The typed message is left out.
  */
 function turnText(items: TimelineItem[]): string {
   return items
@@ -341,15 +314,8 @@ function turnText(items: TimelineItem[]): string {
 }
 
 /**
- * Consecutive operations, folded down to the one happening now.
- *
- * A turn that inspects six things and edits two is eight rows of scrollback
- * that push the conversation off the screen, and only the last of them is what
- * the agent is doing right now. The earlier ones stay one click away.
- *
- * Kept in order — the folded ones are older, so they sit above the live one.
- * A transcript that puts the newest row on top and its history underneath
- * reads backwards.
+ * Consecutive operations, folded down to the one happening now. Kept in order:
+ * the folded ones are older, so they sit above the live one.
  */
 function Run({ items, busy }: { items: TimelineItem[]; busy: boolean }): React.JSX.Element {
   const folded = items.slice(0, -1);
@@ -401,8 +367,7 @@ function groupRuns(items: TimelineItem[]): Grouped[] {
 
   const flush = (): void => {
     if (run.length === 0) return;
-    // Two in a row is not clutter; folding one row behind a disclosure that
-    // takes the same space as the row would be theatre.
+    // A disclosure that takes the same space as the row it hides is no gain.
     if (run.length < 3) out.push(...run.map((item) => ({ kind: "single" as const, item })));
     else out.push({ kind: "run", items: run });
     run = [];
@@ -439,17 +404,9 @@ const WORKING_LABEL: Partial<Record<AgentState, string>> = {
 };
 
 /**
- * Proof of life.
- *
- * A long turn — a playtest, a screenshot, a model that is thinking hard — looks
- * exactly like a hung one. The elapsed time is the difference: it says the app
- * is still with you, and it is the number you quote when something really has
- * stopped.
- *
- * Counted from when the turn started, not from when this mounted. Chats run in
- * parallel, so opening one that has been working for two minutes mounts this
- * fresh — and a clock that restarted at zero would report the one number it
- * exists to get right as the one thing it had no way of knowing.
+ * Proof of life: a long turn looks exactly like a hung one without it. Counted
+ * from when the turn started, not from when this mounted — chats run in
+ * parallel, so opening one already working mounts this fresh.
  */
 function Working({ state, since }: { state: AgentState | undefined; since: number | null }): React.JSX.Element {
   const [elapsed, setElapsed] = React.useState(() => (since ? Math.max(0, Date.now() - since) : 0));
@@ -490,13 +447,7 @@ function duration(ms: number): string {
   return `${seconds}s`;
 }
 
-/**
- * The screen a new chat opens on.
- *
- * A blank chat is not the place to explain the product. It says where you are
- * and asks the one question, and the examples are there to be clicked, not
- * read: three short lines, not a feature list.
- */
+/** The screen a new chat opens on. The examples are there to be clicked. */
 function EmptyState({
   onExample,
   placeName,
@@ -602,51 +553,30 @@ function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.E
 }
 
 /**
- * A tool call, openable.
- *
- * Collapsed it is one line, because most of them are not what you are reading
- * the transcript for. Open, it is the whole call and the whole result, as text
- * you can select and copy — when a tool misbehaves, the exact arguments and the
- * exact output are the only things worth having, and a truncated preview of
- * either is the same as nothing.
- *
- * The line itself is a verb and its object — "Edit · ModelChip.tsx" — for the
- * same reason a Roblox operation is a sentence about the game. This row used to
- * be the raw tool id followed by as much JSON as fitted, which made a turn of
- * eight calls into eight lines of near-identical `{"replace_all":false,...` with
- * the filename cut off at the right edge: the one thing you were looking for
- * was the one thing that never fitted. `describeTool` does the reduction.
- *
- * No border either. A run of bordered cards reads as a stack of separate
- * objects, when what it is is a list of small things one agent did in a row;
- * the hover state is enough to say a line is a control.
+ * A tool call, openable. Collapsed it is a verb and its object — "Edit ·
+ * ModelChip.tsx", from `describeTool`. Open, it is the whole call and the whole
+ * result, untruncated and selectable.
  */
 function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; busy: boolean }): React.JSX.Element {
   const input = format(item.input);
   const summary = describeTool(item.name, item.input);
   const Icon = TOOL_ICON[summary.icon];
-  // Only spin while there is a turn that could still answer. A CLI that never
-  // sends a result for a call — and they differ on this — would otherwise leave
-  // a row spinning for the rest of the conversation, and for every conversation
-  // after it was reloaded from disk.
+  // Only spin while a turn could still answer. Some CLIs never send a result,
+  // which would otherwise leave the row spinning forever.
   const pending = item.result === null && busy;
 
   return (
     <Collapsible>
-      {/* A failure is marked, not highlighted. Filling the row with red made
-          every recoverable hiccup look like the end of the world, and a turn
-          with three of them unreadable — the mark in front says the same thing
-          without shouting it. The reason folds away underneath, in the same
-          place the successful call keeps its result. */}
+      {/* A failure is marked, not highlighted. The reason folds away underneath,
+          where a successful call keeps its result. */}
       <div
         className={cn(
           "group/row flex flex-col rounded-lg transition-colors hover:bg-muted/40",
           item.isError && "bg-destructive/5",
         )}
       >
-        {/* The copy button sits beside the disclosure rather than inside it: a
-            button nested in a button is neither valid nor clickable, and this
-            row is the one people reach for when a tool has misbehaved. */}
+        {/* Beside the disclosure, not inside it: a button nested in a button is
+            neither valid nor clickable. */}
         <div className="flex items-center gap-1 pr-1">
           <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 pl-2 text-left">
             {item.isError ? (
@@ -679,12 +609,11 @@ function Tool({ item, busy }: { item: Extract<TimelineItem, { kind: "tool" }>; b
         </div>
 
         <CollapsibleContent>
-          {/* Indented to the label rather than the icon, so an open call sits
-              under the line that named it instead of restarting the margin. */}
+          {/* Indented to the label, not the icon, so an open call sits under
+              the line that named it. */}
           <div className="mt-0.5 mb-1 ml-[22px] flex flex-col gap-2 border-l pl-2.5">
-            {/* The raw name is here rather than in the line above: it is what
-                you need when you are debugging the tool, and noise when you are
-                reading what the agent did. */}
+            {/* The raw name lives in here: needed when debugging a tool, noise
+                when reading what the agent did. */}
             <div className="font-mono text-[11px] text-muted-foreground">{item.name}</div>
 
             <Block label="Call" value={input} />
@@ -725,28 +654,16 @@ function Block({ label, value, tone }: { label: string; value: string; tone?: "e
 }
 
 /**
- * A Roblox operation — one line, like everything else the agent did.
- *
- * This used to grow downwards: a title, then the detail under it, then the
- * error and its hint, then the instances it touched. Read one at a time that is
- * generous; read as a turn — and a turn is twenty of them — it is a wall, and
- * the shape of the work is lost in it. Everything below the line now folds
- * away, so a turn is a list you can run your eye down and open the one row you
- * care about.
- *
- * The screenshot is the exception, and stays where it happened. It is not
- * detail about the operation, it is the thing the operation produced and the
- * reason the user asked for it — spec sections 7 and 33 put it in the
- * conversation deliberately, and hiding it behind a disclosure would make the
- * transcript tidier by making it less useful.
+ * A Roblox operation — one line, like everything else the agent did, with the
+ * detail, the error, and the instances it touched folded underneath. A
+ * screenshot is the exception and stays where it happened.
  */
 function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element {
   const meta = CATEGORY[activity.category];
   const Icon = meta.icon;
   const failed = activity.status === "error";
 
-  // The line's own summary. A failure leads with its code, because that is the
-  // word worth seeing before deciding whether to open anything.
+  // A failure leads with its code, which is the word worth seeing unopened.
   const summary = failed ? (activity.error?.code ?? "Failed") : (activity.detail ?? "");
 
   const foldable =
@@ -762,8 +679,7 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
             disabled={!foldable}
             className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-2.5 text-left"
           >
-            {/* Same rule as a tool row: the mark in front carries the failure,
-                so a run of them stays readable. */}
+            {/* Same rule as a tool row: the mark in front carries the failure. */}
             {failed ? (
               <CircleX className="size-3.5 shrink-0 text-destructive" />
             ) : (
@@ -780,10 +696,8 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
 
             <span className="flex-1" />
 
-            {/* Only a call with no conversation in this app is external. Every
-                Roblox operation reaches the server over MCP, including this
-                app's own agent's, so testing the origin alone put the badge on
-                every row in the transcript and told the user nothing. */}
+            {/* Every operation reaches the server over MCP, including this
+                app's own, so a missing chat is what marks one external. */}
             {activity.chat === null && <Badge variant="outline">external agent</Badge>}
 
             {activity.status === "running" && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
@@ -799,9 +713,6 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
 
         <CollapsibleContent>
           <div className="mt-0.5 mb-1.5 ml-[22px] flex flex-col gap-1.5 border-l pl-2.5">
-            {/* Selectable, like everything else the agent produced. "Which
-                instance did it touch" is a question you answer by copying the
-                line out. */}
             {activity.detail && (
               <div className="selectable text-[12.5px] leading-relaxed text-muted-foreground">{activity.detail}</div>
             )}
@@ -846,20 +757,9 @@ function Activity({ activity }: { activity: ActivityEvent }): React.JSX.Element 
 }
 
 /**
- * Copy, everywhere something is worth having exactly.
- *
- * `value` may be a function so a row can build its text only when the button is
- * actually pressed — a screenshot's base64 or a long result should not be
- * assembled on every render of every row in the scrollback.
- *
- * The fallback matters: `navigator.clipboard` rejects when the window is not
- * focused, which is exactly the case when someone clicks copy after alt-tabbing
- * back from Studio. A silent no-op there is what "I cannot copy this" looks
- * like from the outside.
- *
- * Always drawn, never revealed on hover. Hiding it with `opacity-0` still left
- * it holding its place in the row, so every tool call ended in a gap that
- * nothing appeared to be filling. Dim is honest; invisible-but-occupying is not.
+ * Copy, everywhere something is worth having exactly. `value` may be a function
+ * so a row builds its text only when pressed — a screenshot's base64 should not
+ * be assembled on every render. Always drawn, dimmed rather than hidden.
  */
 function CopyButton({
   value,
@@ -906,11 +806,9 @@ function CopyButton({
 }
 
 /**
- * Writes to the clipboard, or says it could not.
- *
- * The execCommand path is deprecated and still the only one that works from a
- * window Chromium considers unfocused, which a desktop app spends a lot of its
- * life being.
+ * Writes to the clipboard, or says it could not. `navigator.clipboard` rejects
+ * from a window Chromium considers unfocused; the deprecated execCommand path
+ * is the only one that works there.
  */
 async function writeClipboard(text: string): Promise<boolean> {
   try {
@@ -950,8 +848,7 @@ function activityText(activity: ActivityEvent): string {
 
   if (activity.detail) parts.push(activity.detail);
 
-  // An insert puts instances in the place the same way an edit does, so it
-  // earns the same list of what it touched.
+  // An insert puts instances in the place the same way an edit does.
   if ((activity.category === "edit" || activity.category === "assets") && activity.instances.length > 0) {
     parts.push(activity.instances.map((instance) => instance.path).join("\n"));
   }

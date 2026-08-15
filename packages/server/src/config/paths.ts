@@ -1,9 +1,4 @@
-/**
- * Where Luu Code keeps local state.
- *
- * Everything here stays on the machine. Nothing in this directory is uploaded
- * anywhere as a condition of using the product. Spec section 28.
- */
+/** Where Luu Code keeps local state. Everything here stays on the machine. */
 import { homedir } from "node:os";
 import { join } from "node:path";
 

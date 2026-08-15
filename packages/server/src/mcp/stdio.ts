@@ -1,10 +1,7 @@
 /**
- * The `luu-code-mcp` entry point.
- *
- * An external agent should be able to add one MCP server and have Roblox
- * Studio work, without also being told to run a daemon or open the Electron
- * app. So this attaches to a Luu Code server if one is already running, and
- * starts one in-process if not. Spec sections 21 and 47.
+ * The `luu-code-mcp` entry point. Attaches to a Luu Code server if one is
+ * running, and starts one in-process if not, so adding a single MCP server is
+ * all an external agent has to do.
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { unavailableOps } from "@luumen/code-protocol";
@@ -44,12 +41,9 @@ interface ResolvedBackend {
 }
 
 /**
- * Which conversation this process is serving.
- *
- * Luu Code starts one of these per chat and stamps the id into the child's
- * environment, so the operations it performs can be filed against the chat that
- * asked for them rather than against whichever one is on screen. An MCP client
- * the user configured themselves has no chat here and sets nothing.
+ * Which conversation this process is serving. Luu Code starts one per chat and
+ * stamps the id into the child's environment. An MCP client the user configured
+ * themselves has no chat here and sets nothing.
  */
 function chatId(): string | undefined {
   const value = process.env.LUU_CODE_CHAT;
@@ -58,14 +52,8 @@ function chatId(): string | undefined {
 
 /**
  * Everything to leave out of the tool list: what the user turned off, and what
- * this Studio build and plugin cannot do at all.
- *
- * The second half is the one that was missing. A tool whose capability will
- * never arrive was advertised anyway, so an agent picked it, was refused, and
- * went looking for another way to do the same thing — which for anything
- * Roblox-shaped means writing it by hand through studio_exec. The rule this
- * restores is the one `server.ts` already states: an agent picks from what it
- * is shown, so do not show it something that cannot work.
+ * this Studio build and plugin cannot do at all. An agent picks from what it is
+ * shown, so do not show it something that cannot work.
  */
 function hidden(report: CapabilityReport): string[] {
   return [...report.disabledTools, ...unavailableOps(report)];
@@ -77,10 +65,8 @@ async function resolveBackend(): Promise<ResolvedBackend> {
 
   if (existing && (await existing.isAlive())) {
     // Sharing the running server means the harness and this agent see the same
-    // Studio session, the same output buffer, and the same permissions. The
-    // permissions are the reason this reaches back over HTTP for the tool list
-    // rather than caching one: the user is toggling them in the app, in another
-    // process, while this agent is mid-conversation.
+    // Studio session, output buffer, and permissions. The tool list is fetched
+    // over HTTP rather than cached: the user toggles it in another process.
     let unsubscribe: (() => void) | null = null;
 
     return {

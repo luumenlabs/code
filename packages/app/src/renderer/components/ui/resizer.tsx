@@ -1,14 +1,9 @@
 /**
- * The edge you drag to resize a panel.
- *
- * Two pixels wide and invisible until you reach for it, with a much larger
- * hit area either side: a border you have to hit exactly is a border nobody
- * discovers, and one that is visibly thick enough to grab is a line drawn
- * through the window for no reason.
+ * The edge you drag to resize a panel: two pixels wide and invisible until you
+ * reach for it, with a much larger hit area either side.
  *
  * Pointer capture rather than window listeners, so a drag that leaves the
- * window — which it will, because the whole point is to pull the edge outward —
- * keeps sending events to the handle instead of stopping halfway.
+ * window keeps sending events to the handle.
  */
 import * as React from "react";
 import { cn } from "@/lib/utils";
@@ -51,8 +46,7 @@ export function Resizer({
     const from = start.current;
     if (!from) return;
 
-    // A panel on the right grows as the pointer moves left, so the delta is
-    // inverted rather than the panel being laid out backwards.
+    // A panel on the right grows as the pointer moves left.
     const delta = side === "left" ? event.clientX - from.x : from.x - event.clientX;
     onChange(clamp(from.width + delta));
   };
@@ -93,8 +87,7 @@ export function Resizer({
       onPointerCancel={end}
       onKeyDown={onKeyDown}
       onDoubleClick={() => {
-        // Back to whichever end it is furthest from, which is what a
-        // double-click on a splitter does everywhere else.
+        // Back to whichever end it is furthest from.
         const next = width - min < max - width ? max : min;
         onChange(next);
         onCommit(next);

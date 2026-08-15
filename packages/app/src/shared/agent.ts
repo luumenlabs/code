@@ -1,19 +1,12 @@
 /**
- * The normalized shape of a coding-agent session.
- *
- * Claude Code and Codex speak different stream formats, and future agents will
- * speak others. Those differences are absorbed by the adapters so nothing
- * downstream, and nothing on the Roblox side, has to know which agent is
- * running. Spec sections 6 and 38.
+ * The normalized shape of a coding-agent session. The adapters absorb each
+ * CLI's stream format, so nothing downstream knows which agent is running.
  */
 
 /**
- * A provider, which is also the thing that runs the session.
- *
- * `ollama` is the odd one: it is a provider the user picks models from, but the
- * process behind it is still the Codex CLI, pointed at the daemon on this
- * machine. See `main/agents/ollama.ts` for why that is the honest arrangement
- * rather than a shortcut.
+ * A provider, which is also the thing that runs the session. `ollama` is a
+ * provider to pick models from, but the process behind it is the Codex CLI
+ * pointed at the daemon on this machine.
  */
 export type AgentId = "claude" | "codex" | "ollama";
 
@@ -24,7 +17,7 @@ export interface AgentInfo {
   command: string | null;
   version: string | null;
   installed: boolean;
-  /** Why the agent cannot be used, phrased for the user. Spec section 44. */
+  /** Why the agent cannot be used, phrased for the user. */
   problem: string | null;
   installHint: string;
   /**
@@ -37,12 +30,8 @@ export interface AgentInfo {
 }
 
 /**
- * An image the user attached to a message.
- *
- * Screenshots are how people describe a Roblox problem — a broken GUI, a part
- * in the wrong place — so the composer takes them directly. Carried as base64
- * because that is what both the SDK and the transcript need, and neither should
- * depend on a file still being on disk later.
+ * An image the user attached to a message. Carried as base64: neither the SDK
+ * nor the transcript should depend on a file still being on disk later.
  */
 export interface Attachment {
   id: string;
@@ -65,11 +54,8 @@ export type AgentEvent =
   | { type: "error"; message: string };
 
 /**
- * One rendered, persisted transcript entry.
- *
- * Roblox operations are part of the transcript, not a separate log: reopening a
- * conversation should show what the agent actually did to the place, not just
- * what it said about it. Spec sections 33 and 45.
+ * One rendered, persisted transcript entry. Roblox operations are part of the
+ * transcript, not a separate log.
  */
 export type TranscriptEntry =
   | { kind: "user"; id: string; text: string; at: number; attachments?: Attachment[] }

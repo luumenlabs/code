@@ -1,11 +1,8 @@
 --!nonstrict
 --[[
-	Script reading and editing. Spec sections 9.2 and 10.2.
-
-	Source access itself lives in ScriptSource.luau, shared with the change journal so
-	the editor-service rules have one home. What is here is the command surface
-	on top of it: line ranges, targeted edits, and recording both sides of every
-	write so the user can review and take one back.
+	Script reading and editing. Source access lives in ScriptSource.luau, shared
+	with the change journal. What is here is the command surface on top of it:
+	line ranges, targeted edits, and recording both sides of every write.
 ]]
 
 local Errors = require(script.Parent.Parent.Errors)
@@ -79,11 +76,9 @@ end
 --[[
 	Every match of `pattern` on one line, left to right.
 
-	A literal search lowercases both sides when it is case-insensitive but
-	measures the column against the original, so the number points at the real
-	character. A pattern search is always case-sensitive, because Luau patterns
-	carry their own character classes and folding the subject would quietly
-	change what %u and %l mean.
+	A literal search lowercases both sides when case-insensitive but measures
+	the column against the original. A pattern search is always case-sensitive:
+	folding the subject would change what %u and %l mean.
 ]]
 local function findInLine(line: string, needle: string, isPattern: boolean, caseSensitive: boolean): { number }
 	local columns = {}
@@ -146,14 +141,10 @@ local function contextSlice(lines: { string }, from: number, to: number): { stri
 end
 
 --[[
-	Searches every script's source in one pass.
-
-	There is no filesystem to grep: the source of truth is the DataModel, and
-	finding one call site by reading scripts individually costs a round trip and
-	a context window per file. Scripts whose source Studio will not hand over are
-	skipped rather than failing the search — one locked module should not hide
-	every other match — and the count of them comes back so a suspiciously empty
-	result is explainable.
+	Searches every script's source in one pass. There is no filesystem to grep;
+	the source of truth is the DataModel. A script Studio will not hand over is
+	skipped rather than failing the search, and the count of those comes back so
+	an empty result is explainable.
 ]]
 function ScriptOps.grep(params: any): any
 	local scope = params.scope and Handles.resolve(params.scope) or game
@@ -238,10 +229,9 @@ end
 --[[
 	Replaces every match on one line, returning the new line and how many.
 
-	The literal case splices around the columns grep already knows how to find,
-	which sidesteps escaping entirely — the text being replaced is user code, and
-	it is full of the characters Luau patterns treat as magic. Only the pattern
-	case goes through gsub, where that syntax is what the caller asked for.
+	The literal case splices around the columns grep found, which sidesteps
+	escaping: user code is full of the characters Luau patterns treat as magic.
+	Only the pattern case goes through gsub.
 ]]
 local function replaceInLine(
 	line: string,
@@ -300,12 +290,9 @@ local function replaceInLine(
 end
 
 --[[
-	One pattern across every script in scope.
-
-	Everything is computed before anything is written, so a sweep that would go
-	over either ceiling fails having touched nothing. Half a rename applied
-	across a codebase is worse than none: the place still builds, and the agent
-	has no way to tell which half it got.
+	One pattern across every script in scope. Everything is computed before
+	anything is written, so a sweep that would go over either ceiling fails
+	having touched nothing — half a rename leaves a place nothing describes.
 ]]
 function ScriptOps.replace(params: any): any
 	local scope = params.scope and Handles.resolve(params.scope) or game

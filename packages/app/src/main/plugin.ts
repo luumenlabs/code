@@ -1,19 +1,8 @@
 /**
- * Installing the Studio plugin, so the two halves stay on the same version.
- *
- * The plugin used to be a file you downloaded from a release and dragged into
- * the plugins folder. That works exactly once: the app updates, the plugin does
- * not, and the failures land in the middle of a conversation as operations the
- * plugin has never heard of. So the app carries the plugin it was built with
- * and writes it where Studio reads plugins from — the same place `rojo build
- * --plugin` writes to, which is how every Roblox tool does this.
- *
- * It is not done behind the user's back. Nothing is written to that folder
- * until the install button is pressed or the switch in Settings is turned on.
- *
- * Each channel installs under its own file name, so a nightly plugin sits
- * beside a release plugin rather than overwriting it — the same rule the app
- * itself follows.
+ * Installing the Studio plugin, so the two halves stay on the same version. The
+ * app carries the plugin it was built with and writes it where Studio reads
+ * plugins from. Nothing is written until the install button is pressed or the
+ * switch in Settings is on. Each channel installs under its own file name.
  */
 import { app } from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -28,8 +17,6 @@ const INSTALLED_NAME: Record<Channel, string> = {
   release: "LuuCode.rbxm",
   nightly: "LuuCodeNightly.rbxm",
   // A dev build must not overwrite the plugin the installed app put there.
-  // `luu build` in plugin/ still writes LuuCode.rbxm, which is the plugin
-  // author's own loop and is left alone.
   dev: "LuuCodeDev.rbxm",
 };
 
@@ -40,17 +27,9 @@ interface InstallRecord {
 }
 
 /**
- * Where Roblox Studio looks for plugins.
- *
- * These are Studio's own locations, not a preference: Studio reads this folder
- * on start and nowhere else. Linux has no Studio, so it has no answer.
- *
- * Only the platform decides whether there is an answer. An earlier version
- * returned null when %LOCALAPPDATA% was missing from the environment, which
- * made a launcher that happened to strip it look identical to "Roblox Studio
- * does not run here" — the one message a Windows user can do nothing about.
- * The path is derived from the home directory instead, the same way the
- * server's own config paths are.
+ * Where Roblox Studio looks for plugins. Studio reads this folder on start and
+ * nowhere else. Only the platform decides whether there is an answer — null
+ * here means Studio does not run at all, never a missing variable.
  */
 export function studioPluginsDir(): string | null {
   if (process.platform === "win32") {
@@ -58,8 +37,7 @@ export function studioPluginsDir(): string | null {
   }
 
   if (process.platform === "darwin") {
-    // Through Electron, so a Documents folder relocated by iCloud or a
-    // redirected home still resolves to the one Studio actually uses.
+    // Through Electron, so a Documents folder relocated by iCloud still resolves.
     return join(documentsDir(), "Roblox", "Plugins");
   }
 
@@ -86,11 +64,8 @@ export class PluginInstaller {
   }
 
   /**
-   * The plugin file this build carries.
-   *
-   * Packaged, it sits in resources beside the app. In a development checkout it
-   * is whatever `luu run bundle` last produced in `plugin/`, so the install
-   * path can be exercised without packaging.
+   * The plugin file this build carries. Packaged, it sits in resources beside
+   * the app; in a checkout it is whatever `luu run bundle` last produced.
    */
   private bundledPath(): string | null {
     const candidates = app.isPackaged
@@ -135,13 +110,11 @@ export class PluginInstaller {
 
   private problem(directory: string | null, bundled: string | null): string | null {
     if (directory === null) {
-      return "Roblox Studio does not run on this platform, so there is nowhere to install the plugin.";
+      return "Roblox Studio does not run on this platform.";
     }
 
     if (bundled === null) {
-      // A checkout has no plugin until someone builds one, which is the normal
-      // state of a fresh clone rather than a fault — so it says what to run,
-      // and mentions the shorter path a plugin author actually wants.
+      // A fresh checkout has no plugin until someone builds one.
       return app.isPackaged
         ? "This build did not ship a plugin. Download LuuCode.rbxm from the release instead."
         : "No plugin in this build. Run `luu run bundle` in plugin/ and restart the app, or `luu build` to install it into Studio directly.";
@@ -151,14 +124,9 @@ export class PluginInstaller {
   }
 
   /**
-   * True when the app should install on its own.
-   *
-   * Never on the dev channel. There the plugin in Studio is whatever `luu dev`
-   * last built, rebuilt on every save — and quietly replacing it at startup
-   * with the copy staged at package time would undo a watch the contributor is
-   * in the middle of using, in a way that looks like their edits stopped
-   * working. The Install button still works: an explicit press is not a
-   * surprise.
+   * True when the app should install on its own. Never on the dev channel,
+   * where `luu dev` owns the plugin file and a startup install would undo a
+   * running watch. The Install button still works.
    */
   needsInstall(): boolean {
     if (this.channel === "dev") return false;
@@ -169,11 +137,8 @@ export class PluginInstaller {
   }
 
   /**
-   * Writes the plugin into the Studio plugins folder.
-   *
-   * Studio picks up a changed plugin file on its next start, so this reports
-   * success as soon as the file is in place; it does not pretend the running
-   * Studio has already reloaded it.
+   * Writes the plugin into the Studio plugins folder. Success means the file is
+   * in place; Studio picks it up on its next start.
    */
   install(): PluginStatus {
     const directory = studioPluginsDir();

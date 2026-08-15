@@ -155,17 +155,13 @@ function PerfOps.sample(params: any): any
 end
 
 --[[
-	Where the Luau time went, from ScriptProfilerService.
+	Where the Luau time went, from ScriptProfilerService. `perf.sample` says
+	whether the place is slow; this says which function. It needs running code,
+	so it is a playtest operation.
 
-	perf.sample says whether the place is slow; this says which function is
-	making it slow, which is the question the fix depends on. It needs running
-	code, so it is a playtest operation — in edit mode there is nothing to
-	sample.
-
-	Flags are a bitfield on each function: 1 is a native engine frame and 2 is a
+	Flags are a bitfield on each function: 1 is a native engine frame, 2 a
 	plugin one. Neither is code the place can change, so both are dropped unless
-	they were asked for — a profile led by Luu Code's own capture is a profile of
-	the wrong program.
+	asked for — otherwise the profile is led by Luu Code's own capture.
 ]]
 local NATIVE_FLAG = 1
 local PLUGIN_FLAG = 2

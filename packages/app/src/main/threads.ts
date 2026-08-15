@@ -1,13 +1,7 @@
 /**
- * On-disk thread storage. Spec section 45.
- *
- * One JSON file per thread plus a small index, under the app's user data
- * directory. Files rather than a database because the whole point is that a
- * conversation survives a crash, is greppable, and can be deleted by hand.
- *
- * Writes are debounced: a busy agent produces transcript entries far faster
- * than they need to reach the disk, and rewriting the file on every token would
- * be the only expensive thing this app does.
+ * On-disk thread storage: one JSON file per thread plus a small index, under
+ * the app's user data directory. Writes are debounced — a busy agent produces
+ * entries far faster than they need to reach the disk.
  */
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -22,15 +16,9 @@ const FLUSH_DELAY_MS = 400;
 const MAX_ITEMS = 4_000;
 
 /**
- * How much of a conversation's diff history is kept, and why there are two
- * numbers rather than one.
- *
- * Records are wildly uneven. A property write is a few hundred bytes; a script
- * rewrite carries both versions of the file, and the plugin lets that reach
- * half a megabyte on each side. A count alone would let twenty script edits
- * put ten megabytes in one thread file, and a byte budget alone would let a
- * thousand tiny records pile up unnoticed. Whichever is hit first evicts from
- * the front, so what survives is always the most recent work.
+ * How much of a conversation's diff history is kept. Records are uneven — a
+ * property write is a few hundred bytes, a script rewrite carries both versions
+ * — so a count and a byte budget both apply, whichever is hit first.
  */
 const MAX_CHANGES = 500;
 const MAX_CHANGE_BYTES = 6 * 1024 * 1024;
@@ -71,8 +59,8 @@ export class ThreadStore {
         const thread = JSON.parse(readFileSync(join(this.threadsDir, file), "utf8")) as Thread;
         if (thread.id) this.threads.set(thread.id, thread);
       } catch {
-        // A corrupt thread must not stop the app from opening; skip it and
-        // leave the file in place so it can be inspected.
+        // A corrupt thread must not stop the app opening. The file is left in
+        // place to be inspected.
       }
     }
 
@@ -80,15 +68,10 @@ export class ThreadStore {
   }
 
   /**
-   * Folds the stored projects onto their identity.
-   *
-   * Projects used to be keyed by place id *or*, when there was none, by name —
-   * so two unsaved places called the same thing shared one heading and one
-   * scratch directory. Reading them back through the identity rule collapses
-   * every duplicate onto one record and moves the identity-less ones into the
-   * Unknown bucket, repointing their threads on the way. Without the repoint,
-   * a thread would name a project that no longer exists and vanish from the
-   * sidebar, which is the one outcome worse than a wrong heading.
+   * Folds the stored projects onto their identity, collapsing duplicates and
+   * moving the identity-less ones into the Unknown bucket. Their threads are
+   * repointed — a thread naming a project that no longer exists would vanish
+   * from the sidebar.
    */
   private regroupByIdentity(): void {
     if (this.projects.length === 0) return;
@@ -152,13 +135,9 @@ export class ThreadStore {
   }
 
   /**
-   * Finds or creates the project record for a Roblox place.
-   *
-   * Identity is the game, not the folder and not the name: a published place
-   * opened from a different directory lands in the same group, and two places
-   * that merely share a title do not. When the plugin has no identity to give,
-   * everything goes to one Unknown bucket — an honest "we cannot tell these
-   * apart" rather than a heading that claims they are the same game.
+   * Finds or creates the project record for a Roblox place. Identity is the
+   * game, not the folder and not the name. With no identity to give, everything
+   * goes to one Unknown bucket.
    */
   project(place: PlaceRef): Project {
     const identity = place.identity ?? null;
@@ -187,16 +166,9 @@ export class ThreadStore {
   }
 
   /**
-   * Takes a better name for a place already on file, and only that.
-   *
-   * The plugin resolves the published place name a moment after connecting, so
-   * a heading written when the first chat was filed can be a name Roblox has
-   * since corrected. Unlike `project`, this creates nothing: a place the user
-   * has never had a conversation about should not gain a heading in the
-   * sidebar just for being open in Studio.
-   *
-   * Returns whether anything moved, so the caller only pushes the index when
-   * there is something to push — this runs on every session status change.
+   * Takes a better name for a place already on file — the plugin resolves the
+   * published name a moment after connecting. Creates nothing, and returns
+   * whether anything moved; this runs on every session status change.
    */
   describe(place: PlaceRef): boolean {
     const identity = place.identity ?? null;
@@ -245,12 +217,8 @@ export class ThreadStore {
   }
 
   /**
-   * Leaves no thread open, which is what "New chat" means.
-   *
-   * A conversation that was never sent is not a conversation: writing one to
-   * disk and listing it in the sidebar puts an empty row in the user's history
-   * every time they change their mind. The thread is created by the first
-   * message instead.
+   * Leaves no thread open, which is what "New chat" means. The thread is
+   * created by the first message, so an abandoned draft leaves no empty row.
    */
   clearActive(): void {
     this.activeThreadId = null;
@@ -294,19 +262,13 @@ export class ThreadStore {
   }
 
   /**
-   * Keeps a copy of what the agent changed, alongside the transcript that
-   * asked for it.
+   * Keeps a copy of what the agent changed, alongside the transcript that asked
+   * for it. Upserted by id: the same record comes back once reverted, and a
+   * stored copy still claiming to be pending would offer a Revert button on it.
+   * Ordered by when the change happened, not when it arrived.
    *
-   * Upserted by id rather than appended, because the same record comes back
-   * once it has been reverted — and a stored copy still claiming to be pending
-   * would put a Revert button on something already put back. Order is by when
-   * the change happened, not by when it arrived: a revert notification is not
-   * a reason for a record to jump to the end of the list.
-   *
-   * A batch that says nothing new schedules no write. The journal resends
-   * records the app already holds — on a reconnect, and on every revert — and
-   * rewriting a thread file to store bytes identical to the ones in it is the
-   * kind of work that turns a busy agent into disk churn.
+   * A batch that says nothing new schedules no write — the journal resends
+   * records the app already holds on every reconnect and revert.
    */
   recordChanges(id: string, records: ChangeRecord[]): boolean {
     const thread = this.threads.get(id);
@@ -347,11 +309,8 @@ export class ThreadStore {
   }
 
   /**
-   * Files a conversation away, or brings it back.
-   *
-   * `updatedAt` is deliberately left alone: archiving is not work on the
-   * thread, and bumping it would shuffle the archive into a false order the
-   * moment it was tidied.
+   * Files a conversation away, or brings it back. `updatedAt` is left alone —
+   * archiving is not work on the thread.
    */
   setArchived(id: string, archived: boolean): void {
     const thread = this.threads.get(id);
@@ -449,14 +408,9 @@ export class ThreadStore {
 }
 
 /**
- * Drops the oldest records until the archive is within both budgets.
- *
- * Weighed rather than serialised. `JSON.stringify` on the whole archive runs on
- * every mutating operation the agent performs, and the answer is dominated by
- * the two or three text fields a record can carry anyway — script source and a
- * deleted subtree's snapshot. An estimate that is cheap and slightly generous
- * is the right shape of wrong for a budget whose only job is to stop a thread
- * file growing without bound.
+ * Drops the oldest records until the archive is within both budgets. Weighed
+ * rather than serialised: this runs on every mutating operation, and the size
+ * is dominated by the two or three text fields a record can carry.
  */
 function trimChanges(records: ChangeRecord[]): ChangeRecord[] {
   let kept = records.length > MAX_CHANGES ? records.slice(records.length - MAX_CHANGES) : records;
@@ -478,7 +432,7 @@ function trimChanges(records: ChangeRecord[]): ChangeRecord[] {
 
 /** Roughly what a record costs on disk. The text is all that really counts. */
 function weigh(record: ChangeRecord): number {
-  // Everything a record carries that is not text: paths, names, values, ids.
+  // Paths, names, values, ids — everything a record carries that is not text.
   let bytes = 512;
 
   if (record.source) {

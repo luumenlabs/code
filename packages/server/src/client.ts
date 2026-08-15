@@ -1,9 +1,6 @@
 /**
- * Client for a Luu Code server that is already running.
- *
- * Used by the CLI and by the MCP stdio bridge so several agents can share one
- * Studio connection instead of each starting a server and fighting over the
- * port.
+ * Client for a Luu Code server that is already running. Used by the CLI and the
+ * MCP stdio bridge, so several agents share one Studio connection.
  */
 import { LuuCodeError } from "@luumen/code-protocol";
 import type { CapabilityReport, PermissionGroup, PermissionSettings, ServerEvent, SessionStatus } from "@luumen/code-protocol";

@@ -1,10 +1,7 @@
 /**
- * Renderer state.
- *
- * The transcript is built and persisted by the main process, so this only
- * mirrors it: entries arrive already stored, and reopening a thread replays
- * them from disk. That keeps what the user sees and what survives a restart
- * identical. Spec sections 33 and 45.
+ * Renderer state. The transcript is built and persisted by the main process, so
+ * this only mirrors it: entries arrive already stored, and reopening a thread
+ * replays them from disk.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AskRequest, ChangeRecord, OutputEntry, RevertOutcome, ServerEvent } from "@luumen/code-protocol";
@@ -29,15 +26,9 @@ export function isBusyState(state: AgentState | undefined): boolean {
 }
 
 /**
- * What inside Settings is asking to be dealt with, counted once.
- *
- * The mark on the Settings button and the marks on the sections it opens are
- * the same arithmetic run at two depths, so they are worked out in one place:
- * a total that does not add up to the sections under it is worse than no total
- * at all, because it sends the user looking for something that is not there.
- *
- * The app's own update is deliberately absent. It already has a row of its own
- * above the button, and counting it here would show one thing as two.
+ * What inside Settings is asking to be dealt with. The mark on the Settings
+ * button and the marks on its sections are the same arithmetic, so they are
+ * worked out once. The app's own update has its own row and is not counted.
  */
 export function settingsWaiting(harness: Harness): { providers: number; plugin: number; total: number } {
   const providers = (harness.snapshot?.agents ?? []).filter(agentBehind).length;
@@ -47,10 +38,7 @@ export function settingsWaiting(harness: Harness): { providers: number; plugin: 
   return { providers, plugin, total: providers + plugin };
 }
 
-/**
- * The version buttons. Each one returns the whole status, so the caller never
- * has to know which parts of it a given action moved.
- */
+/** The version buttons. Each one returns the whole status. */
 export interface VersionActions {
   checkForUpdate: () => Promise<VersionStatus>;
   downloadUpdate: () => Promise<VersionStatus>;
@@ -78,30 +66,18 @@ export interface Harness {
   versionAction(action: keyof VersionActions): Promise<void>;
   /** The open conversation has a turn in flight. */
   busy: boolean;
-  /**
-   * Every conversation's agent state, so the sidebar can show which of them are
-   * working — including the ones nobody is looking at.
-   */
+  /** Every conversation's agent state, including the ones nobody is looking at. */
   agentStates: Record<string, AgentState>;
   runBusy: boolean;
   /**
-   * What has been done to the DataModel in this session, oldest first.
-   *
-   * Every change in the connected Studio window, not only this chat's: the
-   * place is shared, and a panel that hid the other conversation's edits would
-   * be the wrong answer to "why does my Baseplate look like that".
+   * Every change in the connected Studio window, oldest first — not only this
+   * chat's. The place is shared.
    */
   changes: ChangeRecord[];
   /**
-   * What this conversation changed, as stored with its transcript.
-   *
-   * Kept apart from `changes` rather than merged into it, because the two
-   * answer different questions. `changes` is the live journal of the Studio
-   * window the chat is working in — every chat's edits, revertable, and gone
-   * the moment that window is. This is the chat's own history, read back from
-   * disk, and it survives closing the app, opening another place, and Studio
-   * being shut down. A record in both is the same record; a record only here
-   * can be read but not put back.
+   * What this conversation changed, as stored with its transcript. `changes` is
+   * the live journal and goes with the Studio window; this is read back from
+   * disk. A record only here can be read but not put back.
    */
   history: ChangeRecord[];
   /** Change ids currently being put back, so their rows can say so. */
@@ -112,18 +88,12 @@ export interface Harness {
    */
   revert(ids: string[], force?: boolean): Promise<RevertOutcome[]>;
   /**
-   * The question the open conversation is waiting on, if any.
-   *
-   * One at a time: the agent is stopped on it, so there cannot be a second
-   * until this one is answered.
+   * The question the open conversation is waiting on. One at a time: the agent
+   * is stopped on it.
    */
   pendingAsk: AskRequest | null;
   modelSelection: ModelSelection | null;
-  /**
-   * Applies a model and its options together — a new model, a changed reasoning
-   * level, or a starred combination of both. Picking a model picks the CLI that
-   * serves it.
-   */
+  /** Applies a model and its options together, and the CLI that serves it. */
   applyModel(selection: ModelSelection): void;
   send(text: string, attachments?: Attachment[]): Promise<void>;
   interrupt(): Promise<void>;
@@ -155,9 +125,8 @@ export function useHarness(): Harness {
   const [reverting, setReverting] = useState<string[]>([]);
   const [asks, setAsks] = useState<Record<string, AskRequest[]>>({});
 
-  // Transcript entries name the conversation they belong to, and several may be
-  // arriving at once. Read through a ref so the subscription is set up once and
-  // still sees the chat that is open now.
+  // Read through a ref so the subscription is set up once and still sees the
+  // chat that is open now.
   const openThreadId = useRef<string | null>(null);
   openThreadId.current = activeThreadId;
 
@@ -176,19 +145,16 @@ export function useHarness(): Harness {
     setAsks(next.pendingAsks);
 
     if (next.models.length > 0) {
-      // Adapters and helpers resolve slugs through the shared catalogue, so
-      // the renderer's copy has to match what the main process discovered.
+      // Helpers resolve slugs through the shared catalogue.
       setModelCatalogue(next.models);
       setModels(next.models);
     }
   }, []);
 
   /**
-   * Reads the journal for the window the open chat is working in.
-   *
-   * No `chat` filter in the params, deliberately: the routing argument decides
-   * *which window* to ask, and the answer is everything that has been done to
-   * that place. Two conversations editing one game are still one game.
+   * Reads the journal for the window the open chat is working in. No `chat`
+   * filter in the params: the routing argument picks the window, and the answer
+   * is everything done to that place.
    */
   const loadChanges = useCallback(async (chat: string | null) => {
     try {
@@ -197,19 +163,15 @@ export function useHarness(): Harness {
       };
       setChanges(result?.records ?? []);
     } catch {
-      // Studio not connected, or no window bound yet. The panel says so; a
-      // failed background read is not something to put in front of anyone.
+      // Studio not connected, or no window bound yet. The panel says so.
       setChanges([]);
     }
   }, []);
 
   /**
    * Insert or replace by id, keeping the list in the order things happened.
-   *
-   * Applied to the stored copy as well as the live one. The main process is
-   * already writing the same records to the thread file, and re-reading that
-   * file to learn what we were just handed would be a round trip to disk for
-   * something already in the message.
+   * Applied to the stored copy as well as the live one, which the main process
+   * is already writing to the thread file.
    */
   const mergeChanges = useCallback((incoming: ChangeRecord[]) => {
     const merge =
@@ -222,21 +184,17 @@ export function useHarness(): Harness {
 
     setChanges(merge(incoming));
 
-    // Only this chat's own, because the journal covers every conversation in
-    // the window and the transcript on screen is one of them. A record with no
-    // chat came from an external MCP client; the main process files those
-    // against whichever conversation is open, and so does this.
+    // Only this chat's own; the journal covers every conversation in the
+    // window. A record with no chat came from an external MCP client, and is
+    // filed against whichever conversation is open.
     const mine = incoming.filter((record) => record.chat === null || record.chat === openThreadId.current);
     if (mine.length > 0) setHistory(merge(mine));
   }, []);
 
   const applyModel = useCallback(
     (selection: ModelSelection) => {
-      // Optimistic: the picker should settle on the value the user just
-      // clicked, not a round trip later. The main process writes the same
-      // value — and when it refuses, because a chat is fixed to the provider
-      // it started with, the chip goes back to what is actually running rather
-      // than showing a model this conversation will never use.
+      // Optimistic: the picker settles on the click, not a round trip later.
+      // A refused switch puts the chip back to what is actually running.
       const previous = modelSelection;
 
       setSelection(selection);
@@ -249,11 +207,8 @@ export function useHarness(): Harness {
   );
 
   /**
-   * Insert or replace by id, so an updated activity replaces its own row.
-   *
-   * Entries for a conversation that is not on screen are dropped rather than
-   * merged into the wrong timeline — the main process has already written them
-   * to disk, and opening that chat replays them.
+   * Insert or replace by id, so an updated activity replaces its own row. An
+   * entry for a chat that is not on screen is dropped; it is already on disk.
    */
   const upsert = useCallback(({ threadId, entry }: { threadId: string; entry: TimelineItem }) => {
     if (threadId !== openThreadId.current) return;
@@ -282,8 +237,8 @@ export function useHarness(): Harness {
       } else if (event.type === "changes") {
         mergeChanges(event.records);
       } else if (event.type === "changes.dropped") {
-        // The window went away and took the journal with it. Dropping only that
-        // window's records keeps a second connected place's history intact.
+        // The window went away and took its journal with it. A second connected
+        // place keeps its own.
         setChanges((current) => current.filter((record) => record.session !== event.session));
       } else if (event.type === "session.connected" || event.type === "session.disconnected") {
         void refresh();
@@ -292,9 +247,8 @@ export function useHarness(): Harness {
     });
 
     const offAgent = window.luuCode.onAgentEvent(({ threadId, event }: { threadId: string; event: AgentEvent }) => {
-      // The transcript arrives separately, already persisted; this only tracks
-      // the live state of the session the user is looking at. Other chats are
-      // covered by the states map.
+      // Only the live state of the session on screen; the states map covers the
+      // rest, and the transcript arrives separately.
       if (threadId !== openThreadId.current) return;
 
       if (event.type === "state") {
@@ -344,8 +298,7 @@ export function useHarness(): Harness {
   }, [refresh, upsert, loadChanges, mergeChanges]);
 
   const versionAction = useCallback(async (action: keyof VersionActions) => {
-    // Every one of these answers with the whole status, so there is no partial
-    // state to reconcile — and a failure leaves what was already on screen.
+    // Each answers with the whole status, so a failure leaves what is on screen.
     const next = await window.luuCode[action]().catch(() => null);
     if (next) setVersions(next);
   }, []);
@@ -367,8 +320,8 @@ export function useHarness(): Harness {
     await window.luuCode.interruptAgent();
   }, []);
 
-  // Routed through the open chat, so pressing Play here starts the playtest in
-  // the Studio window that chat is working in — the same one its agent reaches.
+  // Routed through the open chat, so Play starts the playtest in the Studio
+  // window that chat's agent reaches.
   const run = useCallback(
     async (op: string, params?: unknown) => {
       const isRunOp = op.startsWith("run.");
@@ -384,12 +337,9 @@ export function useHarness(): Harness {
   );
 
   /**
-   * Puts changes back.
-   *
-   * The server does the ordering and the app does not guess at the result: the
-   * records it touched come back over the event stream, so the only thing kept
-   * here is which rows are mid-flight. A conflict resolves normally with a
-   * conflict outcome — it is an answer, not a failure.
+   * Puts changes back. The server orders them and sends the touched records
+   * over the event stream, so all that is kept here is which rows are
+   * mid-flight. A conflict resolves with a conflict outcome, not a throw.
    */
   const revert = useCallback(
     async (ids: string[], force = false): Promise<RevertOutcome[]> => {
@@ -404,8 +354,7 @@ export function useHarness(): Harness {
         )) as { outcomes?: RevertOutcome[] };
         return result?.outcomes ?? [];
       } catch (error) {
-        // A thrown error is the whole call failing — Studio unreachable, the
-        // permission off — so it applies to every id rather than to one row.
+        // A throw is the whole call failing, so it applies to every id.
         const reason = error instanceof Error ? error.message : String(error);
         return ids.map((id) => ({ id, status: "failed" as const, reason }));
       } finally {
@@ -421,8 +370,8 @@ export function useHarness(): Harness {
   }, [activeThreadId]);
 
   const newThread = useCallback(async () => {
-    // Set first: entries still arriving from the chat being left must not be
-    // appended to the empty draft.
+    // Set first: entries still arriving from the chat being left must not land
+    // in the empty draft.
     openThreadId.current = null;
     setActiveThreadId(null);
     // A draft has no stored transcript to replay, and the model carries over.
@@ -434,7 +383,7 @@ export function useHarness(): Harness {
   const openThread = useCallback(
     async (id: string) => {
       // Claim the id before awaiting: a chat that is still working streams
-      // entries the whole time, and they are only ours once this one is open.
+      // entries the whole time.
       openThreadId.current = id;
 
       const thread = await window.luuCode.openThread(id);
@@ -474,9 +423,8 @@ export function useHarness(): Harness {
     [activeThreadId, refresh],
   );
 
-  // The states map is the authority: it is keyed by conversation and updated
-  // for every session, so it stays right when the one on screen is not the one
-  // working. A draft has no session yet, so it is never busy.
+  // The states map is the authority: keyed by conversation and updated for
+  // every session. A draft has no session yet, so it is never busy.
   const busy = useMemo(
     () => isBusyState(activeThreadId ? agentStates[activeThreadId] : undefined),
     [activeThreadId, agentStates],

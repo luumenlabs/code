@@ -1,16 +1,11 @@
 --!nonstrict
 --[[
-	Log breakpoints, through ScriptDebuggerService.
-
-	A line of a script reports itself every time it runs, and the script is not
-	edited to make that happen. The alternative an agent reaches for otherwise is
-	adding a print, which is a real change to the user's place that has to be
-	journalled, reviewed, and then remembered about and taken out again.
+	Log breakpoints, through ScriptDebuggerService. A line reports itself every
+	time it runs, with no edit to the script and nothing to journal or remove.
 
 	Nothing here pauses. A stopping breakpoint needs a debugger on the other end
-	to resume it, and with no such handler installed the playtest stops with both
-	peers unreachable — so `ContinueExecution` is always true and the stopping
-	kind is not offered at all.
+	to resume it, and without one the playtest stops with both peers
+	unreachable — so `ContinueExecution` is always true.
 ]]
 
 local Errors = require(script.Parent.Parent.Errors)

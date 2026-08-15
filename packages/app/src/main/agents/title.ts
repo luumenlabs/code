@@ -1,13 +1,6 @@
 /**
- * Naming a conversation.
- *
- * The first line of what the user typed makes a poor title: it is usually the
- * symptom ("the buy button is broken again lol"), not the subject. A cheap
- * model reads the message once and names the thing the thread is actually
- * about, which is what makes the sidebar readable a week later.
- *
- * This is a one-shot, read-only call to the CLI the user already has. It never
- * touches the conversation's own session, so a title can never consume the
+ * Naming a conversation. A one-shot, read-only call to the CLI the user already
+ * has, never to the conversation's own session — a title cannot consume the
  * agent's context or appear in its transcript.
  */
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
@@ -22,11 +15,7 @@ import { CODEX_VARIANT } from "./codex.js";
 import type { CodexVariant } from "./codex.js";
 import { OLLAMA_VARIANT } from "./ollama.js";
 
-/**
- * Adapted from the rules T3 Code uses, minus the git-centric guidance: Luu Code
- * threads are about a Roblox place, so the subject is a system in the game, not
- * a branch or a pull request.
- */
+/** The rules the naming model is given. */
 const PROMPT = `Generate a title that will help the user recognize this Luu Code thread weeks later.
 Luu Code threads are about a Roblox experience: the subject is a system, feature, or bug inside the game.
 
@@ -57,11 +46,7 @@ const SCHEMA = {
 
 const TIMEOUT_MS = 45_000;
 
-/**
- * Which CLI names the thread: the configured one, or the default for this
- * machine — Codex, because GPT-5.6-Luna is the quickest way to get one good
- * line, and Claude Code's Haiku when Codex is not installed.
- */
+/** Which CLI names the thread: the configured one, or this machine's default. */
 export function titleProvider(settings: AppSettings, agents: AgentInfo[]): AgentInfo | null {
   const installed = agents.filter((agent) => agent.installed && agent.command);
   const chosen = settings.titleGeneration.provider;
@@ -80,8 +65,8 @@ export async function generateTitle(
 ): Promise<string | null> {
   if (!agent.command) return null;
 
-  // A local provider has no small model of its own to name: whatever the user
-  // pulled is what there is, so the catalogue answers when the table cannot.
+  // A local provider has no small model of its own, so the catalogue answers
+  // when the table cannot.
   const model = settings.titleGeneration.model ?? DEFAULT_TITLE_MODEL[agent.id] ?? defaultModelFor(agent.id)?.slug;
   if (!model) return null;
 
@@ -95,21 +80,16 @@ export async function generateTitle(
 
     return sanitize(raw);
   } catch {
-    // A missing title is a cosmetic loss; the thread keeps the typed first
-    // line. Never surface this as a failure the user has to act on.
+    // A missing title is cosmetic; the thread keeps the typed first line.
     return null;
   }
 }
 
 /**
- * `claude -p` prints one answer and exits. Permissions are skipped because the
- * call has no tools and no working set — it reads one string and writes one.
- *
- * Claude Code's `--json-schema` takes the schema as a literal argument, and on
- * Windows the CLI is often reached through a `.cmd` shim, where the shell eats
- * the quotes and the schema arrives as invalid JSON. The answer is one short
- * line either way, so the title is asked for as text and the JSON envelope is
- * used only to separate it from any incidental CLI output.
+ * `claude -p` prints one answer and exits; the call has no tools, so
+ * permissions are skipped. The title is asked for as text, not through
+ * `--json-schema` — a `.cmd` shim eats the quotes and the schema arrives
+ * invalid.
  */
 async function runClaude(command: string, model: string, prompt: string, cwd: string): Promise<string> {
   const stdout = await run(
@@ -127,13 +107,9 @@ async function runClaude(command: string, model: string, prompt: string, cwd: st
 
 /**
  * Codex writes its answer to a file rather than stdout, so the schema and the
- * output both go through a scratch directory.
- *
- * The same command names an Ollama model, with two things left off. A schema is
- * one: structured output is a hosted-provider feature, and asking a local model
- * for it fails the call rather than the formatting. Reasoning effort is the
- * other, for the same reason. `sanitize` already copes with a plain line, which
- * is what comes back instead.
+ * output both go through a scratch directory. An Ollama model gets neither the
+ * schema nor a reasoning effort — asking a local model for either fails the
+ * call — and `sanitize` copes with the plain line that comes back.
  */
 async function runCodex(
   command: string,
@@ -218,10 +194,7 @@ function run(command: string, args: string[], stdin: string, cwd: string): Promi
   });
 }
 
-/**
- * A model asked for one line will still sometimes send a fenced JSON blob, so
- * the answer is unwrapped before the cosmetic trim rather than trusted.
- */
+/** A model asked for one line still sometimes sends a fenced JSON blob. */
 function sanitize(raw: string): string | null {
   const unfenced = raw.replace(/^\s*```[a-z]*\s*|\s*```\s*$/gi, "").trim();
 

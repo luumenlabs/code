@@ -1,20 +1,13 @@
 /**
- * App updates, one channel at a time.
+ * App updates, one channel at a time. electron-updater does the work; this
+ * decides when it runs and turns its events into one status the UI renders.
  *
- * electron-updater does the work; this decides when it runs and turns its
- * events into a single status the UI can render. Two rules shape it:
+ *   - A build only updates from its own channel. The feed is baked in at
+ *     package time (`latest.yml` or `latest-nightly.yml`).
+ *   - The check is automatic; the download is a button.
  *
- *   - A build only ever updates from its own channel. The feed a build reads is
- *     baked in at package time (`latest.yml` or `latest-nightly.yml`), so this
- *     cannot be got wrong at runtime — a nightly is a prerelease on GitHub and
- *     only the nightly feed lists it.
- *   - Nothing downloads without being asked. An agent may be mid-run and a
- *     background download that ends in a restart prompt is not something to
- *     spring on someone. The check is automatic; the download is a button.
- *
- * Unsigned builds cannot self-install on macOS — the OS refuses to swap the
- * bundle. That is reported as the error it is, with the release page as the way
- * through, rather than silently failing.
+ * Unsigned builds cannot self-install on macOS. That is reported as an error
+ * with the release page as the way through.
  */
 import { app } from "electron";
 import { autoUpdater } from "electron-updater";
@@ -45,8 +38,7 @@ export class Updater {
     if (!app.isPackaged) return;
 
     autoUpdater.autoDownload = false;
-    // The user asked for it by pressing Install, so finishing on quit is the
-    // least disruptive moment to apply it if they never restart deliberately.
+    // Applied on quit if the user never restarts deliberately.
     autoUpdater.autoInstallOnAppQuit = true;
     // A nightly is published as a GitHub prerelease; without this the provider
     // only ever looks at the newest full release.
@@ -128,8 +120,7 @@ export class Updater {
     if (this.status.state !== "ready") return this.status;
 
     try {
-      // Not silent: the installer should be visible, because an app that
-      // vanishes and comes back is indistinguishable from a crash.
+      // Not silent: an app that vanishes and comes back reads as a crash.
       setImmediate(() => autoUpdater.quitAndInstall(false, true));
     } catch (error) {
       this.set({ state: "error", message: describe(error) });
@@ -144,15 +135,12 @@ export class Updater {
   }
 }
 
-/**
- * electron-updater's errors are written for a log, not for a person, and the
- * two that matter most both have a real answer.
- */
+/** electron-updater's errors are written for a log, not for a person. */
 function describe(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
 
   if (/code signature|not signed|rejected by macOS/i.test(message)) {
-    return "This build is not signed, so macOS will not let it replace itself. Download the new version from the releases page instead.";
+    return "This build is not signed, so macOS will not let it replace itself. Download the new version from the releases page.";
   }
 
   if (/ENOTFOUND|ENETUNREACH|EAI_AGAIN|getaddrinfo|network|timeout/i.test(message)) {

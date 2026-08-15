@@ -1,6 +1,6 @@
 --!nonstrict
 --[[
-	Playtest control, through StudioTestService. Spec section 13.
+	Playtest control, through StudioTestService.
 
 	Two facts about those APIs shape this module and the server's RunControl:
 
@@ -50,7 +50,7 @@ local pending = {
 }
 
 -- How long a start counts as in flight. `active` clears only when the playtest
--- ends, which used to refuse every retry for the rest of the session.
+-- ends, so without this a failed start refuses every retry.
 local START_GRACE_SECONDS = 15
 
 -- How many ExecutePlayModeAsync calls have yet to return.

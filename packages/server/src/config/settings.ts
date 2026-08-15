@@ -15,12 +15,9 @@ export interface Settings {
   permissions: PermissionSettings;
   /**
    * Operations turned off individually, under groups that are otherwise on.
-   *
-   * Only the exceptions are stored, so a release that adds a tool does not need
-   * a migration and cannot arrive disabled. An unknown id is kept rather than
-   * dropped: it is almost always a tool from a newer build the user has since
-   * rolled back from, and silently re-enabling something they turned off is the
-   * one mistake this file must not make.
+   * Only the exceptions are stored, so a new tool needs no migration. An
+   * unknown id is kept, not dropped — it is usually a tool from a newer build,
+   * and re-enabling something the user turned off is the mistake to avoid.
    */
   disabledTools: string[];
 }
@@ -92,11 +89,8 @@ export class SettingsStore {
 
   /**
    * The two levels of control together, in the shape the protocol's policy
-   * functions take.
-   *
-   * Unknown ids are dropped on the way out rather than on the way in: the
-   * stored list keeps them so a downgrade and upgrade does not lose the user's
-   * choice, and this is where they stop being able to affect anything.
+   * functions take. Unknown ids are dropped on the way out, not on the way in,
+   * so a downgrade and upgrade does not lose the user's choice.
    */
   get policy(): ToolPolicy {
     return { permissions: this.data.permissions, disabledTools: this.disabledTools };
@@ -108,8 +102,8 @@ export class SettingsStore {
 
   setToolAllowed(op: Op, allowed: boolean): void {
     if (toolControl(op) === "essential") {
-      // Nothing above this stops a caller asking, and quietly recording the
-      // request would show a switch that goes off and changes nothing.
+      // Nothing above stops a caller asking, and recording the request would
+      // show a switch that goes off and changes nothing.
       throw new Error(`${op} cannot be turned off: it is how an agent finds out what is wrong.`);
     }
 

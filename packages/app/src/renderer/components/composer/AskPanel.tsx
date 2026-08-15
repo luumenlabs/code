@@ -1,13 +1,9 @@
 /**
- * The agent's question, asked where you answer everything else.
+ * The agent's question, above the composer's text box rather than in the
+ * conversation — the agent is stopped waiting on it. The box below doubles as
+ * the answer field, so this draws only the question and its options.
  *
- * It sits above the composer's text box rather than in the conversation: the
- * agent is stopped waiting on it, so it belongs with the controls you act
- * with, not in the scrollback you read. The box below doubles as the answer
- * field, which is why this draws only the question and its options.
- *
- * One question at a time. Four stacked at once is a survey, and the counter
- * beside the header is what says there is more coming.
+ * One question at a time; the counter beside the header says how many more.
  */
 import * as React from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
@@ -42,10 +38,9 @@ export function AskPanel({
   const writing = (draft?.written.trim().length ?? 0) > 0;
 
   /**
-   * Number keys pick an option, unless you are typing.
-   *
-   * The composer's box is focused for most of this panel's life, so the guard
-   * is what stops "2" in a written answer from selecting the second option.
+   * Number keys pick an option, unless you are typing. The composer's box is
+   * focused for most of this panel's life, so without the guard a "2" in a
+   * written answer would select the second option.
    */
   React.useEffect(() => {
     if (!question || disabled) return;
@@ -79,9 +74,8 @@ export function AskPanel({
           {question.header ?? "Question"}
         </span>
 
-        {/* Only a set of questions has a position to report, or anywhere to go.
-            Back exists because a single choice moves on by itself: pick the
-            wrong one and without this there is no way back to it. */}
+        {/* Only a set has a position to report. Back exists because a single
+            choice moves on by itself. */}
         {request.questions.length > 1 && (
           <>
             <span className="flex h-4 items-center rounded bg-muted/60 px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
@@ -147,8 +141,7 @@ export function AskPanel({
                   )}
                 </span>
 
-                {/* The number is the shortcut that picks it, so it gives way to
-                    the tick once that has happened. */}
+                {/* The number is the shortcut, so the tick replaces it. */}
                 {picked ? (
                   <Check className="size-3.5 shrink-0 text-primary" />
                 ) : (

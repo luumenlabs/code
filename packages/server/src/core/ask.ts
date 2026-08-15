@@ -1,14 +1,8 @@
 /**
- * Questions in flight.
- *
- * This is the one operation the server cannot finish on its own: the answer is
- * a person's. So it hands the question to whatever is hosting the conversation
- * — the app — and holds the agent's call open until that comes back.
- *
- * With nothing hosting, there is nobody to ask. That is a failure and is
- * reported as one: an agent told "no answer available" will ask in its reply
- * instead, where the user can actually read it, and an agent told nothing at
- * all will assume.
+ * Questions in flight. The one operation the server cannot finish on its own,
+ * so it hands the question to whatever hosts the conversation and holds the
+ * agent's call open. With nothing hosting there is nobody to ask, which is
+ * reported as a failure rather than left to be assumed away.
  */
 import { randomUUID } from "node:crypto";
 import { LuuCodeError } from "@luumen/code-protocol";
@@ -33,12 +27,9 @@ export interface AskCall {
 }
 
 /**
- * How long past the host's own deadline to wait before giving up on it.
- *
- * The host owns the timeout — it is the one showing the form, and it has to
- * take the question off the screen either way. This is only the backstop for a
- * host that never answers at all, and matches the grace the dispatcher gives a
- * Studio round trip.
+ * How long past the host's own deadline to wait before giving up on it. The
+ * host owns the timeout; this is the backstop for one that never answers, and
+ * matches the grace the dispatcher gives a Studio round trip.
  */
 const HOST_GRACE_MS = 5_000;
 

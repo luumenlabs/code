@@ -1,10 +1,7 @@
 /**
- * Capability reporting. Spec section 49.
- *
- * The agent should not be encouraged to call something that cannot work in the
- * current environment, and when it does try, the reason should say what to do
- * instead. Availability is recomputed on demand because it changes with the run
- * state and with which Studio connection is live.
+ * Capability reporting. A refusal names what to try instead. Availability is
+ * recomputed on demand, since it changes with the run state and with which
+ * Studio connection is live.
  */
 import { CAPABILITIES } from "@luumen/code-protocol";
 import type { CapabilityId, CapabilityReport, CapabilityState, PluginState, RunState } from "@luumen/code-protocol";
@@ -59,12 +56,9 @@ export function buildCapabilityReport(inputs: CapabilityInputs): CapabilityRepor
 }
 
 /**
- * Whether the plugin in Studio is the one this build ships.
- *
- * Two signals, because neither is enough on its own. Versions catch a user
- * running a release app against a plugin from an older release; a development
- * build stamps the same version on both, so what catches a stale plugin there
- * is a capability this build knows about that the plugin never mentioned.
+ * Whether the plugin in Studio is the one this build ships. Two signals:
+ * versions catch a release app against an older release's plugin, and a missing
+ * capability catches a dev build, which stamps the same version on both.
  */
 function describePlugin(inputs: CapabilityInputs): PluginState | null {
   if (!inputs.studioConnected || inputs.pluginVersion === null) return null;
@@ -83,10 +77,8 @@ function describePlugin(inputs: CapabilityInputs): PluginState | null {
 
 /**
  * Capabilities a current plugin can legitimately fail to report, because they
- * depend on the Studio build rather than on the plugin: a beta feature that is
- * off, an API a given Studio release does not carry. Their absence says nothing
- * about how old the plugin is, so counting them would report every install as
- * outdated and teach the user to ignore the warning.
+ * depend on the Studio build: a beta feature that is off, an API a release does
+ * not carry. Their absence says nothing about how old the plugin is.
  */
 const OPTIONAL_IN_STUDIO: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "debug.breakpoints",
@@ -98,19 +90,16 @@ const OPTIONAL_IN_STUDIO: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
 ]);
 
 function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
-  // Two independent capture paths, and either is enough. The in-engine one is
-  // better — it sees the viewport during a playtest and nothing outside it — but
-  // it needs the plugin, so a desktop capture still answers with Studio closed.
+  // Two independent capture paths, and either is enough. The in-engine one sees
+  // the viewport and nothing outside it, but needs the plugin.
   if (id === "view.screenshot") {
     if (inputs.studio.has("view.screenshot")) return { id, available: true, provider: "studio-plugin" };
     if (inputs.desktopCaptureAvailable) return { id, available: true, provider: "native" };
     return {
       id,
       available: false,
-      // Transient only while the in-engine path could still turn up. Once
-      // Studio is connected and its plugin does not offer capture, on a
-      // platform with no desktop path either, nothing here will ever take a
-      // picture.
+      // Transient only while the in-engine path could still turn up. With
+      // Studio connected, no plugin capture, and no desktop path, it cannot.
       transient: !inputs.studioConnected,
       provider: "native",
       reason: `Nothing here can capture an image: Studio is not connected and screen capture is not implemented for ${process.platform}.`,
@@ -118,7 +107,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
   }
 
   // Transient: a window opening is all it takes, and an agent told "Studio is
-  // not connected" can say so. A tool that had quietly vanished could not.
+  // not connected" can report that.
   if (!inputs.studioConnected) {
     return { id, available: false, transient: true, provider: "studio-plugin", reason: "Roblox Studio is not connected." };
   }
@@ -133,9 +122,9 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     };
   }
 
-  // Reported unavailable while the window is not drawing, because the engine
-  // discards input in that state. Saying so up front is the difference between
-  // an agent restoring the window and one concluding the game is broken.
+  // Unavailable while the window is not drawing: the engine discards input in
+  // that state, so an agent told this restores the window rather than
+  // concluding the game is broken.
   if (id === "input.virtual") {
     if (!inputs.studio.has("input.virtual")) {
       return {
@@ -178,8 +167,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     };
   }
 
-  // Named as the beta it is, because the fix is a switch in Studio rather than
-  // anything about the place or the agent's request.
+  // Named as the beta it is: the fix is a switch in Studio.
   if (id === "debug.breakpoints" && !inputs.studio.has(id)) {
     return {
       id,
@@ -190,10 +178,9 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     };
   }
 
-  // Whether this build can profile at all, and nothing about the run state:
-  // the session's run state is the one its primary endpoint reports, and during
-  // a playtest that is the edit peer, which is not itself running. The peer the
-  // request reaches knows for certain, and refuses with PLAYTEST_NOT_RUNNING.
+  // Whether this build can profile at all, and nothing about the run state: a
+  // session reports its primary endpoint's, which during a playtest is the edit
+  // peer. The peer the request reaches refuses with PLAYTEST_NOT_RUNNING.
   if (id === "perf.script-profiler" && !inputs.studio.has(id)) {
     return {
       id,
@@ -222,9 +209,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
   }
 
   // InsertService is not a build-varying API, so a plugin that does not offer
-  // this is old rather than running against an unusual Studio. Blaming the
-  // build sent an agent looking for another way to load an asset, and the one
-  // it found was InsertService:LoadAsset through studio_exec.
+  // this is old. Blaming the build sends an agent looking for another way in.
   if (id === "assets.insert" && !inputs.studio.has(id)) {
     return {
       id,
@@ -240,10 +225,8 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
     if (inputs.studio.has(id)) return { id, available: true, provider: "studio-plugin" };
 
     // A capability this build knows about and the plugin never mentioned is
-    // almost always a plugin older than the app, so the reason says that and
-    // names the fix. It used to say only that the session "did not report this
-    // capability", which reads as a fact about Roblox and sends an agent
-    // looking for a workaround — which is exactly what one did.
+    // almost always an old plugin, so the reason says so and names the fix. A
+    // bare "did not report this capability" reads as a fact about Roblox.
     return {
       id,
       available: false,

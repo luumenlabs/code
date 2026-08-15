@@ -1,15 +1,8 @@
 /**
- * A change, written out as the two versions of a file.
- *
- * A DataModel change is not text, and a diff needs text — so this renders the
- * instance as Luau on both sides of the write and hands the pair to
- * `@pierre/diffs`, which does the aligning and the highlighting. Nothing here
- * compares anything; that is the library's job and it is better at it.
- *
- * The rendered form is deliberately Luau-shaped rather than a bespoke notation.
- * `Anchored = true` and `Attributes.Owner = "shop"` are what the user would
- * write to make the change themselves, they highlight as code because they are
- * code, and a create reads as the script you would need to build the thing.
+ * A change, written out as the two versions of a file. A DataModel change is
+ * not text and a diff needs text, so the instance is rendered as Luau on both
+ * sides of the write and the pair handed to `@pierre/diffs`. Nothing here
+ * compares anything.
  */
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { ChangeRecord, InstanceSnapshot, RbxValue, ValueChange } from "@luumen/code-protocol";
@@ -23,7 +16,7 @@ export interface ChangeDocument {
   after: string | null;
 }
 
-/** Lines added and removed, which is how every other diff in the world counts. */
+/** Lines added and removed. */
 export interface ChangeStats {
   added: number;
   removed: number;
@@ -31,14 +24,7 @@ export interface ChangeStats {
 
 /**
  * What a row calls a change: a thing, and which part of it moved.
- *
- * The plugin also writes a sentence — "Set Anchored, CanCollide and 2 more" —
- * and that sentence is the right thing to hand an agent, to copy out, and to
- * put in the activity log. It is the wrong thing to stack forty of down a
- * panel: prose does not scan, does not align, and buries the two words that
- * identify the row under the grammar around them. `record.summary` is still
- * there for the places that want a sentence; this is for the places that want
- * a list.
+ * `record.summary` is the plugin's sentence, for the places that want one.
  */
 export interface ChangeLabel {
   /** The instance, or the script file. */
@@ -48,11 +34,8 @@ export interface ChangeLabel {
 }
 
 /**
- * Luau, always.
- *
- * Even the synthesised documents: they are property assignments, which is Luau,
- * and naming them anything else would turn the one thing the highlighter is
- * good at into dead weight.
+ * Luau, always — the synthesised documents are property assignments, which is
+ * Luau, and the highlighter is what names them.
  */
 export function changeDocument(record: ChangeRecord): ChangeDocument | null {
   const leaf = record.target.name || record.target.path;
@@ -87,8 +70,8 @@ export function changeDocument(record: ChangeRecord): ChangeDocument | null {
     case "tags": {
       const added = record.tags?.added ?? [];
       const removed = record.tags?.removed ?? [];
-      // Both sides carry every tag the operation touched, so the ones that were
-      // already there sit in the diff as context rather than vanishing.
+      // Both sides carry every tag the operation touched, so unchanged ones sit
+      // in the diff as context.
       const before = [...removed].sort();
       const after = [...added].sort();
       return {
@@ -124,15 +107,9 @@ export function changeDocument(record: ChangeRecord): ChangeDocument | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Records that describe the same thing, and can therefore be read as one.
- *
- * A `create` and a `source` are different operations on the same document — the
- * file — and comparing the first one's before with the last one's after gives
- * the change the file actually underwent. A `rename` is not: its document is a
- * line of Luau saying what the instance is called, and folding that into a
- * script's diff would produce a comparison between two unrelated things.
- *
- * So records merge within a family and never across one.
+ * Records that describe the same document, and can therefore be read as one.
+ * `create` and `source` both act on the file; `rename` acts on a line of Luau
+ * naming the instance. Records merge within a family and never across one.
  */
 type Family = "document" | ChangeRecord["kind"];
 
@@ -150,23 +127,12 @@ export interface ChangeBundle {
 }
 
 /**
- * Changes, as the changes they add up to.
+ * Changes, as the changes they add up to: the first record's before against the
+ * last record's after. Grouped by instance rather than by adjacency, so a turn
+ * that edits A, then B, then A again made two changes.
  *
- * An agent that writes a script and then fixes a line in it has performed two
- * operations and made one change, and the transcript was showing the two: a
- * create whose diff is the whole file, followed by an edit whose diff is a line
- * of it. Nobody reviews that. What they want is the file, as it now stands,
- * against what was there before — which is the first record's before and the
- * last record's after.
- *
- * Grouped by instance rather than by adjacency: a turn that edits A, then B,
- * then A again made two changes, not three, and the row for A belongs where A
- * was first touched.
- *
- * Revert state is part of the key, which is what keeps the merge honest. Put
- * one record of a bundle back and the row splits in two — what has been undone
- * and what still stands — because a cumulative diff of a half-reverted run
- * would describe a place that does not exist.
+ * Revert state is part of the key. Put one record of a bundle back and the row
+ * splits — a cumulative diff of a half-reverted run describes no real place.
  */
 export function bundleChanges(records: ChangeRecord[]): ChangeBundle[] {
   const bundles = new Map<string, ChangeBundle>();
@@ -189,11 +155,8 @@ export function bundleChanges(records: ChangeRecord[]): ChangeBundle[] {
 }
 
 /**
- * Which kind names the bundle.
- *
- * A file that was created and then edited was created — that is the fact worth
- * the icon, and the edits are how it reached its final state. A file that was
- * created and then deleted is a delete, for the same reason: it is the outcome.
+ * Which kind names the bundle. Created then edited is a create; created then
+ * deleted is a delete. The outcome wins.
  */
 function dominant(current: ChangeRecord["kind"], next: ChangeRecord["kind"]): ChangeRecord["kind"] {
   if (current === "delete" || next === "delete") return "delete";
@@ -202,11 +165,9 @@ function dominant(current: ChangeRecord["kind"], next: ChangeRecord["kind"]): Ch
 }
 
 /**
- * A bundle from records named explicitly, for the viewer.
- *
- * The row has already decided what belongs together and passed its ids along;
- * re-deriving that here would re-split the run the moment one of its records
- * was put back, and quietly show half of the diff the user opened.
+ * A bundle from records named explicitly, for the viewer. The row already
+ * decided what belongs together; re-deriving it would re-split the run the
+ * moment one record was put back.
  */
 export function bundleFrom(records: ChangeRecord[]): ChangeBundle | null {
   const first = records[0];
@@ -291,10 +252,8 @@ export function bundleDocument(bundle: ChangeBundle): ChangeDocument | null {
 }
 
 /**
- * One entry per name: where it started, and where it ended up.
- *
- * `Anchored` set twice in a turn is one property with one before and one after.
- * Listing it twice is the per-operation view again, in miniature.
+ * One entry per name: where it started, and where it ended up. `Anchored` set
+ * twice in a turn is one property with one before and one after.
  */
 function mergeValues(lists: ValueChange[][]): ValueChange[] {
   const merged = new Map<string, ValueChange>();
@@ -318,11 +277,8 @@ export function hasDocument(bundle: ChangeBundle): boolean {
 }
 
 /**
- * What the row calls a bundle.
- *
- * Built from the merged data rather than from the last record, so a turn that
- * set `Anchored` and then `CanCollide` reads as both rather than as the one it
- * happened to finish on.
+ * What the row calls a bundle. Built from the merged data, so a turn that set
+ * `Anchored` and then `CanCollide` reads as both.
  */
 export function bundleLabel(bundle: ChangeBundle): ChangeLabel {
   const records = bundle.records;
@@ -361,8 +317,8 @@ export function changeLabel(record: ChangeRecord): ChangeLabel {
       return { name: leaf, detail: names((record.properties ?? []).map((value) => value.name)) };
 
     case "attributes":
-      // The sigil is the one Roblox itself uses in the Properties pane, and it
-      // is what stops "Owner" reading as a property when it is an attribute.
+      // Roblox's own sigil in the Properties pane; without it "Owner" reads as
+      // a property.
       return { name: leaf, detail: names((record.attributes ?? []).map((value) => `@${value.name}`)) };
 
     case "tags":
@@ -399,22 +355,14 @@ function names(list: string[]): string | null {
 const NOTHING: ChangeStats = { added: 0, removed: 0 };
 
 /**
- * Beyond this, the counts are taken from the line totals rather than a diff.
- *
- * The number is deliberately generous — a 200KB script still gets a real count.
- * What it rules out is the pathological case: a turn that rewrote a dozen huge
- * files, every row of which would otherwise run the diff algorithm on mount,
- * synchronously, before anything appeared on screen.
+ * Beyond this, the counts come from the line totals rather than a diff — a turn
+ * that rewrote a dozen huge files would otherwise diff them all on mount.
  */
 const MAX_DIFFED = 400_000;
 
 /**
- * Counted once per record, then remembered.
- *
- * A journalled record never changes — the id is enough of a key — and the same
- * rows are rendered on every keystroke in the composer, every output line, and
- * every scroll. Diffing a script on each of those is not a cost worth paying
- * for a number in the corner of a row.
+ * Counted once per record, then remembered. A journalled record never changes,
+ * so its id is key enough, and the rows re-render on every keystroke.
  */
 const COUNTED = new Map<string, ChangeStats>();
 
@@ -423,11 +371,8 @@ export function changeStats(record: ChangeRecord): ChangeStats {
 }
 
 /**
- * The counts for the merged change, which are not the sum of the parts.
- *
- * A line written by the create and then rewritten by the edit is one added
- * line, and adding the two records' own counts would report it as two added
- * and one removed — a bigger diff than the one on screen.
+ * The counts for the merged change, which are not the sum of the parts. A line
+ * written by a create and rewritten by an edit is one added line.
  */
 export function bundleStats(bundle: ChangeBundle): ChangeStats {
   return remembered(bundle.records.map((record) => record.id).join("|"), () => bundleDocument(bundle));
@@ -438,8 +383,8 @@ function remembered(key: string, build: () => ChangeDocument | null): ChangeStat
   if (cached) return cached;
 
   const stats = count(build());
-  // A guard against a session that never ends, not a policy: the next render
-  // pays for the handful of rows actually on screen and the map refills.
+  // A guard against a session that never ends. The next render refills it with
+  // the handful of rows on screen.
   if (COUNTED.size > 1_000) COUNTED.clear();
   COUNTED.set(key, stats);
   return stats;
@@ -469,8 +414,7 @@ function count(document: ChangeDocument | null): ChangeStats {
 
     return { added, removed };
   } catch {
-    // The diff is the library's problem and it renders the same pair; a count
-    // it could not produce is not worth failing a row over.
+    // A count the library could not produce is not worth failing a row over.
     return NOTHING;
   }
 }
@@ -508,10 +452,8 @@ function renderStub(record: ChangeRecord): string {
 }
 
 /**
- * The whole instance, as the Luau that would build it.
- *
- * Children are nested by indentation rather than flattened, because the shape of
- * the tree is half of what a deleted Model was.
+ * The whole instance, as the Luau that would build it. Children are nested by
+ * indentation — the shape of the tree is half of what a deleted Model was.
  */
 function renderSnapshot(node: InstanceSnapshot, depth = 0): string {
   const pad = "\t".repeat(depth);
@@ -554,9 +496,8 @@ function renderSnapshot(node: InstanceSnapshot, depth = 0): string {
 }
 
 function sorted(values: Record<string, RbxValue>): Array<[string, RbxValue]> {
-  // Roblox hands back a Lua table, whose key order is whatever the hash gave —
-  // so the order has to be imposed here or the same instance renders differently
-  // every time it is read.
+  // Roblox hands back a Lua table, whose key order is whatever the hash gave;
+  // unsorted, the same instance renders differently every read.
   return Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
 }
 

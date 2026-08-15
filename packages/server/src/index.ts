@@ -1,9 +1,7 @@
 /**
- * The Luu Code local server.
- *
- * Everything the product can do to Roblox Studio is assembled here and stays on
- * this machine. There is no hosted backend in the path: the harness, the CLI,
- * and any external MCP client all talk to this process. Spec sections 5.2 and 28.
+ * The Luu Code local server. Everything the product can do to Roblox Studio is
+ * assembled here and stays on this machine: the harness, the CLI, and any
+ * external MCP client all talk to this process.
  */
 import { LuuCodeError } from "@luumen/code-protocol";
 import type { CapabilityReport, Op, PermissionGroup, SessionStatus, StudioRealm } from "@luumen/code-protocol";
@@ -32,11 +30,9 @@ export interface LuuCodeServerOptions {
   settings?: SettingsStore;
   /**
    * Overrides the platform desktop capture path. The Electron harness passes a
-   * compositor-based provider here, which can capture Studio even when it is
-   * not the frontmost window. Spec section 22.
-   *
-   * This is the fallback for `view.screenshot`; the default path captures the
-   * viewport through Studio itself and does not come through here.
+   * compositor-based provider, which captures Studio without bringing it to the
+   * front. This is the fallback for `view.screenshot`; the default path
+   * captures the viewport through Studio itself.
    */
   desktopCaptureProvider?: DesktopCaptureProvider;
 }
@@ -63,23 +59,17 @@ export interface LuuCodeServer {
   /** Drops a Studio session and everything keyed on it. */
   disconnectSession(sessionId: string): void;
   /**
-   * Changes what the agent is allowed to do, and tells everyone.
-   *
-   * These go through the server rather than straight to the settings store
-   * because the answer is not only the app's business. Every MCP child is a
-   * separate process working from a tool list it fetched when it connected, and
-   * the bus event is how they learn to fetch it again — without it, a tool the
-   * user has just turned off stays on the menu of every agent already running.
+   * Changes what the agent is allowed to do, and tells everyone. Every MCP
+   * child is a separate process working from a tool list it fetched when it
+   * connected, and the bus event is how it learns to fetch again.
    */
   setPermission(group: PermissionGroup, allowed: boolean): void;
   setToolAllowed(op: Op, allowed: boolean): void;
   setDesktopCaptureProvider(provider: DesktopCaptureProvider | null): void;
   /**
-   * Registers who shows the agent's questions to the user.
-   *
-   * Only the app can: a question needs a conversation to appear in. Without a
-   * host `ask.user` fails and says so, which is what a terminal agent should
-   * hear — it can ask in its reply, where the user is already reading.
+   * Registers who shows the agent's questions to the user. Only the app can: a
+   * question needs a conversation to appear in. Without a host, `ask.user`
+   * fails and says so.
    */
   setAskHost(host: AskHost | null): void;
   close(): Promise<void>;
@@ -176,9 +166,8 @@ export async function createLuuCodeServer(options: LuuCodeServerOptions = {}): P
       sessions.disconnect(sessionId);
       output.drop(sessionId);
 
-      // The window's history goes with it. Every record names instances in a
-      // DataModel that is no longer reachable, and the plugin's copies of the
-      // deleted ones went with the connection.
+      // The window's history goes with it: every record names instances in a
+      // DataModel that is no longer reachable.
       if (changes.dropSession(sessionId)) bus.emit({ type: "changes.dropped", session: sessionId });
     },
     setPermission: (group, allowed) => {

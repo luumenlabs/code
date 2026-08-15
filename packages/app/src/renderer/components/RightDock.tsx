@@ -1,10 +1,6 @@
 /**
- * The side dock: Studio state and Studio output.
- *
- * Both are reference material you glance at, not part of the conversation, so
- * they sit beside it rather than on top of it. Stacking the log above the
- * composer ate the transcript and pushed the thing you are reading around every
- * time the game printed a line.
+ * The side dock: Studio state and Studio output. Reference material you glance
+ * at, so it sits beside the conversation rather than over it.
  */
 import * as React from "react";
 import {
@@ -47,16 +43,8 @@ const TONE: Record<OutputEntry["type"], string> = {
 };
 
 /**
- * The dock, opening straight onto its content.
- *
- * The Studio/Output switcher has been in two wrong places. A full-height row of
- * its own stacked two bars on top of each other; the title bar's dock segment
- * fixed that but put the switcher on the same row as the panel toggle, so
- * opening the dock shoved the toggle across the window by the dock's width.
- *
- * It sits along the bottom now. Nothing above it can move when the dock opens,
- * the panel starts at what it is showing, and the switcher is next to the
- * composer — which is where your hands already are.
+ * The dock, opening straight onto its content. The tab switcher runs along the
+ * bottom, beside the composer, so nothing above it moves when the dock opens.
  */
 export function RightDock({
   harness,
@@ -90,13 +78,8 @@ export function RightDock({
 
       <div className="shrink-0 border-t border-sidebar-border p-2">
         <Tabs value={tab} onValueChange={(value) => onTabChange(value as DockTab)}>
-          {/* Full width, thirds: destinations along the foot of a panel read as
-              a switch, where a small pill floating left reads as a control for
-              whatever happens to be above it.
-
-              The labels lose their icons below three tabs' worth of room; the
-              count on a tab is the part that has to survive, because it is the
-              only thing on this row that changes on its own. */}
+          {/* Full width, thirds: along the foot of a panel this reads as a
+              switch rather than as a control for whatever is above it. */}
           <TabsList className="flex w-full">
             <TabsTrigger value="studio" className="min-w-0 flex-1 justify-center">
               <Blocks className="size-3" />
@@ -108,8 +91,7 @@ export function RightDock({
               {standing > 0 && <span className="ml-0.5 tabular-nums">{standing}</span>}
             </TabsTrigger>
             <TabsTrigger value="output" className="min-w-0 flex-1 justify-center">
-              {/* The same icon the transcript gives an Output line, so the tab
-                  and the rows it holds are recognisably the same thing. */}
+              {/* The same icon the transcript gives an Output line. */}
               <ScrollText className="size-3" />
               Output
               {errors > 0 && <span className="ml-0.5 text-destructive tabular-nums">{errors}</span>}
@@ -126,8 +108,7 @@ function StudioTab({ harness }: { harness: Harness }): React.JSX.Element {
   const { status, capabilities } = snapshot;
 
   // The window the open chat is working in, which is not necessarily the
-  // default: another chat may be running in a different place right now, and
-  // this panel describes the one whose transcript is on screen.
+  // default — another chat may be running in a different place.
   const chatSessionId = harness.activeThreadId ? status.chats[harness.activeThreadId] : undefined;
   const session =
     status.sessions.find((entry) => entry.id === chatSessionId) ??
@@ -155,12 +136,8 @@ function StudioTab({ harness }: { harness: Harness }): React.JSX.Element {
 }
 
 /**
- * What the app knows this place by, as opposed to what it calls it.
- *
- * The same rule the sidebar groups on: a place id if Roblox has issued one, a
- * universe id if the place belongs to one but has never been published, and
- * nothing at all otherwise. Names are never part of it — two places called
- * Baseplate are two places.
+ * What the app knows this place by, as opposed to what it calls it — the same
+ * rule the sidebar groups on. Names are never part of it.
  */
 function identityOf(place: StudioSession["place"]): string | null {
   if (place.identity) return place.identity;
@@ -179,8 +156,8 @@ function StudioDetails({
 }): React.JSX.Element {
   const place = session.place;
   const identity = identityOf(place);
-  // Studio's tab shows the file, which no plugin API exposes, so this is
-  // game.Name and may not match it. Said in a tooltip rather than on the panel.
+  // No plugin API exposes the filename Studio's tab shows, so this is game.Name
+  // and may not match it.
   const localName = place.nameSource === "datamodel" && place.placeId === 0;
 
   return (
@@ -222,14 +199,11 @@ function StudioDetails({
                   key={entry.id}
                   onSelect={() => void window.luuCode.selectSession(entry.id, harness.activeThreadId ?? undefined)}
                 >
-                  {/* Checked against this chat's window, not the default: the
-                      question the menu answers is where this conversation is
-                      working. */}
+                  {/* Checked against this chat's window, not the default. */}
                   <Check className={cn("size-3.5", entry.id === session.id ? "opacity-100" : "opacity-0")} />
                   <span className="truncate">{entry.place.name}</span>
-                  {/* Two windows on one place are two entries with one name.
-                      The mode is usually what tells them apart, and when it is
-                      not, at least the row is not a duplicate of the one above. */}
+                  {/* Two windows on one place are two entries with one name;
+                      the mode is usually what tells them apart. */}
                   <span className="ml-auto pl-2 text-[11.5px] text-muted-foreground">
                     {entry.run.running ? "Playtest" : "Edit"}
                   </span>
@@ -249,8 +223,7 @@ function StudioDetails({
         )}
       </Field>
 
-      {/* The id, since the name is neither reliable nor unique. Absent when
-          there is none: the badge beside the name already says so. */}
+      {/* The id, since the name is neither reliable nor unique. */}
       {place.placeId > 0 && (
         <Field label="Place">
           <CopyableId value={String(place.placeId)} />
@@ -291,13 +264,7 @@ function StudioDetails({
   );
 }
 
-/**
- * An id, and the one thing anyone ever does with one.
- *
- * Selectable would be enough on a wide panel. In a 340px column the number is
- * usually against the right edge with a button beside it, and dragging a
- * selection across it is a worse way to get ten digits than pressing a button.
- */
+/** An id, and the one thing anyone does with one. */
 function CopyableId({ value }: { value: string }): React.JSX.Element {
   const [copied, setCopied] = React.useState(false);
 
@@ -332,7 +299,7 @@ function StudioEmpty(): React.JSX.Element {
         Not connected
       </Badge>
       <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-        Open your place in Roblox Studio and approve the code its Luu Code panel shows.
+        Open your place in Roblox Studio. The plugin connects on its own.
       </p>
       <p className="text-[12px] leading-relaxed text-muted-foreground">
         No panel? Install the plugin from <span className="text-foreground/80">Settings → Updates</span>, then restart
@@ -343,8 +310,8 @@ function StudioEmpty(): React.JSX.Element {
 }
 
 /**
- * What does not work, named. The reasons are written for an agent to act on and
- * are a paragraph each, so they hang off the row rather than filling the panel.
+ * What does not work, named. The reasons are written for an agent and run to a
+ * paragraph each, so they hang off the row rather than filling the panel.
  */
 function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Element | null {
   const blocked = report.capabilities.filter((entry) => !entry.available && entry.reason);
@@ -371,8 +338,8 @@ function Unavailable({ report }: { report: CapabilityReport }): React.JSX.Elemen
 
 function McpSetup({ command, port }: { command: string; port: number }): React.JSX.Element {
   const [copied, setCopied] = React.useState(false);
-  // Points at the MCP server that shipped with this build, run through the
-  // app's own binary — so there is nothing to install and no second version.
+  // The MCP server that shipped with this build, run through the app's own
+  // binary, so there is nothing to install.
   const snippet = `claude mcp add luu-code -e ELECTRON_RUN_AS_NODE=1 -- ${command}`;
 
   const copy = async (): Promise<void> => {
@@ -422,8 +389,7 @@ function OutputTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Clearing lives beside the filters now that the dock has no header of
-          its own — same row, same concern: what you are looking at. */}
+      {/* Clearing sits beside the filters: same concern, same row. */}
       <div className="flex shrink-0 items-center gap-1 px-2.5 py-2">
         {(["all", "error", "warning"] as const).map((value) => (
           <button

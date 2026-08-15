@@ -43,18 +43,13 @@ function RenderMonitor.start()
 end
 
 --[[
-	Starts the clock again, for a DataModel that has just been replaced.
+	Starts the clock again, for a DataModel that has just been replaced. A frame
+	clock from before an edit/run transition says nothing about the window
+	drawing now, and a stale one reads as "not drawing" — which refuses input
+	and screenshots for the whole playtest.
 
-	An edit/run transition hands the window to a different DataModel. The old
-	connection may keep firing, may stop, or may have died with the world it
-	belonged to — and either way the frame clock from before the transition says
-	nothing about the one drawing now. Held against the new session, a stale
-	clock reads as "the window is not drawing", which refuses input and
-	screenshots for the whole playtest: the two things most worth having in one.
-
-	The reconnect is what makes it honest rather than optimistic. A window that
-	really is minimized produces no frames on the new connection either, and the
-	monitor says so a second later.
+	A window that really is minimized produces no frames on the new connection
+	either, and the monitor says so a second later.
 ]]
 function RenderMonitor.rearm()
 	if connection then

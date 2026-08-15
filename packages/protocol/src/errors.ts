@@ -1,9 +1,6 @@
 /**
- * Failure taxonomy for every Roblox-facing operation.
- *
- * Spec section 32 requires that failures are distinguishable by both the coding
- * agent and the user. Each code below maps to a distinct recovery strategy an
- * agent can reason about, so new codes should only be added when the agent
+ * Failure taxonomy for every Roblox-facing operation. Each code maps to a
+ * distinct recovery an agent can reason about, so add one only when the agent
  * would genuinely act differently.
  */
 export const ERROR_CODES = [
@@ -50,9 +47,8 @@ export const ERROR_CODES = [
   /** There is no conversation on screen to put a question in front of. */
   "ASK_UNAVAILABLE",
   /**
-   * Roblox's own Creator Store endpoints could not be reached or refused the
-   * request. Distinct because nothing about the place or the request is wrong:
-   * the agent either waits or builds what it wanted itself.
+   * Roblox's Creator Store endpoints could not be reached or refused the
+   * request. Nothing about the place or the request is wrong.
    */
   "STORE_UNAVAILABLE",
   /** Anything unclassified. Always accompanied by a message. */

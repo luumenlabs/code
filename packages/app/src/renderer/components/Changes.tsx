@@ -1,20 +1,11 @@
 /**
- * What was done to the place, and the button that takes it back.
+ * What was done to the place, and the button that takes it back. One row per
+ * instance and kind, which is what a bundle already is: a name, what moved, and
+ * `+12 −3`. The plugin's sentence is the row's title attribute.
  *
- * One row per instance and kind, which is what a bundle already is. An
- * enclosing card per instance repeated the row's own name and class and cost a
- * container to say it.
- *
- * The same list appears in two widths: the dock, where it is the session's whole
- * history and the diffs start open, and under a turn in the transcript, where it
- * is what that turn did and the whole list is folded away. Both use the
- * components below so a change looks the same and reverts the same wherever it
- * is read.
- *
- * A row is a filename, what moved, and `+12 −3`. It used to be the plugin's
- * sentence — "Changed the source of Shop" — which is the right thing to hand an
- * agent and the wrong thing to stack down a panel, because prose does not scan
- * and does not align. The sentence is still on the row, as its title.
+ * The same list appears in the dock, where it is the session's whole history
+ * with the diffs open, and under a turn in the transcript, where it is what
+ * that turn did and starts folded.
  */
 import * as React from "react";
 import {
@@ -55,12 +46,8 @@ const KIND_ICON: Record<ChangeRecord["kind"], React.ElementType> = {
 };
 
 /**
- * The outcome of the last attempt on each row.
- *
- * Kept here rather than in the record, because it is not part of what happened
- * to the place — it is what the app just tried and was told. A conflict has to
- * stay on screen next to its row until the user does something about it, and
- * the record itself is unchanged by a refusal.
+ * The outcome of the last revert attempt on each row. Not part of the record —
+ * a refusal leaves what happened to the place unchanged.
  */
 type Outcomes = Record<string, RevertOutcome>;
 
@@ -75,8 +62,8 @@ function useRevert(harness: Harness): {
       const ids = records.filter(isPending).map((record) => record.id);
       if (ids.length === 0) return;
 
-      // Clear what was said last time first: a stale conflict sitting under a
-      // row that has just gone back cleanly is worse than no message.
+      // Clear what was said last time: a stale conflict must not sit under a
+      // row that has just gone back cleanly.
       setOutcomes((current) => {
         const next = { ...current };
         for (const id of ids) delete next[id];
@@ -105,10 +92,8 @@ function useRevert(harness: Harness): {
 // ---------------------------------------------------------------------------
 
 /**
- * Counted over the merged changes, not the records.
- *
- * The header has to agree with the rows under it, and the rows show what each
- * instance ended up with rather than what every operation did on the way.
+ * Counted over the merged changes, not the records, so the header agrees with
+ * the rows under it.
  */
 function sum(records: ChangeRecord[]): ChangeStats {
   let added = 0;
@@ -123,13 +108,7 @@ function sum(records: ChangeRecord[]): ChangeStats {
   return { added, removed };
 }
 
-/**
- * `+12 −3`.
- *
- * The one thing a diff should say before it is opened, and the thing this
- * product was not saying anywhere: how big it is. A row without it is a row you
- * have to open to find out whether it was worth opening.
- */
+/** `+12 −3` — how big the diff is, before it is opened. */
 function Stats({ stats, className }: { stats: ChangeStats; className?: string }): React.JSX.Element | null {
   if (stats.added === 0 && stats.removed === 0) return null;
 
@@ -192,10 +171,8 @@ export function ChangesTab({ harness }: { harness: Harness }): React.JSX.Element
 // ---------------------------------------------------------------------------
 
 /**
- * A flat list of changes, for the transcript.
- *
- * No instance grouping: the rows carry their own paths, and a turn that touched
- * four instances would otherwise become four headings around four single rows.
+ * A flat list of changes. No instance grouping — the rows carry their own
+ * paths, and grouping would put a heading around each single row.
  */
 function ChangeList({
   records,
@@ -235,11 +212,9 @@ function ChangeList({
 }
 
 /**
- * Whether the row has come near the viewport yet.
- *
- * The dock opens every diff at once, so a session of thirty would build thirty
- * before the panel paints. Once seen it stays seen: unmounting on the way past
- * would collapse the height out from under the scroll position.
+ * Whether the row has come near the viewport yet. The dock opens every diff at
+ * once, so a session of thirty would build thirty before it paints. Once seen
+ * it stays seen: unmounting would collapse the height under the scroll.
  */
 function useSeen(): [React.RefObject<HTMLDivElement>, boolean] {
   const ref = React.useRef<HTMLDivElement>(null);
@@ -267,10 +242,8 @@ function useSeen(): [React.RefObject<HTMLDivElement>, boolean] {
 }
 
 /**
- * The diff, built when it is nearly on screen.
- *
- * The placeholder is sized from the line counts so the scrollbar does not jump
- * when the real thing replaces it.
+ * The diff, built when it is nearly on screen. The placeholder is sized from
+ * the line counts so the scrollbar does not jump when it is replaced.
  */
 function LazyDiff({ bundle, stats }: { bundle: ChangeBundle; stats: ChangeStats }): React.JSX.Element {
   const [ref, seen] = useSeen();
@@ -284,12 +257,9 @@ function LazyDiff({ bundle, stats }: { bundle: ChangeBundle; stats: ChangeStats 
 }
 
 /**
- * One instance's change, however many operations it took.
- *
- * The row stands for a bundle rather than a record: reverting it puts every
- * operation in it back, newest first, and the diff is the one they add up to.
- * A record that has already gone back is in a bundle of its own, so the two
- * halves of a partly-reverted run never share a row.
+ * One instance's change, however many operations it took. Reverting the row
+ * puts every operation in the bundle back, newest first. A record that has
+ * already gone back is in a bundle of its own.
  */
 function ChangeRow({
   bundle,
@@ -310,8 +280,7 @@ function ChangeRow({
   startOpen?: boolean;
 }): React.JSX.Element {
   const records = bundle.records;
-  // The newest is what the row is about: its path is where the instance is now,
-  // and its summary is the last thing that happened to it.
+  // The newest holds where the instance is now and what last happened to it.
   const record = records[records.length - 1]!;
 
   const Icon = KIND_ICON[bundle.kind];
@@ -320,18 +289,16 @@ function ChangeRow({
   const label = bundleLabel(bundle);
   const stats = bundleStats(bundle);
   const open = useOpenChange();
-  // Cheap: whether there is a document, not what the diff of it looks like.
-  // The diffing itself happens in ChangeDiff, and only once the row is open.
+  // Whether there is a document, not what its diff looks like. ChangeDiff does
+  // the diffing, once the row is open.
   const detail = React.useMemo(() => hasDocument(bundle), [bundle]);
 
-  // Everything in the bundle goes back together, and whatever the last attempt
-  // said about any of it is what the note under the row reports.
+  // Everything in the bundle goes back together.
   const pending = records.filter(isPending);
   const outcome = records.map((entry) => outcomes[entry.id]).find((entry) => entry !== undefined);
   const revertable = pending.length > 0 && pending.every((entry) => entry.revertable);
 
-  /* The plugin's sentence, kept where a sentence belongs: on hover, for the one
-     time in fifty that "what exactly did this do" is the question. */
+  /* The plugin's sentence sits on hover, as the row's title. */
   const face = (
     <>
       {detail && (
@@ -382,9 +349,7 @@ function ChangeRow({
       ) : reverted ? (
         <span className="shrink-0 pr-1 text-[11px] text-muted-foreground/70">Reverted</span>
       ) : stale ? (
-        // No button and no explanation on the row: the section above says why
-        // once, which is the right number of times for something that is true
-        // of everything under it.
+        // No button and no reason on the row; the section header says it once.
         <History className="mr-1 size-3.5 shrink-0 text-muted-foreground/40" />
       ) : revertable ? (
         <Hint label={pending.length > 1 ? `Revert all ${pending.length}` : "Revert"}>
@@ -405,8 +370,7 @@ function ChangeRow({
     <div className="border-t first:border-t-0">
       {detail ? (
         /* Closed in the transcript, where a diff unfolding under the answer
-           still being read takes the scroll position with it. The dock is the
-           panel you open to read diffs, so there it starts open. */
+           takes the scroll position with it. Open in the dock. */
         <Collapsible className="group/change" defaultOpen={startOpen}>
           {row}
           <CollapsibleContent>
@@ -430,13 +394,8 @@ function ChangeRow({
 }
 
 /**
- * Whatever the last attempt had to say, and nothing when it had nothing.
- *
- * A change that cannot go back gets the reason rather than a disabled button:
- * a button you cannot press tells you nothing about why, and "Archivable is off
- * on this instance" is the whole answer. A change that went back cleanly, or
- * has not been tried, draws no row at all — this used to be a permanent strip
- * under every change holding a Revert link that now lives on the row itself.
+ * Whatever the last attempt had to say, and nothing when it had nothing. A
+ * change that cannot go back gets the reason rather than a disabled button.
  */
 function RowNote({
   pending,
@@ -452,8 +411,8 @@ function RowNote({
 }): React.JSX.Element | null {
   if (pending.length === 0) return null;
 
-  // One of the operations cannot go back, so neither can the row: putting some
-  // of a run back would leave the instance in a state nothing describes.
+  // One operation stuck means the row is stuck: putting half a run back would
+  // leave the instance in a state nothing describes.
   const stuck = pending.find((record) => !record.revertable);
 
   if (stuck) {
@@ -481,7 +440,7 @@ function RowNote({
       {outcome.current && <p className="pl-[18px] text-[11px] text-muted-foreground">Now: {outcome.current}</p>}
 
       {/* Only a conflict is worth overriding. A failure is Roblox refusing the
-          write, and asking again harder does not change that. */}
+          write. */}
       {outcome.status === "conflict" && (
         <button
           type="button"
@@ -503,23 +462,16 @@ function RowNote({
 interface ChangesContextValue {
   harness: Harness;
   /**
-   * Opens one change over the conversation, in place of the transcript.
-   *
-   * Every record behind the row, not just one of them: what the viewer shows
-   * has to be the same diff the row was showing, and that diff is the run of
-   * operations added together.
+   * Opens one change over the conversation. Every record behind the row, so the
+   * viewer shows the same diff the row did.
    */
   open: (ids: string[]) => void;
 }
 
 /**
- * The harness and the viewer, for the transcript's turns.
- *
- * Through context rather than down the tree: the transcript renders turns
- * inside folds inside runs, and the only thing at the bottom that needs either
- * is the one turn in five that changed something. Threading them through four
- * components to reach that row would put them in three signatures that have no
- * use for them.
+ * The harness and the viewer, for the transcript's turns. Through context: the
+ * transcript renders turns inside folds inside runs, and only the row at the
+ * bottom needs either.
  */
 const ChangesContext = React.createContext<ChangesContextValue | null>(null);
 
@@ -541,19 +493,9 @@ function useOpenChange(): ((ids: string[]) => void) | null {
 }
 
 /**
- * What a turn changed, under the turn.
- *
- * This used to hang off the operation row that caused it, which sounded right
- * and read terribly: the row is inside a run fold, inside the turn's
- * working-out fold, and the changes were behind a disclosure of their own — so
- * a diff was three clicks deep, and two of those clicks were on things that
- * say nothing about diffs. Every one of those folds exists to keep the
- * scrollback readable, and none of them should be able to hide the one part of
- * a turn the user is actually being asked to approve.
- *
- * So it sits at the top of the turn instead, next to the answer, where a pull
- * request would put its files — behind one fold whose header carries the count
- * and the totals.
+ * What a turn changed, at the top of the turn beside the answer — behind one
+ * fold whose header carries the count and the totals. Not on the operation row
+ * that caused it, which sits inside two other folds.
  */
 export function TurnChanges({ activityIds }: { activityIds: string[] }): React.JSX.Element | null {
   const context = React.useContext(ChangesContext);
@@ -571,11 +513,9 @@ function TurnChangeList({
   const { outcomes, run } = useRevert(harness);
 
   /**
-   * The turn's changes, live where they still are and stored where they are not.
-   *
-   * The live journal wins on a record they both hold: it is the one that knows
-   * whether the change has since been put back. Everything else is read back
-   * from the thread file — the same diff, minus the ability to revert it.
+   * The turn's changes, live where they still are and stored where they are
+   * not. The live journal wins on a record they both hold — it knows whether
+   * the change has since been put back.
    */
   const records = React.useMemo(() => {
     const wanted = new Set(activityIds);
@@ -597,9 +537,8 @@ function TurnChangeList({
   const stale = !allReverted && records.every((record) => !live.has(record.id));
 
   return (
-    /* Folded away by default. A turn that touched thirty instances is thirty
-       rows between the answer and the next message, and the count and the
-       totals on the header are what most turns need it to say. */
+    /* Folded by default: a turn that touched thirty instances would otherwise
+       put thirty rows between the answer and the next message. */
     <Collapsible className="group/turn flex flex-col gap-1.5">
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
         <CollapsibleTrigger className="flex min-w-0 items-center gap-1.5 transition-colors hover:text-foreground">
@@ -610,7 +549,7 @@ function TurnChangeList({
 
         {allReverted && <span className="text-muted-foreground/70">· reverted</span>}
         {stale && (
-          <Hint label="Putting a change back needs the Studio window it was made in. That session has ended, so this is here to read.">
+          <Hint label="That Studio session has ended. This is here to read.">
             <span className="text-muted-foreground/70 underline decoration-dotted underline-offset-2">
               · from an earlier session
             </span>

@@ -1,17 +1,11 @@
 /**
- * Model catalogue and per-model options.
+ * Model catalogue and per-model options. Codex publishes its models over the
+ * app-server protocol, so the picker offers whatever the user's own `codex`
+ * reports. Claude Code has no equivalent call, so its models are declared here
+ * and filtered by the installed CLI version.
  *
- * The catalogue is not a fixed list. Codex publishes its models over the
- * app-server protocol, so what the picker offers is whatever the user's own
- * `codex` reports — including models that shipped after this build. Claude Code
- * has no equivalent call, so its models are declared here and filtered by the
- * installed CLI version, since a model the CLI is too old to run is worse than
- * a model that is missing.
- *
- * Each model declares its own option descriptors and the picker renders
- * whatever it finds, so a model with a different set of knobs needs no UI
- * change: Claude Opus 5 has Fast Mode, Fable 5 does not, and Codex models carry
- * whatever reasoning efforts and service tiers the CLI advertised.
+ * Each model declares its own option descriptors and the picker renders what it
+ * finds, so a model with a different set of knobs needs no UI change.
  */
 import type { AgentId } from "./agent.js";
 
@@ -41,7 +35,7 @@ export interface ModelInfo {
   description?: string;
   /**
    * Oldest CLI version that can run this model. Claude Code only; Codex models
-   * come from the running CLI, so anything it lists is by definition supported.
+   * come from the running CLI.
    */
   minCliVersion?: string;
   options: OptionDescriptor[];
@@ -108,11 +102,8 @@ const CONTEXT_200K_DEFAULT: OptionDescriptor = {
 const FAST_MODE: OptionDescriptor = { id: "fastMode", label: "Fast Mode", kind: "boolean" };
 
 /**
- * Claude Code's models, with the CLI version each one needs.
- *
- * Claude Code has no "list my models" call, so this is a declared catalogue
- * rather than a discovered one. The version gate is what keeps it honest: an
- * older CLI simply does not show the models it cannot run.
+ * Claude Code's models, with the CLI version each one needs. An older CLI does
+ * not show the models it cannot run.
  */
 export const CLAUDE_MODELS: ModelInfo[] = [
   {
@@ -201,12 +192,8 @@ export const CLAUDE_MODELS: ModelInfo[] = [
 ];
 
 /**
- * Shown only when `codex app-server` could not be reached.
- *
- * A picker with no Codex models at all reads as "Codex is unsupported", which
- * is the wrong message when the real cause is that the CLI is missing or not
- * signed in. These are the slugs that have been stable long enough to be a
- * reasonable guess; the live list replaces them entirely the moment it arrives.
+ * Shown only when `codex app-server` could not be reached. The live list
+ * replaces these entirely the moment it arrives.
  */
 export const CODEX_FALLBACK_MODELS: ModelInfo[] = [
   {
@@ -231,12 +218,8 @@ export const CODEX_FALLBACK_MODELS: ModelInfo[] = [
 ];
 
 /**
- * The live catalogue.
- *
- * Held in a module variable rather than passed through every call site: the
- * adapters, the picker, and the thread store all need to resolve a slug, and
- * threading a catalogue argument through all of them buys nothing. The main
- * process sets it after probing, and the renderer sets it from each snapshot.
+ * The live catalogue. The main process sets it after probing; the renderer sets
+ * it from each snapshot.
  */
 let catalogue: ModelInfo[] = [...CLAUDE_MODELS, ...CODEX_FALLBACK_MODELS];
 
@@ -307,11 +290,9 @@ export function withOption(selection: ModelSelection, id: string, value: OptionV
 }
 
 /**
- * The selection with every option written out, defaults included.
- *
- * Used when a selection is stored rather than shown: a favourite that recorded
- * only what the user touched would quietly change meaning the day a model's
- * default reasoning level moves.
+ * The selection with every option written out, defaults included. Used when a
+ * selection is stored: a favourite recording only what the user touched would
+ * change meaning the day a model's default moves.
  */
 export function normalizeSelection(selection: ModelSelection): ModelSelection {
   const info = findModel(selection.model);
@@ -327,10 +308,8 @@ export function normalizeSelection(selection: ModelSelection): ModelSelection {
 }
 
 /**
- * Identity of a selection, for comparing one to another.
- *
- * Two selections are the same star if they name the same model and resolve to
- * the same options, whether or not the user set each one by hand.
+ * Identity of a selection. Two are the same star if they name the same model
+ * and resolve to the same options.
  */
 export function selectionKey(selection: ModelSelection | null | undefined): string {
   if (!selection) return "";
@@ -341,10 +320,7 @@ export function selectionKey(selection: ModelSelection | null | undefined): stri
   return [normalized.model, ...options].join("|");
 }
 
-/**
- * Short label for the composer chip, for example "High · 1M" — the settings
- * that actually change the answer, in the order the menu shows them.
- */
+/** Short label for the composer chip, for example "High · 1M". */
 export function describeOptions(selection: ModelSelection | null | undefined): string {
   const info = findModel(selection?.model);
   if (!info || !selection) return "";

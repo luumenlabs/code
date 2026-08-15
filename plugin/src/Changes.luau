@@ -2,23 +2,18 @@
 --[[
 	The change journal, Studio side.
 
-	Every mutating command builds a draft here describing what it did: the
-	instance, and the values on both sides of the write. The server keeps the
-	drafts; this module keeps only the one thing that cannot be written down in
-	JSON — a copy of a subtree that was destroyed, so a delete can be taken back.
+	Every mutating command builds a draft describing what it did: the instance,
+	and the values on both sides of the write. The server keeps the drafts; this
+	module keeps only what JSON cannot describe — a copy of a destroyed subtree,
+	so a delete can be taken back.
 
-	Two rules shape the whole thing.
+	The "after" side is recorded as carefully as the "before" side, because a
+	revert compares what is in the place now against what the change left behind
+	and refuses anything that has moved on since.
 
-	The "after" side is recorded as carefully as the "before" side. Nothing here
-	can stop the user editing the same instance a second later, and a revert that
-	assumed otherwise would quietly throw their work away. So a revert compares
-	what is in the place now against what the change left behind, and refuses
-	anything that has moved on since. That refusal is the feature.
-
-	And a change is only ever reported as revertible when it genuinely is. A
-	property Roblox would not read, an instance with Archivable off, a script too
-	large to keep a copy of — each one is recorded with the reason, and the panel
-	says so rather than offering a button that fails.
+	A change is reported as revertible only when it genuinely is. An unreadable
+	property, an instance with Archivable off, a script too large to copy — each
+	is recorded with the reason.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -34,11 +29,9 @@ local Value = require(script.Parent.Value)
 local Changes = {}
 
 --[[
-	Copies of destroyed subtrees, held so a delete can be undone.
-
-	Bounded on the way in rather than evicted later: a record that says it can be
-	put back has to stay true. Dropping a copy afterwards to save memory would
-	turn a button the user is looking at into a lie.
+	Copies of destroyed subtrees, held so a delete can be undone. Bounded on the
+	way in rather than evicted later: a record that says it can be put back has
+	to stay true.
 ]]
 local stowed: { [string]: { copy: Instance, descendants: number } } = {}
 local stowedCount = 0
@@ -51,8 +44,7 @@ local MAX_STOW_DESCENDANTS = 5000
 local MAX_SOURCE_BYTES = 512 * 1024
 
 -- What a create or delete puts in the diff. The subtree is walked in full up to
--- these, and says how much it left out — a review that silently showed the
--- first ten children of forty would be worse than one that showed none.
+-- these, and the record says how much it left out.
 local MAX_SNAPSHOT_NODES = 120
 local MAX_SNAPSHOT_DEPTH = 6
 local MAX_SNAPSHOT_SOURCE_BYTES = 256 * 1024
@@ -66,12 +58,9 @@ local function decode(value: any): any
 end
 
 --[[
-	A string field, or nil.
-
-	Records make the round trip through the server, which rewrites JSON nulls as
-	the Nil tag on the way back in — so an absent string arrives as a table, and
-	a bare truthiness test on it would pass. Everything read out of an incoming
-	record goes through here.
+	A string field, or nil. The server rewrites JSON nulls as the Nil tag on the
+	way back in, so an absent string arrives as a table and would pass a bare
+	truthiness test. Everything read out of an incoming record goes through here.
 ]]
 local function text(value: any): string?
 	if type(value) == "string" then
@@ -81,10 +70,9 @@ local function text(value: any): string?
 end
 
 --[[
-	An encoded value, defaulting to Nil when the read produced nothing.
-
-	Written out rather than `value or Value.NIL`, because `false` is a perfectly
-	good property value and Luau's `or` cannot tell it from absent.
+	An encoded value, defaulting to Nil when the read produced nothing. Not
+	`value or Value.NIL`: `false` is a good property value and Luau's `or`
+	cannot tell it from absent.
 ]]
 local function encoded(value: any): any
 	if value == nil then
@@ -101,10 +89,8 @@ local function list(value: any): { any }
 end
 
 --[[
-	Source with carriage returns removed, for comparison only.
-
-	Never written back: what goes into the script is what was recorded. This is
-	just so a CRLF source and the LF the script editor hands back are not read as
+	Source with carriage returns removed, for comparison only — never written
+	back. A CRLF source and the LF the script editor hands back must not read as
 	the user having edited the file.
 ]]
 local function bare(source: string): string
@@ -472,11 +458,9 @@ local function outcome(id: string, status: string, reason: string?, current: str
 end
 
 --[[
-	Finds the instance a record is about.
-
-	The handle first, because it survives a rename and a move — which are
-	precisely the things the user is likely to have done in between. The path is
-	the fallback for a handle invalidated by an edit/run transition.
+	Finds the instance a record is about. The handle first, since it survives a
+	rename and a move; the path is the fallback for a handle invalidated by an
+	edit/run transition.
 ]]
 local function locate(record: any): (Instance?, string?)
 	local handle = text(record.target and record.target.handle)
@@ -501,11 +485,9 @@ local function locate(record: any): (Instance?, string?)
 end
 
 --[[
-	Compares an encoded value against a live one.
-
-	JSON round-tripping through the server means both sides are already the
-	rounded, tagged form, so encoding the live value again puts them in the same
-	shape. A deep compare of that is exactly "has this moved since".
+	Compares an encoded value against a live one. Both sides are already the
+	rounded, tagged form after the round trip, so encoding the live value puts
+	them in the same shape and a deep compare answers "has this moved since".
 ]]
 local function sameValue(left: any, right: any): boolean
 	if type(left) ~= "table" or type(right) ~= "table" then
@@ -674,8 +656,8 @@ local function revertCreate(instance: Instance, record: any, force: boolean): an
 	local className = text(record.target and record.target.className)
 
 	-- Taking back a create means destroying something, so the identity check is
-	-- stricter than elsewhere: a path that now resolves to a different class is
-	-- a different instance, and destroying it would be the worst kind of bug.
+	-- stricter: a path that now resolves to a different class is a different
+	-- instance.
 	if not force and className ~= nil and instance.ClassName ~= className then
 		return outcome(
 			record.id,
@@ -740,9 +722,7 @@ local function revertDelete(record: any, force: boolean): any
 		return outcome(record.id, "failed", string.format("Could not put it back into %s: %s", parentPath, tostring(err)))
 	end
 
-	-- The copy has done its job. Keeping it would hold the subtree in memory for
-	-- the rest of the session to guard against a second revert of a record the
-	-- server has already marked as done.
+	-- The copy has done its job; the server has already marked the record done.
 	held.copy:Destroy()
 	stowed[stow] = nil
 	stowedCount -= 1
@@ -769,9 +749,8 @@ local function revertSource(instance: Instance, record: any, force: boolean): an
 		end
 
 		local after = text(change.after)
-		-- Compared without carriage returns. An agent writing CRLF gets it back
-		-- from the editor as LF, and a conflict on every single revert because
-		-- of that would make the check look broken rather than careful.
+		-- Compared without carriage returns: an agent writing CRLF gets it back
+		-- from the editor as LF, which is not the user having edited it.
 		if after ~= nil and bare(current) ~= bare(after) then
 			return outcome(
 				record.id,
@@ -807,9 +786,7 @@ local function revertOne(record: any, force: boolean): any
 
 	if instance == nil then
 		if kind == "create" then
-			-- Already gone, by whatever route. The end state the user asked for
-			-- is the one that holds, and sending them looking for a conflict
-			-- that is not there would be the unhelpful answer.
+			-- Already gone, by whatever route: the end state asked for holds.
 			return outcome(record.id, "reverted", "It had already been deleted.")
 		end
 		return outcome(record.id, "unavailable", missing)
@@ -835,12 +812,9 @@ local function revertOne(record: any, force: boolean): any
 end
 
 --[[
-	Applies the inverse of each record.
-
-	The caller orders them newest first, which is what makes a run of changes to
-	one instance compose: the last write is taken back before the one under it.
-	One recording wraps the lot, so the user's own Ctrl+Z sees a revert as the
-	single action it was rather than as fifteen.
+	Applies the inverse of each record. The caller orders them newest first,
+	which is what makes a run of changes to one instance compose. One recording
+	wraps the lot, so the user's Ctrl+Z sees a revert as one action.
 ]]
 function Changes.apply(records: { any }, force: boolean): any
 	local outcomes = {}
@@ -861,11 +835,9 @@ function Changes.apply(records: { any }, force: boolean): any
 end
 
 --[[
-	Releases the copies held by a set of drafts.
-
-	For the command that took them and then failed: the instances are still in
-	the place, so the copies protect nothing and would spend the session's budget
-	for restorable deletes on deletes that never happened.
+	Releases the copies held by a set of drafts, for a command that took them
+	and then failed. The instances are still in the place, so the copies protect
+	nothing and would spend the session's budget for restorable deletes.
 ]]
 function Changes.discard(records: { any })
 	for _, record in ipairs(records) do
@@ -883,12 +855,9 @@ function Changes.discard(records: { any })
 end
 
 --[[
-	Drops every held copy.
-
-	Called when Studio moves between edit and play. The copies belong to the
-	DataModel they were taken from, and parenting an edit-time instance into a
-	running one — or the reverse — restores something into a world it was never
-	part of.
+	Drops every held copy, on an edit/play transition. A copy belongs to the
+	DataModel it was taken from, and parenting an edit-time instance into a
+	running one restores it into a world it was never part of.
 ]]
 function Changes.release(): number
 	local released = stowedCount

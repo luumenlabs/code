@@ -1,10 +1,7 @@
 /**
- * Questions the agent puts to the user, and what came back.
- *
- * A tool rather than a message, because the answer has to arrive inside the
- * turn that asked for it. An agent that asks in prose ends its turn and comes
- * back with no memory of waiting; an agent that asks with this one stops where
- * it is, and the reply is the result of the call.
+ * Questions the agent puts to the user, and what came back. A tool rather than
+ * a message: the answer arrives inside the turn that asked for it, as the
+ * result of the call.
  */
 
 export interface AskOption {
@@ -36,11 +33,8 @@ export interface AskRequest {
 }
 
 /**
- * One question's reply.
- *
- * A single value, never both halves: writing an answer is choosing not to use
- * the options, and sending "Weapons, actually I meant the potion stall" would
- * leave the agent to work out which of the two the user meant.
+ * One question's reply: a single value, never both halves. Writing an answer is
+ * choosing not to use the options.
  */
 export interface AskAnswer {
   questionId: string;

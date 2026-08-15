@@ -1,11 +1,9 @@
 --!nonstrict
 --[[
-	Running the place's own TestService suite.
-
-	Results come from the service's signals rather than the output buffer, so a
-	failure keeps its script and line. The signals are service-wide, so they are
-	connected around this run only — otherwise a suite the user starts later
-	would report into this call.
+	Running the place's own TestService suite. Results come from the service's
+	signals rather than the output buffer, so a failure keeps its script and
+	line. The signals are service-wide, so they are connected around this run
+	only.
 ]]
 
 local RunService = game:GetService("RunService")
@@ -73,11 +71,10 @@ function TestOps.run(params: any): any
 	local connections = {}
 
 	--[[
-		ServerCollectConditionalResult carries the verdict as its first argument:
-		true for a Check that held, false for one that did not. ServerCollectResult
-		is everything without a verdict — Message and Checkpoint — which is
-		reported rather than dropped, because a run that stops halfway is
-		explained by the last checkpoint it reached.
+		ServerCollectConditionalResult carries the verdict as its first argument.
+		ServerCollectResult is everything without one — Message and Checkpoint —
+		reported rather than dropped, since the last checkpoint explains a run
+		that stopped halfway.
 	]]
 	table.insert(
 		connections,

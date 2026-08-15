@@ -1,27 +1,19 @@
 /**
- * Turns agent and server events into persisted transcript entries.
- *
- * The main process owns this, not the renderer: what gets written to disk and
- * what the user sees have to be the same thing, and having two builders would
- * guarantee they eventually diverge.
+ * Turns agent and server events into persisted transcript entries. The main
+ * process owns this: what is written to disk and what the user sees are one
+ * thing.
  */
 import { OPS, toolNameFor } from "@luumen/code-protocol";
 import type { Op, ServerEvent } from "@luumen/code-protocol";
 import type { AgentEvent, Attachment, TranscriptEntry } from "../shared/agent.js";
 
 /**
- * Luu Code's own tools appear as Roblox activity, not as raw tool rows.
+ * Luu Code's own tools appear as Roblox activity, not as raw tool rows. Matched
+ * on two signals: Claude Code's MCP client produces `mcp__luu-code__`, and a
+ * Codex build may report the tool without its server.
  *
- * Matched by two signals rather than one exact prefix. `mcp__luu-code__` is the
- * name Claude Code's MCP client produces; a Codex build that reports the tool
- * without its server does not carry it, and those calls were showing up twice —
- * once as the Roblox operation the server reported, and once as a raw row with
- * `{}` for arguments. Every tool this server exposes is `studio_*`, so the tool
- * name alone is enough to recognise one.
- *
- * `ask_user` is deliberately not one of them. It performs no Roblox operation,
- * so there is no activity row for it to be the duplicate of, and the question
- * and the answer are worth reading back later — it stays an ordinary tool row.
+ * `ask_user` is not one of them — it performs no Roblox operation, so there is
+ * no activity row for it to duplicate.
  */
 function isRobloxTool(name: string): boolean {
   const op = opForTool(name);
@@ -31,12 +23,9 @@ function isRobloxTool(name: string): boolean {
 }
 
 /**
- * The operation an MCP tool name stands for.
- *
- * Built from the protocol's own table rather than by string surgery, so an op
- * renamed in `commands.ts` cannot leave a stale guess here. The CLI may present
- * the tool as `mcp__luu-code__studio_start_playtest` or as bare
- * `studio_start_playtest`, so the last segment is what is matched.
+ * The operation an MCP tool name stands for. Built from the protocol's own
+ * table, so an op renamed in `commands.ts` cannot leave a stale guess here. The
+ * last segment is matched: a CLI may or may not prefix the server name.
  */
 const OP_BY_TOOL = new Map<string, Op>(
   OPS.flatMap((op) => {
@@ -75,27 +64,18 @@ function nextId(prefix: string): string {
 }
 
 /**
- * Roblox calls that were suppressed, kept until their result arrives.
- *
- * A suppressed call that then fails still has to be shown — it performed no
- * operation, so nothing else in the transcript accounts for it — and the only
- * readable way to show it is as the call it was. That means remembering the
- * name and arguments the row would have carried, because the result event does
- * not repeat them.
- *
- * Bounded, because a CLI that never reports a result for a call would otherwise
- * grow this for the life of the process.
- */
-/**
  * How far before the call an activity may have started and still be its own.
- *
- * The two clocks are the app's and the server's, and the operation is filed as
- * it begins while the tool call is recorded as the CLI reports it — a few
- * hundred milliseconds either way is ordinary. A second is wide enough to
- * absorb that and far narrower than the gap between two calls in a turn.
+ * The two clocks are the app's and the server's, so a few hundred milliseconds
+ * either way is ordinary.
  */
 const ACTIVITY_SLACK_MS = 1_000;
 
+/**
+ * Roblox calls that were suppressed, kept until their result arrives. A
+ * suppressed call that fails performed no operation, so its row has to carry
+ * the name and arguments the result event does not repeat. Bounded: a CLI that
+ * never reports a result would grow this for the life of the process.
+ */
 const SUPPRESSED_LIMIT = 200;
 const suppressed = new Map<string, { name: string; input: unknown; at: number }>();
 
@@ -148,31 +128,15 @@ export function fromAgentEvent(event: AgentEvent, view: TranscriptView): Transcr
       const call = suppressed.get(event.id);
       suppressed.delete(event.id);
 
-      /**
-       * A Roblox tool has no row of its own, by design — its work appears as
-       * the operation it performed. But a call that fails before it reaches
-       * Studio performs nothing, so it produces no operation either, and
-       * without this the whole thing vanishes: the user sees the agent say it
-       * could not reach Studio, with nothing in the transcript to say why.
-       *
-       * Unless the operation *did* happen and failed there, which is the
-       * common case and the one this used to double up: the server files the
-       * failure as an activity, in Roblox language with the code and the hint,
-       * and then this added a second row for the same event carrying the same
-       * error in tool ids. A turn that retried a playtest three times showed
-       * six failures for three attempts, and the transcript was as wide as the
-       * duplication.
-       *
-       * The op is what tells them apart, taken from the protocol's own table
-       * rather than matched on wording.
-       */
+      // A Roblox tool has no row of its own; its work appears as the operation
+      // it performed. A call that fails before reaching Studio performs none,
+      // so without this it vanishes. When the operation did run and failed, the
+      // server already filed that as an activity — the op tells the two apart.
       const op = call ? opForTool(call.name) : null;
       if (op && call && view.hasActivity(op, call.at - ACTIVITY_SLACK_MS)) return null;
 
-      // It surfaces as the tool row it would have been rather than as a notice.
-      // A notice is a banner — full width, red, unfoldable — and a turn that
-      // retries a call three times painted the conversation in them. The row
-      // says the same thing in one line and keeps the reason one click away.
+      // A tool row rather than a notice: a notice is a full-width banner, and a
+      // turn that retries a call three times would paint the conversation in them.
       if (event.isError && event.text.trim().length > 0) {
         return {
           kind: "tool",

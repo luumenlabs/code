@@ -1,9 +1,4 @@
-/**
- * Permissions, next to the send button.
- *
- * "What is this agent allowed to do to my place" is asked at the moment you
- * send, not in a settings page, so the answer has to be readable off the chip.
- */
+/** Permissions, next to the send button and readable off the chip. */
 import * as React from "react";
 import {
   Camera,
@@ -73,8 +68,7 @@ export function AccessChip({
       <PopoverContent align="start" side="top" className="w-[290px] p-0">
         <div className="flex items-center justify-between gap-2 border-b py-1.5 pl-3 pr-1.5">
           <span className="text-[13px] font-medium">Agent access</span>
-          {/* Closed by hand: Settings replaces the view behind it, so the
-              popover would be left floating over a page it does not belong to. */}
+          {/* Closed by hand: Settings replaces the view behind it. */}
           <button
             onClick={() => {
               setOpen(false);
@@ -102,8 +96,8 @@ export function AccessChip({
                   <span className="block text-[13px] leading-tight">{name}</span>
                   <span className="mt-0.5 block text-[11.5px] leading-tight text-muted-foreground">{detail}</span>
                 </span>
-                {/* The count is how many tools of the group are live, so a group
-                    someone has narrowed under Advanced does not read as fully on. */}
+                {/* How many tools of the group are live, so one narrowed under
+                    Advanced does not read as fully on. */}
                 <span
                   className={cn(
                     "shrink-0 text-[11px] tabular-nums",

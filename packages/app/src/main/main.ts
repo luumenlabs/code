@@ -1,11 +1,10 @@
 /**
  * Luu Code — Electron main process.
  *
- * Starts the local server in-process, registers the compositor-based screenshot
- * provider, owns the coding-agent session and the conversation history, and
- * serves the window. Closing the app closes the server it started; an external
- * MCP client can keep working by starting its own with `luu-code serve`.
- * Spec sections 5.1 and 21.
+ * Starts the local server in-process, registers the screenshot provider, owns
+ * the agent session and the conversation history, and serves the window.
+ * Closing the app closes the server it started; `luu-code serve` starts a
+ * standalone one.
  */
 import { BrowserWindow, Menu, MenuItem, app, dialog, ipcMain, shell } from "electron";
 import { existsSync, mkdirSync } from "node:fs";
@@ -31,21 +30,14 @@ import type { AppSettings } from "../shared/settings.js";
 import type { PlaceRef } from "../shared/threads.js";
 import type { Channel, UpdateStatus, VersionStatus } from "../shared/update.js";
 
-/**
- * The place the agent is currently pointed at.
- *
- * A conversation belongs to a Roblox place, so there is nowhere to file one
- * while Studio is disconnected. Rather than inventing an "unknown" bucket, the
- * app refuses to start a chat until a place is connected.
- */
+/** The place the agent is pointed at. Null while Studio is disconnected. */
 function connectedPlace(): PlaceRef | null {
   const status = server?.status();
   const session = status?.sessions.find((entry) => entry.active) ?? status?.sessions[0];
   if (!session) return null;
 
   return {
-    // Older plugins do not send one, and neither does a place Studio cannot
-    // identify. Both mean the same thing to the thread store.
+    // Older plugins and places Studio cannot identify both send none.
     identity: session.place.identity ?? null,
     placeId: session.place.placeId,
     name: session.place.name,
@@ -63,11 +55,9 @@ function requirePlace(): PlaceRef {
 }
 
 /**
- * Both layers of rules, for the agent's briefing.
- *
- * The place's half is best effort: no document, a Studio that has just gone,
- * and a plugin too old to know the operation all mean the same thing here — the
- * session starts without them rather than the user's message failing.
+ * Both layers of rules, for the agent's briefing. The place's half is best
+ * effort — a missing document, a lost Studio, or a plugin too old for the
+ * operation all start the session without it rather than failing the message.
  */
 async function readRules(chat: string): Promise<AgentRules> {
   const global = requireSettings().current().globalRules.trim();
@@ -89,21 +79,14 @@ const AGENT_LABEL: Record<import("../shared/agent.js").AgentId, string> = {
   ollama: "Ollama",
 };
 
-// Resolved from the app root rather than the module path: the main process is
-// bundled, so a module-relative path would depend on the bundle layout.
+// The main process is bundled, so a module-relative path would follow whatever
+// layout the bundler chose.
 const appRoot = (): string => app.getAppPath();
 const isDev = !app.isPackaged;
 
 /**
- * Which build this is.
- *
- * A checkout is a dev build, decided by asking Electron rather than by any
- * convention someone has to remember. Otherwise the nightly workflow sets the
- * variable, and the version is the fallback so a `0.2.0-nightly.3` build
- * carries the nightly identity on its own.
- *
- * The environment variable still wins, so `LUU_CODE_CHANNEL=nightly pnpm dev`
- * shows the nightly identity from source.
+ * Which build this is. `LUU_CODE_CHANNEL` wins, then an unpackaged checkout is
+ * dev, then a version containing `nightly` is nightly.
  */
 function resolveChannel(): Channel {
   const requested = process.env.LUU_CODE_CHANNEL;
@@ -116,17 +99,9 @@ function resolveChannel(): Channel {
 const channel: Channel = resolveChannel();
 
 /**
- * A dev build keeps its own threads, settings, and plugin record.
- *
- * Without this, working on Luu Code means writing to the history of the copy
- * you actually use — and a stray test conversation is indistinguishable from a
- * real one a week later. The installed builds are already separated from each
- * other by their product names.
- *
- * Deliberately not extended to the local server: Studio finds it on a fixed
- * port, and moving it would mean pointing Studio somewhere else every
- * time you switch between the dev app and the installed one. Two servers still
- * cannot share the port, which is reported as the conflict it is.
+ * A dev build keeps its own threads, settings, and plugin record, so working on
+ * Luu Code never writes into the history of the copy you use. The local server
+ * is not separated — Studio finds it on a fixed port.
  */
 if (channel === "dev") {
   app.setPath("userData", join(app.getPath("appData"), "Luu Code Dev"));
@@ -152,12 +127,7 @@ const APP_USER_MODEL_ID: Record<Channel, string> = {
   dev: "dev.luumen.code.dev",
 };
 
-/**
- * The app icon, copied out of the repo's asset bank at build time.
- *
- * Windows wants the .ico for the taskbar, everything else takes the PNG.
- * Missing icons are not worth failing to start over, so this can return null.
- */
+/** The app icon. Null when the build has none — not worth failing to start over. */
 function iconPath(): string | null {
   const extension = process.platform === "win32" ? "ico" : "png";
   const path = join(appRoot(), "dist", "icons", `${ICON_STEM[channel]}.${extension}`);
@@ -175,11 +145,8 @@ let plugin: PluginInstaller | null = null;
 let mcpScript = "";
 
 /**
- * Questions waiting on the user, by ask id.
- *
- * The agent's tool call is held open for as long as one of these lives, so
- * every path out has to settle exactly once — an answer, a dismissal, the wait
- * running out, or the conversation being deleted underneath it.
+ * Questions waiting on the user, by ask id. The agent's tool call is held open
+ * while one lives, so every path out has to settle exactly once.
  */
 const asks = new Map<string, { request: AskRequest; settle: (outcome: AskOutcome) => void }>();
 
@@ -199,28 +166,17 @@ function broadcastAsks(): void {
 }
 
 /**
- * Ends every question waiting on a conversation.
- *
- * Called when the turn that asked stops for any reason. Without it the form
- * stays up after the agent has gone, and answering it resolves a promise
- * nobody is holding — the user picks an option and nothing happens, which is
- * the worst way for this to fail because it looks like it worked.
+ * Ends every question waiting on a conversation, called when the turn that
+ * asked stops. Otherwise the form stays up and answering it resolves nothing.
  */
 function abandonAsks(threadId: string): void {
-  // `settle` owns the removal — it uses the delete as its once-only guard, so
-  // taking the entry out here first would stop it resolving at all.
+  // `settle` owns the removal — it uses the delete as its once-only guard.
   for (const pending of [...asks.values()]) {
     if (pending.request.chat === threadId) pending.settle({ status: "expired" });
   }
 }
 
-/**
- * The model the next message will use.
- *
- * A draft has no thread to store a selection on, but the composer still shows
- * one and the user can still change it, so it lives here until a message turns
- * the draft into a thread.
- */
+/** The model the next message will use, while the chat is still a draft. */
 let draftSelection: ModelSelection | null = null;
 
 /** The open thread's model, or the draft's. */
@@ -242,8 +198,7 @@ function configureSpellchecker(contents: Electron.WebContents): void {
     const supported = new Set(session.availableSpellCheckerLanguages);
     const wanted = app.getPreferredSystemLanguages().filter((language) => supported.has(language));
 
-    // An empty list turns the spellchecker off, so a machine whose languages
-    // Chromium has no dictionary for keeps the default rather than losing it.
+    // An empty list turns the spellchecker off, so no match keeps the default.
     if (wanted.length > 0) {
       try {
         session.setSpellCheckerLanguages(wanted);
@@ -288,8 +243,7 @@ async function createWindow(): Promise<void> {
   const icon = iconPath();
 
   window = new BrowserWindow({
-    // Wide enough that the thread list, the conversation, and the Studio dock
-    // can all be open without the conversation being squeezed.
+    // Wide enough for the thread list, the conversation, and the Studio dock at once.
     width: 1440,
     height: 900,
     minWidth: 960,
@@ -298,10 +252,8 @@ async function createWindow(): Promise<void> {
     title: WINDOW_TITLE[channel],
     ...(icon ? { icon } : {}),
     autoHideMenuBar: true,
-    // The window chrome is part of the app: the title bar carries the Studio
-    // connection state, which the user needs visible at all times.
-    // No titleBarOverlay: Windows only lets it take two colours, so it never
-    // matches the rest of the chrome. The app draws its own controls instead.
+    // The title bar carries the Studio connection state, so the app draws its
+    // own. No titleBarOverlay: Windows only lets it take two colours.
     titleBarStyle: "hidden",
     // Centred in the title bar; move it and this moves with it.
     ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 10 } } : {}),
@@ -315,10 +267,8 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  // The renderer's <title> is applied over the window title the moment the page
-  // loads, which would put all three channels back on the same name in the
-  // taskbar and the window switcher. The title set above is the one that means
-  // something, so the document's is refused.
+  // The renderer's <title> would put all three channels back on one name in the
+  // taskbar and the window switcher.
   window.on("page-title-updated", (event) => event.preventDefault());
 
   const contents = window.webContents;
@@ -333,14 +283,9 @@ async function createWindow(): Promise<void> {
   });
 
   /**
-   * Nothing navigates this window away from the app.
-   *
-   * The handler above only sees `window.open` and `target="_blank"`; a plain
-   * link click is a same-window navigation and would replace the renderer —
-   * with no way back, since the app has no address bar. That became reachable
-   * the moment the transcript started rendering Markdown, where the link text
-   * and the href are both written by a model. Links are marked `_blank` so they
-   * route to the browser; this is the backstop for everything else.
+   * Nothing navigates this window away from the app. The handler above only
+   * sees `window.open`; a plain link click would replace the renderer, and the
+   * transcript renders Markdown whose hrefs a model wrote.
    */
   contents.on("will-navigate", (event, url) => {
     if (url === contents.getURL()) return;
@@ -386,11 +331,8 @@ function requireSettings(): SettingsStore {
 }
 
 /**
- * Names a thread from its opening message.
- *
- * Runs alongside the conversation, never in front of it: this is a separate
- * one-shot call to a small model, so it has no reason to hold up the answer the
- * user is actually waiting for. A failure leaves the typed first line in place.
+ * Names a thread from its opening message. Runs alongside the turn, never in
+ * front of it. A failure leaves the typed first line in place.
  */
 async function nameThread(threadId: string, message: string): Promise<void> {
   const store = requireThreads();
@@ -416,16 +358,9 @@ async function nameThread(threadId: string, message: string): Promise<void> {
 }
 
 /**
- * Locates the MCP stdio entry point.
- *
- * Checked against the filesystem instead of resolved through the module system:
- * the main process is bundled, and Electron loads that bundle through the
- * ESM→CJS translator where `createRequire`'s usual anchors are unavailable.
- *
- * A packaged build carries its own bundled copy in resources, outside the asar,
- * so it is a real file a terminal can point at. That copy is the shipped
- * `luu-code-mcp`: there is no npm package to install and no second version to
- * drift.
+ * Locates the MCP stdio entry point. Checked against the filesystem instead of
+ * resolved through the module system: the main process is bundled, and
+ * Electron's ESM→CJS translator leaves `createRequire`'s anchors unavailable.
  */
 function resolveMcpScript(): string {
   const root = appRoot();
@@ -454,11 +389,9 @@ function resolveMcpScript(): string {
 }
 
 /**
- * The command that runs this build's MCP server from a terminal.
- *
- * It points at the app's own binary, run as plain Node, and at the script that
- * shipped with it — so it needs nothing installed and cannot be a different
- * version from the app that wrote it.
+ * The command that runs this build's MCP server from a terminal. It points at
+ * the app's own binary and the script that shipped with it, so it needs nothing
+ * installed and cannot be a different version.
  */
 function mcpCommandLine(): string {
   const quote = (value: string): string => (/[\s"]/.test(value) ? `"${value}"` : value);
@@ -484,12 +417,9 @@ function versionStatus(): VersionStatus {
 }
 
 /**
- * Where the coding agent process runs.
- *
- * Luu Code does not work on the filesystem — the agent reaches the game through
- * Studio — but a child process still needs a working directory. It gets a
- * scratch folder of its own per place, so anything an agent writes on a whim
- * lands there instead of in the user's files.
+ * Where the coding agent process runs. Luu Code does not work on the
+ * filesystem, but a child process still needs a working directory — it gets a
+ * scratch folder per place so nothing an agent writes lands in the user's files.
  */
 function scratchDirFor(projectId: string): string {
   const dir = join(app.getPath("userData"), "workspaces", projectId);
@@ -499,11 +429,9 @@ function scratchDirFor(projectId: string): string {
 
 
 /**
- * Writes an entry to the thread it belongs to and mirrors it to the window.
- *
- * The thread is named, never inferred from whichever chat happens to be open:
- * conversations run in parallel, so an entry that arrives while the user is
- * reading something else still belongs to the one that produced it.
+ * Writes an entry to the thread it belongs to and mirrors it to the window. The
+ * thread is named, never inferred from whichever chat is open — conversations
+ * run in parallel.
  */
 function record(threadId: string, entry: TranscriptEntry): void {
   const store = requireThreads();
@@ -520,9 +448,8 @@ function record(threadId: string, entry: TranscriptEntry): void {
 }
 
 async function bootstrap(): Promise<void> {
-  // Windows groups taskbar buttons and picks the icon by this id; without it,
-  // a development run shows up as Electron. Each channel gets its own, so no
-  // two ever share a taskbar button or a pinned shortcut.
+  // Windows groups taskbar buttons and picks the icon by this id; without it a
+  // dev run shows up as Electron.
   if (process.platform === "win32") {
     app.setAppUserModelId(APP_USER_MODEL_ID[channel]);
   }
@@ -538,16 +465,15 @@ async function bootstrap(): Promise<void> {
 
   mcpScript = resolveMcpScript();
 
-  // The installer first: the updater reports through a callback that describes
-  // both, and an update event can arrive the moment it is constructed.
+  // Before the updater: its callback describes both, and an update event can
+  // arrive the moment it is constructed.
   plugin = new PluginInstaller(channel, app.getPath("userData"), appRoot());
 
   updater = new Updater(channel, (status: UpdateStatus) =>
     broadcast("update", { update: status, plugin: requirePlugin().status(), mcpCommand: mcpCommandLine() }),
   );
 
-  // Only if the user has already said yes. The first install is always a
-  // button press; this is what keeps it matching afterwards.
+  // Only once the user has said yes; the first install is always a button press.
   if (requireSettings().current().plugin.autoInstall && plugin.needsInstall()) plugin.install();
 
   server = await createLuuCodeServer({
@@ -556,12 +482,8 @@ async function bootstrap(): Promise<void> {
 
   /**
    * A question goes to the composer of the conversation that asked, and the
-   * agent's tool call waits here until it comes back.
-   *
-   * Live state rather than a transcript entry: the form is a control, and a
-   * control restored from disk into a turn that ended long ago is a button
-   * that does nothing. What the user chose is kept by the tool row instead,
-   * which is where the call and its result already live.
+   * agent's tool call waits here until it comes back. Live state, not a
+   * transcript entry: a form restored from disk answers into a turn that ended.
    */
   server.setAskHost((request) => {
     const store = requireThreads();
@@ -572,8 +494,7 @@ async function bootstrap(): Promise<void> {
 
     return new Promise<AskOutcome>((resolve) => {
       const settle = (outcome: AskOutcome): void => {
-        // The delete is the guard: whichever path gets here first owns the
-        // outcome, and the losers return without resolving a second time.
+        // The delete is the once-only guard: first path here owns the outcome.
         if (!asks.delete(request.id)) return;
 
         clearTimeout(timer);
@@ -592,12 +513,9 @@ async function bootstrap(): Promise<void> {
     broadcast("server-event", event);
 
     /**
-     * A Roblox operation belongs to whoever asked for it.
-     *
-     * Agents label their calls with the conversation they are serving, so the
-     * usual case is exact. What is left over is the manual controls in the
-     * dock and an MCP client the user wired up themselves — neither carries a
-     * chat, and both belong in front of whoever is looking.
+     * A Roblox operation belongs to whoever asked for it. Agents label their
+     * calls with the conversation they serve; the dock and an external MCP
+     * client carry no chat, so those go in front of whoever is looking.
      */
     const entry = fromServerEvent(event);
     if (entry) {
@@ -605,7 +523,7 @@ async function bootstrap(): Promise<void> {
       if (owner) record(owner, entry);
     }
 
-    // Remember which place the conversation was about, so the sidebar can say.
+    // Remembered so the sidebar can name the place after Studio has gone.
     if (event.type === "session.connected") {
       const active = requireThreads().active();
       if (active && !active.placeName) {
@@ -614,15 +532,9 @@ async function bootstrap(): Promise<void> {
     }
 
     /**
-     * The diff outlives the journal that produced it.
-     *
-     * The server's copy is in memory and per Studio window, because that is
-     * what reverting needs. Reading is a different question: "what did the
-     * agent do to my game" belongs to the transcript, and a transcript that
-     * keeps the sentence and loses the diff has kept the wrong half. So a copy
-     * goes to the conversation that asked for it — filed the same way the
-     * activity row above it is, since a change made by an external MCP client
-     * carries no chat and belongs in front of whoever is looking.
+     * A copy of the diff goes to the conversation that asked for it. The
+     * server's own journal is in memory and per Studio window, so the
+     * transcript is what survives. Filed like the activity row above it.
      */
     if (event.type === "changes") {
       const store = requireThreads();
@@ -642,13 +554,9 @@ async function bootstrap(): Promise<void> {
     }
 
     /**
-     * A place can be renamed under us.
-     *
-     * The plugin reports `game.Name` first and the published name once Roblox
-     * has answered, and the user can rename the experience on the website
-     * between two sessions. The heading in the sidebar is the same game either
-     * way — it is keyed on identity, not on what it is called — so it should
-     * follow rather than keep whatever it was told first.
+     * A place can be renamed under us — the plugin reports `game.Name` first
+     * and the published name once Roblox answers. The sidebar is keyed on
+     * identity, so the heading follows.
      */
     if (event.type === "status") {
       const store = requireThreads();
@@ -673,9 +581,7 @@ async function bootstrap(): Promise<void> {
     onEvent: (threadId: string, event: AgentEvent) => {
       broadcast("agent-event", { threadId, event });
 
-      // The turn that asked has stopped, so nothing is listening for the
-      // answer any more. Taking the form down is the only honest thing to do:
-      // leaving it up invites the user to answer into a call that has gone.
+      // The turn that asked has stopped, so nothing is listening for an answer.
       if (event.type === "state" && (event.state === "idle" || event.state === "stopped" || event.state === "error")) {
         abandonAsks(threadId);
       }
@@ -685,16 +591,14 @@ async function bootstrap(): Promise<void> {
       if (!thread) return;
 
       if (event.type === "session" && event.sessionId) {
-        // Storing the CLI's own id is what makes a reopened thread resumable
-        // rather than a transcript we cannot continue. Spec section 45.
+        // The CLI's own id is what makes a reopened thread resumable.
         store.setMeta(threadId, { agentSessionId: event.sessionId });
       }
 
       const entry = fromAgentEvent(event, {
         byId: (id) => thread.items.find((item) => item.id === id) ?? null,
-        // Read from the thread rather than tracked here: the operation is filed
-        // by the server's own event, so the transcript is the only place that
-        // knows whether one arrived.
+        // The operation is filed by the server's own event, so the transcript
+        // is the only place that knows whether one arrived.
         hasActivity: (op, since) =>
           thread.items.some((item) => item.kind === "activity" && item.activity.op === op && item.at >= since),
       });
@@ -711,8 +615,8 @@ async function bootstrap(): Promise<void> {
   // Checks only, and never in front of the window opening.
   requireUpdater().start();
 
-  // Probing `codex app-server` takes a moment, so it happens after the window
-  // is up: the catalogue arrives as an event rather than holding the app back.
+  // Probing `codex app-server` takes a moment, so the catalogue arrives as an
+  // event once the window is already up.
   void requireAgents()
     .list()
     .then(() => {
@@ -724,8 +628,7 @@ async function bootstrap(): Promise<void> {
 
       const model = defaultModel();
       if (model) {
-        // Only the draft: a live session already has the model it was started
-        // on, and the app default has no business retargeting it.
+        // Only the draft: a live session keeps the model it was started on.
         draftSelection = createSelection(model.provider, model.slug);
         broadcast("model-selection", draftSelection);
       }
@@ -773,8 +676,7 @@ function registerIpc(): void {
     const next = requireSettings().update(patch);
     broadcast("settings", next);
 
-    // Turning the switch on is the permission, so it acts immediately rather
-    // than waiting for the next launch to do what was just asked for.
+    // Turning the switch on is the permission, so it acts now, not at next launch.
     if (next.plugin.autoInstall && requirePlugin().needsInstall()) {
       requirePlugin().install();
       broadcast("update", versionStatus());
@@ -847,8 +749,7 @@ function registerIpc(): void {
     const agent = findModel(selection?.model)?.provider ?? store.active()?.agent ?? null;
     if (!agent) throw new Error("Pick a model first.");
 
-    // The message is what promotes a draft into a real conversation. Until
-    // this point nothing was written and nothing appeared in the sidebar.
+    // The message is what promotes a draft into a real conversation.
     let active = store.active();
     const isFirstMessage = active === null;
 
@@ -857,19 +758,15 @@ function registerIpc(): void {
       broadcast("threads", store.index());
     }
 
-    // The message goes into the transcript before the CLI is touched, so it
-    // appears the moment it is sent rather than once the agent has started.
+    // Into the transcript before the CLI is touched, so the message appears the
+    // moment it is sent.
     record(active.id, userEntry(text, attachments));
 
-    // Naming runs beside the turn, not before it. It is a separate call to a
-    // separate CLI, so the only thing serialising the two ever bought was a
-    // slower first answer.
+    // Naming runs beside the turn: a separate call to a separate CLI.
     if (isFirstMessage) void nameThread(active.id, text);
 
-    // The CLI is implied by the model, so it is brought up here rather than
-    // being something the user has to remember to start. Resuming is only
-    // offered to the CLI that produced the id — `agentSessionId` is cleared
-    // whenever the provider changes, so this cannot hand a Codex id to Claude.
+    // Resuming is only offered to the CLI that produced the id —
+    // `agentSessionId` is cleared whenever the provider changes.
     await manager.ensure(active.id, {
       agent,
       cwd: scratchDirFor(active.projectId),
@@ -887,13 +784,8 @@ function registerIpc(): void {
   // ---- Conversation history ------------------------------------------------
 
   /**
-   * Starts a draft rather than a thread.
-   *
-   * Nothing is written and nothing is listed until the first message: a chat
-   * the user opened and abandoned should leave no trace in their history.
-   *
-   * Whatever was running keeps running. Starting a new chat is not a request to
-   * abandon the last one.
+   * Starts a draft rather than a thread. Nothing is written or listed until the
+   * first message, and whatever was running keeps running.
    */
   ipcMain.handle("new-thread", async () => {
     const store = requireThreads();
@@ -906,19 +798,13 @@ function registerIpc(): void {
   });
 
   /**
-   * The model and everything set on it, applied as one thing.
+   * The model, its reasoning level, and its context window, applied as one
+   * choice. Picking a model picks the CLI behind it.
    *
-   * A model, its reasoning level, and its context window are a single choice —
-   * splitting them across two calls only meant the renderer had to know which
-   * one to make. Picking a model also picks the CLI behind it: a GPT model
-   * means Codex, a Claude model means Claude Code.
-   *
-   * Staying on the same provider changes the model on the live session, so the
-   * conversation carries on. Changing provider cannot: the other one has no way
-   * to continue a session it did not create. It is refused here as well as
-   * greyed out in the picker — the UI is where the rule is explained, not where
-   * it is enforced, and a stale window must not be able to strand a chat on an
-   * agent that has never seen it. See `lockedProvider` in `shared/threads.ts`.
+   * Staying on the same provider changes the model on the live session.
+   * Changing provider is refused here as well as greyed out in the picker, so a
+   * stale window cannot strand a chat on an agent that has never seen it. See
+   * `lockedProvider` in `shared/threads.ts`.
    */
   ipcMain.handle("apply-model", async (_event, selection: ModelSelection) => {
     const model = findModel(selection.model);
@@ -928,8 +814,8 @@ function registerIpc(): void {
     const manager = requireAgents();
     const active = store.active();
 
-    // Checked before anything is written: a refused switch has to leave both
-    // this conversation and the next new chat exactly as they were.
+    // Before anything is written: a refused switch leaves this conversation and
+    // the next new chat exactly as they were.
     if (active?.agent && active.agent !== model.provider) {
       throw new Error(
         `This chat is running on ${AGENT_LABEL[active.agent]}, and ${AGENT_LABEL[model.provider]} cannot continue a conversation it did not start. Start a new chat to use ${model.name}.`,
@@ -947,16 +833,7 @@ function registerIpc(): void {
     return selection;
   });
 
-  /**
-   * Opens a conversation. Nothing is stopped.
-   *
-   * This used to end the running session, on the reasoning that it belonged to
-   * the thread being left — but it did not end it honestly: the state went to
-   * "stopped" while the CLI was still draining, so a chat that was very much
-   * still working looked finished, and its remaining output was filed against
-   * whichever chat had just been opened. Sessions are per conversation now, and
-   * opening one is only a change of view.
-   */
+  /** Opens a conversation. Sessions are per conversation, so nothing is stopped. */
   ipcMain.handle("open-thread", async (_event, id: string) => {
     const store = requireThreads();
     const thread = store.select(id);
@@ -985,13 +862,11 @@ function registerIpc(): void {
   ipcMain.handle("delete-thread", async (_event, id: string) => {
     const store = requireThreads();
 
-    // A question in a conversation that no longer exists has nobody to answer
-    // it, and the agent holding it is about to be stopped anyway.
+    // A question in a deleted conversation has nobody to answer it.
     abandonAsks(id);
 
     store.remove(id);
-    // Deleting a conversation does end its session — there is nothing left for
-    // it to write into.
+    // Deleting does end the session — there is nothing left to write into.
     await requireAgents().discard(id);
 
     const index = store.index();
@@ -1006,11 +881,8 @@ function registerIpc(): void {
   });
 
   /**
-   * Dismissing a question stops the turn as well as ending the wait.
-   *
-   * The agent asked because it could not sensibly continue without knowing.
-   * Letting it carry on having been told "no answer" is exactly the guess the
-   * question existed to prevent, so the turn ends where the user ended it.
+   * Dismissing a question stops the turn as well as ending the wait. The agent
+   * asked because it could not continue without knowing.
    */
   ipcMain.handle("cancel-ask", (_event, id: string) => {
     const pending = asks.get(id);
@@ -1032,9 +904,8 @@ function registerIpc(): void {
     requireServer().disconnectSession(sessionId);
   });
 
-  // Both go through the server rather than straight to the settings store, so
-  // the bus event reaches the MCP children too — each is a separate process
-  // holding a tool list it fetched when it connected.
+  // Through the server rather than the settings store, so the bus event reaches
+  // the MCP children too — each holds a tool list it fetched when it connected.
   ipcMain.handle("set-permission", (_event, group: PermissionGroup, allowed: boolean) => {
     requireServer().setPermission(group, allowed);
   });
@@ -1043,14 +914,14 @@ function registerIpc(): void {
     requireServer().setToolAllowed(op, allowed);
   });
 
-  // The chat comes along so a button in the dock hits the same Studio window
-  // the conversation beside it is working in, rather than the selected one.
+  // The chat picks the Studio window, so a dock button hits the one the
+  // conversation beside it is working in.
   ipcMain.handle("execute", (_event, op: string, params: unknown, chat?: string) =>
     requireServer().execute(op, params, { origin: "harness", ...(chat ? { chat } : {}) }),
   );
 
   // Its own channel because it is silent: the user pressed Clear, so the
-  // transcript has nothing to record. The chat still picks the Studio window.
+  // transcript has nothing to record.
   ipcMain.handle("clear-output", async (_event, chat?: string) => {
     await requireServer().execute("output.clear", {}, { origin: "harness", silent: true, ...(chat ? { chat } : {}) });
   });

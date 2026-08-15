@@ -1,12 +1,6 @@
 /**
- * The Luu Code wordmark.
- *
- * The bulb is Luumen's mark from luumen.dev, not a stand-in: "Luumen" is lumen,
- * and the product family shares it. The path is inlined rather than loaded as
- * an image so it takes `currentColor` and stays crisp at any size.
- *
- * Typography follows the marketing site: Syne for the wordmark, DM Sans
- * everywhere else.
+ * The Luu Code wordmark. The bulb is Luumen's own mark, inlined rather than
+ * loaded so it takes `currentColor`. Syne for the wordmark, DM Sans elsewhere.
  */
 import { cn } from "@/lib/utils";
 

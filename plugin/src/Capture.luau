@@ -1,6 +1,6 @@
 --!nonstrict
 --[[
-	Viewport capture, from inside the engine. Spec sections 17 and 36.
+	Viewport capture, from inside the engine.
 
 	Two conditions have to hold, and both are reported by name rather than as a
 	timeout: the window has to be drawing, since CaptureScreenshot never calls

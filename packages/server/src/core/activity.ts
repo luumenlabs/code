@@ -1,9 +1,8 @@
 /**
- * Turning protocol operations into Roblox language. Spec section 33.
- *
- * The user should read "Changed Source on ServerScriptService.Shop", not
- * "script.patch ok". Titles are produced from the request so they can be shown
- * the moment an operation starts, and refined from the result when it lands.
+ * Turning protocol operations into Roblox language: "Changed Source on
+ * ServerScriptService.Shop", not "script.patch ok". Titles come from the
+ * request, so they show the moment an operation starts, and are refined from
+ * the result when it lands.
  */
 import type { ActivityEvent, InstanceRef, Op } from "@luumen/code-protocol";
 import { formatValue } from "@luumen/code-protocol";
@@ -32,9 +31,8 @@ const MUTATING_PREFIXES = ["dm.set", "dm.create", "dm.delete", "dm.rename", "dm.
 export function categoryFor(op: Op): Category {
   // Reading the journal is a read, whatever its namespace suggests.
   if (op === "changes.list") return "inspect";
-  // Browsing the store and inserting from it are one activity to read about,
-  // and the insert is the interesting half — filing it under edit would bury
-  // it among the ordinary property writes.
+  // Browsing the store and inserting from it read as one activity; filing the
+  // insert under edit would bury it among ordinary property writes.
   if (op.startsWith("assets.")) return "assets";
   if (MUTATING_PREFIXES.some((prefix) => op.startsWith(prefix))) return "edit";
   if (op === "dm.selection.set") return "edit";
@@ -282,8 +280,7 @@ export function detailFor(op: Op, result: unknown): string | null {
       const where = `${data.replaced} replacement${data.replaced === 1 ? "" : "s"} in ${scripts} script${scripts === 1 ? "" : "s"}`;
       if (data.dryRun) return `${where} — nothing written`;
 
-      // The count of scripts a wide replace has just broken is the part worth
-      // reading, and it is not visible in the diff of any one of them.
+      // How many scripts a wide replace broke is invisible in any one diff.
       const broken = ((data.files as Array<{ syntax?: { ok: boolean } | null }>) ?? []).filter(
         (file) => file.syntax && !file.syntax.ok,
       ).length;
@@ -294,8 +291,7 @@ export function detailFor(op: Op, result: unknown): string | null {
       if (files === 0) return `no matches in ${data.scriptsSearched} scripts`;
       return `${data.matchCount} match${data.matchCount === 1 ? "" : "es"} in ${files} script${files === 1 ? "" : "s"}${data.truncated ? " (truncated)" : ""}`;
     }
-    // A script that does not compile is the thing to say about a write, ahead
-    // of how long it is or how much of it moved.
+    // A script that does not compile leads, ahead of length or line counts.
     case "script.set":
     case "script.create":
       return withSyntax(`${data.lineCount} lines`, data.syntax);
@@ -348,8 +344,7 @@ export function detailFor(op: Op, result: unknown): string | null {
       const blocked = ((data.nodes as Array<{ visible: boolean; clickable: boolean }>) ?? []).filter(
         (node) => node.visible && !node.clickable,
       ).length;
-      // The covered count is the finding, not a footnote: it is the reason to
-      // have asked, and it is invisible in a screenshot.
+      // The covered count is the finding, and it is invisible in a screenshot.
       return `${nodes} element${nodes === 1 ? "" : "s"}${data.hitTested && blocked > 0 ? `, ${blocked} covered` : ""}`;
     }
     case "view.focus":
@@ -374,8 +369,7 @@ export function detailFor(op: Op, result: unknown): string | null {
       const where = `${found} asset${found === 1 ? "" : "s"}`;
       return missing > 0 ? `${where}, ${missing} the store would not describe` : where;
     }
-    // The script count is the part the user is entitled to see without opening
-    // anything: it is someone else's code, now in their place.
+    // Someone else's code, now in the user's place, so the count is on the row.
     case "assets.insert": {
       const parts = [`${data.descendants} instances`];
       if (data.scripts > 0) parts.push(`${data.scripts} script${data.scripts === 1 ? "" : "s"}`);
@@ -391,8 +385,8 @@ export function detailFor(op: Op, result: unknown): string | null {
       const outcomes = (data.outcomes as Array<{ status: string }>) ?? [];
       const reverted = data.reverted ?? 0;
       const refused = outcomes.filter((entry) => entry.status !== "reverted").length;
-      // A revert that put half of what was asked back is not a revert that
-      // worked, and the count in front of the reason is the only honest summary.
+      // A revert that put half of what was asked back did not work, so the
+      // count leads the reason.
       const parts = [`${reverted} put back`];
       if (refused > 0) parts.push(`${refused} refused`);
       return parts.join(", ");

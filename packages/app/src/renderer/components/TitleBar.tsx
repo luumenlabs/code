@@ -1,9 +1,6 @@
 /**
- * The window chrome doubles as the Studio status bar.
- *
- * Whether Studio is connected, and whether it is running, is the single most
- * important thing on screen: almost every failure the agent can hit traces back
- * to one of them. Spec section 8.
+ * The window chrome doubles as the Studio status bar: whether Studio is
+ * connected, and whether it is running.
  */
 import { Loader2, PanelRight, Play, Square, Unplug } from "lucide-react";
 import { Wordmark } from "@/components/Brand";
@@ -24,21 +21,16 @@ export function TitleBar({
 }: {
   harness: Harness;
   /**
-   * The widths the panels below actually got.
-   *
-   * The title bar carries a strip of each panel's colour up to the top of the
-   * window, so the panel reads as a column rather than a block floating under a
-   * bar. That only works if the strips are the same width as the panels — these
-   * were fixed at the old CSS variables, so dragging a panel left its strip
-   * behind and put a visible step in the divider.
+   * The widths the panels below actually got. The title bar carries a strip of
+   * each panel's colour to the top of the window, and the strips have to match
+   * the panels or the divider shows a step.
    */
   sidebarWidth: number;
   dockWidth: number;
   dockOpen: boolean;
   /**
-   * Whether the dock is actually on screen, which is not the same as open:
-   * settings replaces the chat and the dock together, and a strip of dock
-   * colour over a panel that is not there is worse than none.
+   * Whether the dock is on screen, which is not the same as open: settings
+   * replaces the chat and the dock together.
    */
   dockVisible: boolean;
   onToggleDock: () => void;
@@ -49,8 +41,8 @@ export function TitleBar({
   const errors = harness.output.filter((entry) => entry.type === "error").length;
   const platform = snapshot?.platform ?? "win32";
 
-  // Built once and placed in whichever segment happens to be last, so the same
-  // buttons land at the same distance from the window's right edge either way.
+  // Built once and placed in whichever segment is last, so these keep the same
+  // offset from the window's right edge either way.
   const pinned = (
     <Pinned platform={platform} dockOpen={dockOpen} onToggleDock={onToggleDock} errors={errors}>
       {/* The label is on the button; a tooltip repeating it is noise. */}
@@ -76,22 +68,13 @@ export function TitleBar({
 
   return (
     /**
-     * Two surfaces, not one strip.
+     * Two surfaces, not one strip: the left runs the sidebar's colour to the
+     * top of the window, the rest is the chat's own background. No bottom
+     * border — there is nothing to divide.
      *
-     * The bar used to be `bg-sidebar` across the whole window, which drew a
-     * hard line above the conversation and made the app read as chrome over
-     * content. Split at the sidebar's edge instead: the left runs the sidebar's
-     * surface to the top of the window so the two are one panel, and the rest
-     * is the chat's own background, so the conversation simply continues up.
-     * No bottom border for the same reason — there is nothing to divide. The
-     * dock gets the same treatment on the right, when it is open.
-     *
-     * The segments are laid out the way the row below is — a panel of exactly
-     * the panel's width, then a separate pixel of divider — rather than with a
-     * border on the segment. A border is inside the box, so a 276px segment
-     * with `border-r` puts its line at 275 while the `Resizer` under it sits at
-     * 276, and the join between the two showed as a visible jog. Same structure,
-     * same arithmetic, no off-by-one to keep in step.
+     * Laid out the way the row below is: a segment of exactly the panel's
+     * width, then a separate pixel of divider. A `border-r` sits inside the box
+     * and lands one pixel off the `Resizer` under it.
      */
     <header className="drag-region flex h-topbar shrink-0 items-stretch bg-background">
       <div
@@ -105,8 +88,7 @@ export function TitleBar({
         <Wordmark className="shrink-0" />
 
         {/* Release wears nothing; anything else says what it is, in its own
-            colour, so two windows side by side are never mistaken for each
-            other. */}
+            colour. */}
         {snapshot && snapshot.channel !== "release" && (
           <span
             className={cn(
@@ -126,10 +108,7 @@ export function TitleBar({
 
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
         {session ? (
-          // The place name and nothing else. Whether Studio is playing is on
-          // screen in Studio, and the Studio panel has the row for anyone who
-          // wants the realm — saying it a third time here told the user what
-          // they were already looking at.
+          // The place name and nothing else; the Studio panel carries the realm.
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13.5px] font-medium">{session.place.name}</span>
           </div>
@@ -145,13 +124,7 @@ export function TitleBar({
         {!dockVisible && pinned}
       </div>
 
-      {/*
-        The dock's own column, run to the top of the window.
-
-        Same reason as the sidebar segment: a panel whose surface starts below
-        the title bar reads as a block floating in the window rather than as a
-        column of it.
-      */}
+      {/* The dock's own column, run to the top of the window. */}
       {dockVisible && (
         <>
           <div className="w-px shrink-0 bg-sidebar-border" />
@@ -165,17 +138,9 @@ export function TitleBar({
 }
 
 /**
- * The buttons that must not move, and the window's own.
- *
- * Play and the dock switch used to sit with the chat, which meant opening the
- * dock carried them left by the dock's width: you had to go and find the button
- * you had just pressed in order to press it again. Grouping them with the
- * window buttons fixes that without a hack, because whichever segment renders
- * last ends at the right edge of the window — so the cluster keeps the same
- * offset from that edge in both states and nothing in it moves.
- *
- * Play changes its own width when it becomes Stop, but only its left edge: what
- * is to the right of it is fixed, so the switch stays put through that too.
+ * The buttons that must not move, and the window's own. Grouped with the window
+ * controls so they keep the same offset from the right edge whether or not the
+ * dock is open. Play changes width when it becomes Stop, on its left edge only.
  */
 function Pinned({
   platform,
@@ -196,8 +161,8 @@ function Pinned({
     <div
       className={cn(
         "no-drag flex items-center gap-1 self-stretch",
-        // macOS keeps its traffic lights on the left, so the switch is the last
-        // thing in the row and needs the edge inset itself.
+        // macOS keeps its traffic lights on the left, so the switch is last in
+        // the row and needs the edge inset itself.
         platform === "darwin" && "pr-2",
       )}
     >

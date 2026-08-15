@@ -3,10 +3,9 @@
 	The on-screen interface as structure, with rectangles in the same viewport
 	pixels input.mouse takes.
 
-	Clickability comes from GetGuiObjectsAtPosition — the engine's own hit test
-	in its own render order — not from comparing rectangles and ZIndex. An
-	element covered by a transparent frame is otherwise indistinguishable from
-	one that works.
+	Clickability comes from GetGuiObjectsAtPosition, the engine's own hit test in
+	its own render order. Comparing rectangles and ZIndex cannot tell an element
+	covered by a transparent frame from one that works.
 ]]
 
 local GuiService = game:GetService("GuiService")

@@ -2,10 +2,9 @@
 --[[
 	DataModel path parsing and resolution.
 
-	Paths are resolved fresh on every call. That is what makes them safe to use
-	while the user is editing Studio at the same time, and it is why an
-	ambiguous path is a hard failure rather than a silent pick: editing the
-	wrong "Button" is exactly the accident spec section 10.3 asks us to avoid.
+	Paths are resolved fresh on every call, which is what makes them safe while
+	the user is editing Studio at the same time. An ambiguous path is a hard
+	failure rather than a silent pick.
 ]]
 
 local Errors = require(script.Parent.Errors)
@@ -82,11 +81,9 @@ function Path.format(segments: { string }): string
 end
 
 --[[
-	Builds the canonical path for an instance.
-
-	Instance:GetFullName is close, but it does not quote awkward names and
-	returns a bare name for instances outside the DataModel, so agents cannot
-	feed the result back in as a target.
+	Builds the canonical path for an instance. Instance:GetFullName is close, but
+	it does not quote awkward names and returns a bare name for instances
+	outside the DataModel, so its result cannot be fed back in as a target.
 ]]
 function Path.of(instance: Instance): string
 	if instance == game then

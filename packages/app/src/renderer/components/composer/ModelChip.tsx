@@ -1,22 +1,11 @@
 /**
  * The model control: the model, the CLI behind it, and everything set on it.
+ * There is no separate CLI picker — the model implies the provider.
  *
- * There is no separate CLI picker: the model implies the provider. Choosing a
- * GPT model is choosing Codex, choosing a Claude model is choosing Claude Code.
- * Asking for both was asking the same question twice — and so was splitting the
- * model off from its reasoning level, which is the same decision made twice.
- *
- * So it is one surface with two columns: the models on the left, the settings
- * for whichever one is selected on the right. Picking a model does not close
- * anything, because picking a model is usually the first half of the thought —
- * the second half is dialling it in, and that now happens without reopening.
- *
- * A star saves the model *and* the settings it is on, so "Opus 5 on Max" and
- * "Opus 5 on Low" are two favourites rather than one, and picking either is a
- * single click.
- *
- * What is in the list comes from the CLIs themselves, so a model released after
- * this build still shows up.
+ * Two columns: the models on the left, the settings for the selected one on the
+ * right. Picking a model does not close the popover. A star saves the model and
+ * the settings it is on, so "Opus 5 on Max" and "Opus 5 on Low" are two
+ * favourites. The list comes from the CLIs themselves.
  */
 import * as React from "react";
 import { Check, ChevronDown, ChevronRight, CircleAlert, Search, Star } from "lucide-react";
@@ -57,12 +46,8 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   const favourites = harness.settings.favourites;
 
   /**
-   * The provider this conversation started on, once it has started.
-   *
-   * Everything belonging to another one is shown and disabled rather than
-   * hidden: which models exist does not change because of which chat is open,
-   * and a list that quietly loses two thirds of itself reads as a bug. Greyed
-   * out with a reason reads as a rule.
+   * The provider this conversation started on, once it has started. Another
+   * provider's models are shown and disabled rather than hidden.
    */
   const locked = lockedProvider(harness.threads, harness.activeThreadId);
   const blocked = React.useCallback(
@@ -83,24 +68,16 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   }, [models]);
 
   /**
-   * Which rail is open, and where it goes back to.
-   *
-   * Null means the user has not picked one yet, and until they do the picker
-   * opens on the provider they are actually using. Once they have, it stays
-   * there — closing a menu is not a request to be sent back to the beginning,
-   * and someone working out of their favourites was being returned to the
-   * provider list on every single open.
-   *
-   * Held in component state rather than in settings: this is where you were a
-   * moment ago, not a preference about how the app should behave.
+   * Which rail is open. Null until the user picks one, and until then the
+   * picker opens on the provider in use. Component state, not settings: this is
+   * where you were a moment ago, not a preference.
    */
   const [chosenRail, setChosenRail] = React.useState<Rail | null>(null);
 
   const fallbackRail: Rail = active?.provider ?? providers[0] ?? "claude";
 
-  // A remembered provider rail the open chat cannot use is not somewhere to
-  // land: the lock happened after the rail was chosen, and the models on it
-  // are all greyed out. Favourites are never blocked — they are filtered.
+  // A remembered rail the open chat cannot use has every model greyed out, so
+  // it is not somewhere to land. Favourites are filtered, never blocked.
   const rail: Rail =
     chosenRail === null || (chosenRail !== "favorites" && blocked(chosenRail)) ? fallbackRail : chosenRail;
 
@@ -123,13 +100,9 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   const showingFavourites = rail === "favorites" && !searching;
 
   /**
-   * Favourites this chat can actually use.
-   *
-   * Favourites stay reachable while a chat is locked — a star is often the
-   * fastest way to change reasoning level on the model you are already on —
-   * but the other providers' stars are left out rather than listed and
-   * refused. A star whose model is no longer in the catalogue has no provider
-   * to check, so it goes with them.
+   * Favourites this chat can actually use. A locked chat keeps its own
+   * provider's stars; the rest are left out rather than listed and refused,
+   * including any whose model is no longer in the catalogue.
    */
   const visibleFavourites = React.useMemo(() => {
     if (!locked) return favourites;
@@ -158,7 +131,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
       if (blocked(model.provider)) return;
 
       // Selecting the model selects the CLI behind it, on that model's
-      // defaults. The picker stays open: its settings are right there.
+      // defaults. The picker stays open for the settings beside it.
       apply(createSelection(model.provider, model.slug));
     },
     [apply, blocked],
@@ -171,9 +144,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
       const index = Number.parseInt(event.key, 10) - 1;
       if (!Number.isInteger(index)) return;
 
-      // Ctrl+N means "the Nth thing in front of me", and on the favourites rail
-      // that is a favourite. Now that the rail is remembered, someone who works
-      // out of their stars would otherwise have lost the shortcut entirely.
+      // Ctrl+N is the Nth thing in front of you, which on this rail is a star.
       if (showingFavourites) {
         const favourite = visibleFavourites[index];
         if (!favourite) return;
@@ -187,8 +158,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
       const model = current[index];
       if (!model || blocked(model.provider)) return;
 
-      // A shortcut is someone who already knows what they want, so this one
-      // does close.
+      // A shortcut is someone who knows what they want, so this one closes.
       event.preventDefault();
       choose(model);
       setOpen(false);
@@ -199,11 +169,9 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   }, [apply, blocked, choose, current, showingFavourites, visibleFavourites]);
 
   /**
-   * Stars the whole setup, or removes the one it matches.
-   *
-   * The options are written out in full rather than as "whatever the user
-   * touched", so a favourite still means the same thing after a model's own
-   * default reasoning level changes underneath it.
+   * Stars the whole setup, or removes the one it matches. The options are
+   * written out in full, so a favourite means the same thing after a model's
+   * own default moves underneath it.
    */
   const toggleStar = (): void => {
     if (!selection) return;
@@ -385,8 +353,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
                 ))}
             </div>
 
-            {/* Said once, plainly, rather than left to be inferred from a list
-                of things that will not click. */}
+            {/* Said once, rather than inferred from a list that will not click. */}
             {locked && (
               <p className="border-t px-2.5 py-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
                 {LOCKED_LABEL}
@@ -413,13 +380,7 @@ export function ModelChip({ harness }: { harness: Harness }): React.JSX.Element 
   );
 }
 
-/**
- * The right-hand column: what the selected model is set to.
- *
- * A menu, not a row of pills — these are settings with names, and reasoning
- * alone has seven levels. Each one reads as a list you scan down, the way the
- * rest of the app's settings do.
- */
+/** The right-hand column: what the selected model is set to. */
 function Setup({
   model,
   selection,
@@ -489,8 +450,7 @@ function Option({
 }): React.JSX.Element {
   const value = effectiveOption(selection, descriptor);
 
-  // A yes-or-no setting is a switch. Listing "Off" and "On" as two rows to
-  // pick between was a menu pretending to be a toggle.
+  // A yes-or-no setting is a switch, not two rows to pick between.
   if (descriptor.kind === "boolean") {
     return (
       <div className={cn("flex items-center gap-2 px-2 py-1.5", !first && "mt-1 border-t pt-2.5")}>
@@ -550,8 +510,7 @@ function RailButton({
       onClick={onClick}
       className={cn(
         "relative grid aspect-square w-full place-items-center rounded-md transition-colors",
-        // Not `disabled`: the browser would swallow the hover, and the tooltip
-        // is the only thing saying why the click did nothing.
+        // Not `disabled`: the browser would swallow the hover the tooltip needs.
         shut ? "cursor-not-allowed" : "hover:bg-accent",
         dimmed && "opacity-45",
       )}
@@ -657,8 +616,7 @@ function ModelRow({
     </button>
   );
 
-  // The lock is the first thing worth saying: it is the reason the click did
-  // nothing, and it outranks both a missing CLI and the model's own blurb.
+  // The lock is why the click did nothing, so it outranks the rest.
   if (shut) return <Hint label={blockedReason}>{row}</Hint>;
   if (missing) return <Hint label={`${agent?.label} is not installed. ${agent?.installHint ?? ""}`}>{row}</Hint>;
   if (model.description) return <Hint label={model.description}>{row}</Hint>;

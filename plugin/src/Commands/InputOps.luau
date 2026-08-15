@@ -1,11 +1,8 @@
 --!nonstrict
 --[[
-	Game interaction. Spec sections 18, 37, and 51.
-
-	Interaction is treated as a reliability problem rather than a demo. A click
-	is resolved to a real, visible, on-screen element first, and the element it
-	actually hit comes back in the result so the agent can verify what happened
-	instead of assuming the input landed.
+	Game interaction. A click is resolved to a real, visible, on-screen element
+	first, and the element it hit comes back in the result, so the agent can
+	check what happened rather than assuming the input landed.
 ]]
 
 local Players = game:GetService("Players")
@@ -20,12 +17,9 @@ local RunState = require(script.Parent.Parent.RunState)
 local InputOps = {}
 
 --[[
-	Every input result says which world it landed in.
-
-	"Delivered" on its own is a claim these operations are not in a position to
-	make, and during a playtest there is more than one DataModel that could have
-	received it. The realm is the part an agent can check against what it
-	expected: a click reported against the server is a click nobody saw.
+	Every input result says which world it landed in. During a playtest more than
+	one DataModel could have received it, and a click reported against the
+	server is a click nobody saw.
 ]]
 local function stamped(result: any): any
 	result.realm = RunState.current().realm

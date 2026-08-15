@@ -48,20 +48,18 @@ pnpm serve            # the local server on its own, no window
 
 `pnpm dev` runs on its own **dev channel**: an amber icon, a window titled
 `Luu Code (dev)`, its own taskbar identity, and its own chats, settings, and
-plugin file (`LuuCodeDev.rbxm`). Nothing it writes touches an installed copy, so
-a test conversation never turns up in your real history and the app you use
-keeps its plugin.
+plugin file (`LuuCodeDev.rbxm`). Nothing it writes touches an installed copy.
 
-The local server is deliberately *not* separated — Studio finds it on a fixed
-port. One consequence: a dev build and an installed build cannot run at the
-same time. The second one to start says the port is taken; set `LUU_CODE_PORT`
-and `LUU_CODE_HOME` if you really need both.
+The local server is shared across channels — Studio finds it on a fixed port, so
+a dev build and an installed build cannot run at the same time. The second to
+start reports the port as taken. Set `LUU_CODE_PORT` and `LUU_CODE_HOME` to run
+both.
 
 `LUU_CODE_CHANNEL` overrides the channel, so `LUU_CODE_CHANNEL=nightly pnpm dev`
 shows the nightly identity from source.
 
-The plugin is a separate build; see below. A source checkout will not see a
-Studio panel until you have run `luu build` at least once.
+The plugin is a separate build; see below. A source checkout has no Studio panel
+until you have run `luu build` at least once.
 
 ## Icons
 
@@ -72,11 +70,10 @@ from `assets/icon.svg` and `assets/icon-nightly.svg`:
 pnpm assets:icons
 ```
 
-Output is committed. The build copies the icons into the app, it does not
-generate them. There are three masters, one per channel: blue `icon.svg` for
-release, purple `icon-nightly.svg`, and amber `icon-dev.svg` for a build run
-from source. All three ship in every build; which one appears is decided at
-runtime, so the icon in your dock always says which app you are looking at.
+Output is committed; the build copies the icons in, it does not generate them.
+There are three masters, one per channel: blue `icon.svg` for release, purple
+`icon-nightly.svg`, and amber `icon-dev.svg` for a build run from source. All
+three ship in every build; which one appears is decided at runtime.
 
 ## Working on the plugin
 
@@ -89,22 +86,19 @@ luu dev            # rebuild into the Studio plugins folder on every save
 luu run check      # stylua, selene, luau-lsp
 ```
 
-`luu build` and `luu dev` install as **`LuuCodeDev.rbxm`** — the same name the
-app's dev channel uses, and deliberately not the release plugin's name. Your
-Studio probably already has `LuuCode.rbxm` in it from the installed app;
-overwriting that with a work-in-progress build is how you end up debugging your
-editor instead of your game. `luu run bundle` still writes a plain
-`LuuCode.rbxm` artifact, because that is what a release ships.
+`luu build` and `luu dev` install as **`LuuCodeDev.rbxm`**, the same name the
+app's dev channel uses. An installed app's `LuuCode.rbxm` is left alone. `luu
+run bundle` writes a plain `LuuCode.rbxm` artifact.
 
-With `luu dev` running you never need the app's Install button: the watch owns
-the plugin, so a dev build will not install over it, and the switch in
-Settings → Updates is off for that reason. Restart Studio to pick up a build.
+While `luu dev` is running the watch owns the plugin: the app will not install
+over it, and the switch in Settings → Updates is off. Restart Studio to pick up
+a build.
 
 ## Releasing
 
-The tag decides the version. Nothing in the repo needs bumping first — CI stamps
-every manifest and the plugin's `PLUGIN_VERSION` from the tag, so the app, the
-Studio plugin, and the MCP server always ship as one version.
+The tag decides the version. CI stamps every manifest and the plugin's
+`PLUGIN_VERSION` from the tag, so the app, the Studio plugin, and the MCP server
+always ship as one version. Nothing in the repo needs bumping first.
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0
@@ -112,14 +106,13 @@ git tag v0.2.0 && git push origin v0.2.0
 
 That runs `.github/workflows/release.yml`: the plugin is built once on Linux,
 the app is packaged on Windows, and everything lands in a draft GitHub release
-that the last job publishes. Nightlies run themselves from `nightly.yml` at
-05:00 UTC, skip when nothing has changed, and publish as prereleases on their
-own update channel.
+that the last job publishes. Nightlies run from `nightly.yml` at 05:00 UTC, skip
+when nothing has changed, and publish as prereleases on their own update
+channel.
 
-Windows is the only platform that ships today. There is no Linux build — Luu
-Code drives Studio, and Studio does not run there. macOS is paused rather than
-dropped; the matrices in `ci.yml`, `release.yml`, and `nightly.yml` are where it
-comes back, and all three want `macos-latest` restored together.
+Windows is the only platform that ships today; Studio does not run on Linux.
+Adding macOS back means restoring `macos-latest` in the matrices of `ci.yml`,
+`release.yml`, and `nightly.yml` together.
 
 Packaging locally:
 
@@ -131,10 +124,9 @@ Set `LUU_CODE_CHANNEL=nightly` to build the nightly identity instead — its own
 application id, product name, purple icon, and update feed, so it installs
 beside a release build rather than over it.
 
-Builds are unsigned. The hooks for signing are in `electron-builder.cjs` and the
-workflows; adding `CSC_LINK`/`CSC_KEY_PASSWORD` and the Apple notarization
-secrets is all that is needed to turn them on. Until then macOS cannot install
-its own updates, and the app says so rather than failing quietly.
+Builds are unsigned. The signing hooks are in `electron-builder.cjs` and the
+workflows; `CSC_LINK`/`CSC_KEY_PASSWORD` and the Apple notarization secrets turn
+them on. Until then macOS cannot install its own updates, and the app says so.
 
 ## Adding an operation
 

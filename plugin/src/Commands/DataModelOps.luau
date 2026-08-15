@@ -1,8 +1,8 @@
 --!nonstrict
 --[[
-	DataModel inspection and editing. Spec sections 9 and 10.
+	DataModel inspection and editing.
 
-	Inspection is deliberately scoped: every listing takes a limit and reports
+	Inspection is scoped: every listing takes a limit and reports
 	whether it truncated, so an agent can walk a large place without ever
 	pulling the whole thing into a prompt.
 ]]

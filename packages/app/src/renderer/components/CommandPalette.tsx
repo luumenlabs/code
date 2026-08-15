@@ -1,10 +1,6 @@
 /**
- * ⌘K command palette.
- *
- * Search belongs in front of you when you reach for it, not tucked into a
- * corner of the sidebar. One field covers actions and every past conversation,
- * with the keyboard as the primary way through: arrows move, Enter selects,
- * Escape closes.
+ * ⌘K command palette. One field over actions and every past conversation:
+ * arrows move, Enter selects, Escape closes.
  */
 import * as React from "react";
 import { CirclePlay, MessageSquare, Plus, ScrollText, Search, Settings } from "lucide-react";

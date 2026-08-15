@@ -1,14 +1,8 @@
 /**
- * Claude Code adapter, on the Claude Agent SDK.
- *
- * The earlier version shelled out to `claude --print --output-format
- * stream-json` and did not work. The SDK is the supported way to drive Claude
- * Code programmatically: it owns the session lifecycle, streams typed messages,
- * and takes the model, reasoning effort, and MCP servers as options rather than
- * as flags whose behaviour shifts between releases.
- *
- * Authentication is still the user's own — the SDK runs the `claude` binary
- * they already installed and signed in.
+ * Claude Code adapter, on the Claude Agent SDK. The SDK owns the session
+ * lifecycle, streams typed messages, and takes the model, reasoning effort, and
+ * MCP servers as options. Authentication stays the user's own — the SDK runs
+ * the `claude` binary they already installed and signed in.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options as ClaudeQueryOptions, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -47,17 +41,9 @@ function apiModelId(selection: ModelSelection | undefined): string | undefined {
 }
 
 /**
- * The built-in tools that have nothing to work on here.
- *
- * Removed from the model's context rather than refused when called: the
- * working directory is an empty scratch folder, so these can only waste a turn
- * and then mislead — a failed `Read` reads as "the workspace is broken" rather
- * than "the game is not on disk".
- *
- * Named subtractively on purpose. An earlier version allow-listed the Roblox
- * tools by name and denied everything else, so the moment a tool name arrived
- * in a shape the pattern did not expect, every Roblox tool was refused at once.
- * Listing what to remove inverts the worst case: an unrecognised name survives.
+ * The built-in tools that have nothing to work on here — the working directory
+ * is an empty scratch folder. Named subtractively so an unrecognised tool name
+ * survives; an allow-list would refuse every Roblox tool at once if it missed.
  */
 const NO_FILESYSTEM_HERE = [
   "Bash",
@@ -97,8 +83,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   setModelSelection(selection: ModelSelection | null): void {
     if (!this.options) return;
-    // Read again on every send, so the next message uses it. A run already
-    // streaming keeps the model it started on — the API call is made.
+    // Read again on every send. A run already streaming keeps its model.
     this.options = { ...this.options, ...(selection ? { modelSelection: selection } : { modelSelection: undefined }) };
   }
 
@@ -136,15 +121,11 @@ export class ClaudeAdapter implements AgentAdapter {
 
     const queryOptions: ClaudeQueryOptions = {
       cwd: options.cwd,
-      // The user's own Claude Code, resolved to something spawnable. Left
-      // unset, the SDK hunts for the copy it ships as an optional dependency
-      // and cannot find it from a bundled main process. See claudeExecutable.
+      // The user's own Claude Code. Left unset, the SDK hunts for the copy it
+      // ships and cannot find it from a bundled main process.
       pathToClaudeCodeExecutable: resolveClaudeExecutable(options.command),
       // The SDK hands the child `process.env` untouched, so it needs the same
-      // guard `spawnAgent` applies to Codex: a Luu Code started from a shell
-      // that exports ELECTRON_RUN_AS_NODE would otherwise pass it down, and a
-      // CLI that happens to be an Electron app starts as plain Node instead of
-      // as itself.
+      // ELECTRON_RUN_AS_NODE guard `spawnAgent` applies to Codex.
       env: agentEnvironment(),
       ...(model ? { model } : {}),
       // The preset carries how Claude Code works; the append carries where it
@@ -157,22 +138,10 @@ export class ClaudeAdapter implements AgentAdapter {
       mcpServers: {
         "luu-code": { command: options.mcp.command, args: options.mcp.args, env: options.mcp.env },
       },
-      /**
-       * Luu Code is the permission system, so the CLI's is turned off.
-       *
-       * This is not a shortcut. Every Roblox operation is already checked
-       * against the user's own permission groups by the server behind the MCP
-       * tools, where the user can see them and revoke them mid-conversation.
-       * The CLI's layer exists to protect a filesystem this session does not
-       * have, and it has no way to ask anyone anything: `acceptEdits` covers
-       * file edits and nothing else, so every MCP call went to a prompt that no
-       * one could answer and came back to the model as "user cancelled MCP tool
-       * call". There was no user, and nobody cancelled anything.
-       *
-       * What the filesystem tools would have reached is removed outright
-       * instead, which is a stronger guarantee than refusing them one call at a
-       * time — the model never sees them.
-       */
+      // Luu Code is the permission system: the server behind the MCP tools
+      // checks every Roblox operation against the user's permission groups. The
+      // CLI's own layer has nobody to prompt, so each MCP call came back to the
+      // model as "user cancelled". The filesystem tools are removed outright.
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       disallowedTools: NO_FILESYSTEM_HERE,

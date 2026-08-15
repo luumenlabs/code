@@ -6,10 +6,8 @@
  * The MCP server is passed as a config override so the user's own
  * ~/.codex/config.toml is left alone.
  *
- * Codex's JSON event shape has changed across releases. The parser below
- * accepts the shapes seen so far and falls back to showing raw text rather than
- * dropping output, which keeps the harness usable when the CLI moves ahead of
- * this adapter.
+ * The JSON event shape has changed across releases. The parser below accepts
+ * the shapes seen so far and falls back to raw text rather than dropping output.
  */
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -22,14 +20,9 @@ import { withBriefing } from "./briefing.js";
 import type { AgentAdapter, StartOptions } from "./adapter.js";
 
 /**
- * Which backend a Codex session talks to.
- *
- * The CLI is the same either way — `codex exec`, the same JSON stream, the same
- * MCP wiring, the same interrupt. What differs between OpenAI's models and the
- * ones on the user's own machine is which provider Codex is pointed at, and
- * that is two config overrides. So Ollama is a variant of this adapter rather
- * than an adapter of its own: a second copy of this file would drift the first
- * time Codex's event shape moved, and it has moved several times already.
+ * Which backend a Codex session talks to. The CLI is the same either way —
+ * `codex exec`, the same JSON stream, the same MCP wiring — so Ollama is a
+ * variant of this adapter rather than one of its own.
  */
 export interface CodexVariant {
   /** The provider this session is filed under, and the rail it appears on. */
@@ -55,11 +48,9 @@ export const CODEX_VARIANT: CodexVariant = {
 };
 
 /**
- * A TOML string, preferring the literal form.
- *
- * `'C:\Users\me'` needs no backslash doubling and, more importantly, carries no
- * double quotes — which is what a Windows command line eats. The escaped form
- * is only used for the rare value that contains a single quote.
+ * A TOML string, preferring the literal form: `'C:\Users\me'` needs no
+ * backslash doubling and carries no double quotes, which a Windows command line
+ * eats. The escaped form is only for a value containing a single quote.
  */
 function toml(value: string): string {
   if (!value.includes("'")) return `'${value}'`;
@@ -86,17 +77,10 @@ function writeAttachments(attachments: Attachment[]): string[] {
    whatever the installed CLI sends; these readers exist to survive that. */
 
 /**
- * A tool call's id, made unique across the conversation.
- *
- * Codex's own id is only unique within one turn: the modern stream numbers
- * items `item_0`, `item_1`, and starts again from zero on the next `codex
- * exec`. The transcript stores rows by id and replaces what it already has, so
- * the second turn's first tool call landed on the first turn's first tool call
- * — a shell command showing an MCP call's output, which is a lie about what the
- * agent did rather than a cosmetic glitch.
- *
- * The turn number is the scope Codex leaves out. Begin and end events inside
- * one turn still agree, which is the property the pairing depends on.
+ * A tool call's id, made unique across the conversation. Codex's own id is only
+ * unique within one turn — the stream numbers items `item_0`, `item_1` and
+ * starts again on the next `codex exec`, so the transcript overwrote rows.
+ * Begin and end events inside one turn still agree, which is what pairing needs.
  */
 function callId(turn: string, item: Record<string, any>): string {
   const own = item.id ?? item.call_id ?? item.callId ?? item.tool_call_id;
@@ -104,14 +88,9 @@ function callId(turn: string, item: Record<string, any>): string {
 }
 
 /**
- * The tool name, in the form the rest of the app uses.
- *
- * Codex names an MCP tool by its server and its tool; Claude Code's client
- * flattens the two into `mcp__server__tool`. Everything downstream — including
- * the rule that decides whether a call is a Roblox operation and belongs in the
- * transcript as one — was written against the second form. Normalising here is
- * the adapter doing its job: absorbing the difference so nothing after it has
- * to know which CLI is running.
+ * The tool name, in the form the rest of the app uses. Codex names an MCP tool
+ * by server and tool; everything downstream was written against Claude Code's
+ * flattened `mcp__server__tool`.
  */
 function mcpToolName(item: Record<string, any>): string {
   const tool = String(item.tool ?? item.tool_name ?? item.name ?? "mcp");
@@ -164,12 +143,9 @@ export class CodexAdapter implements AgentAdapter {
   private hasConversation = false;
   private stderr = "";
   /**
-   * Scopes Codex's per-turn item ids to this conversation.
-   *
-   * The counter alone is not enough: a thread reopened after a restart starts
-   * counting at one again, and its transcript already holds rows from the first
-   * time it ran. The launch stamp is what keeps the second session's first turn
-   * from landing on the first session's.
+   * Scopes Codex's per-turn item ids to this conversation. A thread reopened
+   * after a restart counts from one again, and its transcript already holds
+   * rows from the first run.
    */
   private readonly run = Date.now().toString(36);
   private turn = 0;
@@ -239,37 +215,11 @@ export class CodexAdapter implements AgentAdapter {
       // Which backend serves the model. Empty for Codex's own; for Ollama it is
       // the provider pointing at the daemon on this machine.
       ...this.variant.overrides,
-      /**
-       * Nobody is here to approve anything.
-       *
-       * A sandboxed Codex session treats an MCP call as leaving the sandbox
-       * and asks first. `codex exec` has no one to ask, so the request is
-       * dropped and the model is told "user cancelled MCP tool call" — no user
-       * was asked, and nothing was cancelled. Every Roblox tool call failed
-       * this way, which made Luu Code look disconnected when it was paired and
-       * working.
-       *
-       * Measured, not guessed: with `workspace-write` the call is cancelled,
-       * with `danger-full-access` the same call returns. The approval policy on
-       * its own changes nothing either way.
-       *
-       * The trade this makes is real and worth stating. Codex's sandbox guards
-       * the filesystem, and the filesystem it would be guarding here is an
-       * empty scratch folder that holds none of the user's work — the game
-       * lives in Studio. The boundary that matters for this product is Luu
-       * Code's own permissions, which every Roblox operation is checked
-       * against, and which the user can see and revoke mid-conversation. What
-       * is given up is protection against a shell command the agent was told
-       * not to run, in a directory with nothing in it.
-       *
-       * Set as a config override rather than with `-s`, which is the same
-       * setting by a name only some of these commands know. `codex exec` takes
-       * `-s`; `codex exec resume` does not, and rejects the whole invocation
-       * with "unexpected argument '-s' found". That failed every turn after the
-       * first, which reads as the agent giving up mid-task rather than as a
-       * command line that was never valid. `-c` is accepted by both, and is
-       * checked here against `--strict-config`.
-       */
+      // A sandboxed `codex exec` treats an MCP call as leaving the sandbox and
+      // asks for an approval nobody is there to give, so every Roblox tool call
+      // came back as "user cancelled". Luu Code's own permissions gate each
+      // operation, and the scratch cwd holds none of the user's work.
+      // A config override, not `-s`: `codex exec resume` rejects `-s`.
       "-c",
       `sandbox_mode=${toml("danger-full-access")}`,
       "-c",
@@ -288,17 +238,15 @@ export class CodexAdapter implements AgentAdapter {
       ...(typeof tier === "string" && tier !== "default" ? ["-c", `service_tier=${toml(tier)}`] : []),
     ];
 
-    // Resuming by id targets the exact conversation the thread belongs to;
-    // --last would pick up whatever Codex ran most recently, which may be a
-    // different thread entirely.
+    // Resuming by id targets this thread's conversation; --last would pick up
+    // whatever Codex ran most recently.
     const resumeTarget = this.resumeId ? [this.resumeId] : ["--last"];
 
     // Codex takes images as file paths, so attachments are written out first.
     const images = writeAttachments(attachments).flatMap((path) => ["-i", path]);
 
-    // The prompt goes in on stdin ("-"), never as an argument: a message is
-    // arbitrary user text, and arbitrary user text has no business on a command
-    // line.
+    // The prompt goes in on stdin ("-"): arbitrary user text has no business on
+    // a command line.
     const args = this.hasConversation
       ? ["exec", "resume", ...resumeTarget, "--json", "--skip-git-repo-check", ...images, ...overrides, "-"]
       : ["exec", "--json", "--skip-git-repo-check", ...images, ...overrides, "-"];
@@ -402,21 +350,15 @@ export class CodexAdapter implements AgentAdapter {
     const kind = String(item.type ?? event.type ?? "");
 
     /**
-     * Whether this event is the end of the call as well as the call.
-     *
-     * Older Codex sent a begin event and a matching end event. Newer Codex
-     * sends one completed item carrying the command *and* its output, and no
-     * end event at all — so a row that only emitted `tool-use` sat spinning
-     * for the rest of the conversation, because the result it was waiting for
-     * had already arrived inside the event that created it.
+     * Whether this event carries its own result. Newer Codex sends one
+     * completed item holding the command and its output, with no end event, so
+     * a row that only emitted `tool-use` would spin forever.
      */
     const envelope = String(event.type ?? "");
     const finished = envelope === "item.completed" || envelope === "item.failed";
 
     // `thread.started` is what a current Codex sends, and it carries the id
-    // under `thread_id`. Without it `resumeId` stayed null and every follow-up
-    // resumed with `--last` — whichever conversation Codex ran most recently,
-    // which with several chats open is routinely a different one.
+    // under `thread_id`. Without it every follow-up resumes with `--last`.
     if (kind === "session.created" || kind === "session_configured" || kind === "thread.started") {
       const sessionId = String(item.session_id ?? item.sessionId ?? item.thread_id ?? item.threadId ?? "");
       if (sessionId) this.resumeId = sessionId;

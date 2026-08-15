@@ -3,14 +3,10 @@
 	What a class actually has, asked of the engine rather than of a table.
 
 	Roblox exposes no property reflection to Luau, so this creates one instance
-	of the class and probes it: reading each member to find out whether it
-	exists and what type it holds, and writing the value it just read back to
-	find out whether a write is accepted at all. Nothing is asserted that was
-	not observed.
-
-	The probe is the point. An agent that guesses `Collidable` and writes it
-	loses a round trip to a rejection; the same guess passed here comes back
-	named as unknown, next to `CanCollide`.
+	of the class and probes it: reading each member for its existence and type,
+	and writing back the value it just read to find out whether writes are
+	accepted. Nothing is asserted that was not observed, so a guessed name comes
+	back marked unknown rather than costing a round trip to a rejected write.
 ]]
 
 local Errors = require(script.Parent.Parent.Errors)
@@ -179,12 +175,9 @@ local function looksMissing(message: string): boolean
 end
 
 --[[
-	Resolves what to probe.
-
-	Creating an instance is the only way to get a writable subject, so that is
-	tried first. A service is described from the user's live one and never
-	written to; a class that is neither is described from the instance the caller
-	pointed at, if they pointed at one.
+	Resolves what to probe. Creating an instance is the only way to get a
+	writable subject, so that is tried first. A service is described from the
+	user's live one and never written to; anything else from the caller's target.
 ]]
 local function subjectFor(params: any): (Instance, string, boolean, boolean)
 	local className = params.className

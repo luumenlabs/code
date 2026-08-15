@@ -1,16 +1,12 @@
 /**
- * Local trust. Spec section 26.
+ * Local trust. One credential that means something, and one that is
+ * bookkeeping:
  *
- * One credential that means something, and one that is bookkeeping:
- *
- *   Clients — the harness and MCP run as the user, so they read a token from a
+ *   Clients — the harness and MCP run as the user and read a token from a
  *             user-only file. A process that cannot read the user's files
  *             cannot issue commands. This is the boundary.
- *   Studio  — issued a session token on its handshake and quotes it back on
- *             every sync. It tells one connection from a stale one; it is not
- *             something the user grants. Studio used to earn it by having the
- *             user compare a six-digit code between two windows of the same
- *             program, which asked them to vouch for themselves.
+ *   Studio  — issued a session token on handshake and quotes it back on every
+ *             sync. It tells a live connection from a stale one.
  *
  * The server binds to loopback only and never enables remote access by default.
  */

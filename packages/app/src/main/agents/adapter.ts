@@ -3,8 +3,7 @@
  *
  * Agents are external processes the user already owns. Luu Code starts them,
  * points them at its MCP server, and translates their output. It does not proxy
- * a model, hold an API key, or reason on the agent's behalf. Spec sections 3.2
- * and 38.
+ * a model, hold an API key, or reason on the agent's behalf.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -23,10 +22,8 @@ export interface StartOptions {
   command: string;
   cwd: string;
   /**
-   * The CLI's own session id from a previous run. Present means the user
-   * reopened a thread and the conversation should continue where it left off.
-   * Spec section 45: continuity is never faked, so this is only set when the
-   * agent actually gave us an id.
+   * The CLI's own session id from a previous run. Only set when the agent gave
+   * us one — continuity is never faked.
    */
   resumeSessionId?: string;
   mcp: McpServerSpec;
@@ -52,12 +49,8 @@ export interface AgentAdapter {
   stop(): Promise<void>;
   readonly running: boolean;
   /**
-   * Retargets a session that is already up.
-   *
-   * Changing the model used to mean restarting the CLI, which threw away the
-   * conversation it was holding — so in practice the model was fixed the moment
-   * you sent the first message. Both CLIs read the selection when they send, so
-   * the change lands on the next message rather than on a new session.
+   * Retargets a session that is already up. Both CLIs read the selection when
+   * they send, so the change lands on the next message.
    */
   setModelSelection(selection: import("../../shared/models.js").ModelSelection | null): void;
 }
@@ -108,11 +101,8 @@ export class JsonLineReader {
 }
 
 /**
- * Where a bare command name actually lives on Windows.
- *
- * npm installs a CLI as `name.cmd` plus `name.ps1`; there is no `name.exe` to
- * spawn. PATHEXT order decides which shim wins, and `.cmd` is the one Node can
- * drive without a PowerShell round trip.
+ * Where a bare command name lives on Windows. npm installs a CLI as `name.cmd`
+ * plus `name.ps1`; there is no `name.exe` to spawn.
  */
 export function resolveWindowsExecutable(command: string): string | null {
   if (command.includes("/") || command.includes("\\")) {
@@ -133,11 +123,9 @@ export function resolveWindowsExecutable(command: string): string | null {
 }
 
 /**
- * Quotes one argument for a Windows command line.
- *
- * `cmd /s /c` strips the outermost pair of quotes and hands the rest to the
- * target, whose own parser follows the MSVC rules: a run of backslashes before
- * a quote is halved, and `\"` is a literal quote.
+ * Quotes one argument for a Windows command line. `cmd /s /c` strips the outer
+ * quote pair and the target parses the rest by the MSVC rules: a run of
+ * backslashes before a quote is halved, and `\"` is a literal quote.
  */
 function quoteWindowsArg(value: string): string {
   if (value.length > 0 && !/[\s"^&|<>()%!]/.test(value)) return value;
@@ -147,12 +135,9 @@ function quoteWindowsArg(value: string): string {
 }
 
 /**
- * How to launch a CLI without handing the arguments to a shell.
- *
- * `shell: true` on Windows is a trap: Node concatenates the arguments and lets
- * `cmd.exe` re-parse them, so quotes inside a value are eaten before the target
- * ever sees them — which silently corrupted the TOML overrides Codex is given —
- * and any argument built from user text becomes a command-injection vector.
+ * How to launch a CLI without handing the arguments to a shell. `shell: true`
+ * on Windows lets `cmd.exe` re-parse them: quotes inside a value are eaten, and
+ * any argument built from user text becomes a command-injection vector.
  */
 function resolveLaunch(command: string, args: string[]): {
   command: string;
@@ -164,8 +149,7 @@ function resolveLaunch(command: string, args: string[]): {
 
   const resolved = resolveWindowsExecutable(command);
 
-  // Nothing found: fall back to letting the shell search, which is still better
-  // than failing outright.
+  // Nothing found: let the shell search rather than fail outright.
   if (!resolved) return { command, args, shell: true, verbatim: false };
 
   const isScript = /\.(cmd|bat)$/i.test(resolved);
@@ -181,13 +165,9 @@ function resolveLaunch(command: string, args: string[]): {
 }
 
 /**
- * The environment an agent CLI should inherit.
- *
- * Everything the user has, so the CLI finds its own credentials exactly as it
- * would in a terminal — minus one variable. Electron-based tools launched from
- * an Electron-hosted terminal inherit ELECTRON_RUN_AS_NODE and silently start
- * as plain Node instead of as themselves. Agent CLIs are often Electron apps,
- * so it is stripped rather than passed on.
+ * The environment an agent CLI should inherit — everything the user has, so it
+ * finds its own credentials as it would in a terminal. ELECTRON_RUN_AS_NODE is
+ * stripped: an Electron-based CLI would start as plain Node instead of itself.
  */
 export function agentEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -217,10 +197,9 @@ export function nextId(prefix: string): string {
 }
 
 /**
- * Common exit handling: a non-zero exit that produced no output almost always
- * means the CLI cannot reach the model — usually because it is not signed in,
- * which is worth saying outright. The hint is the caller's because the reason
- * differs: a hosted provider wants credentials, a local one wants a daemon.
+ * Common exit handling. A non-zero exit with no output usually means the CLI
+ * cannot reach the model; the hint is the caller's, since a hosted provider
+ * wants credentials and a local one wants a daemon.
  */
 export function describeExit(
   label: string,
