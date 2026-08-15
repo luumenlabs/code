@@ -22,7 +22,20 @@ local function compile(source: string): (boolean, any)
 
 	local module = Instance.new("ModuleScript")
 	module.Name = "LuuCodeExec_" .. tostring(counter)
-	module.Source = source
+
+	-- Writing Source needs plugin identity, and the bridge inside a playtest is
+	-- an ordinary game script. That makes this the answer to "can this DataModel
+	-- compile source" rather than a fault — but only if it is caught, because
+	-- this runs on the capability probe that every handshake goes through.
+	local wrote = pcall(function()
+		module.Source = source
+	end)
+
+	if not wrote then
+		module:Destroy()
+		return false, "This DataModel cannot compile source: writing Script.Source needs plugin identity."
+	end
+
 	-- The plugin script itself: outside the DataModel, so the place is untouched.
 	module.Parent = script
 

@@ -68,6 +68,12 @@ class FakePlugin {
   realmOverride: "edit" | "server" | "client" | null = null;
   /** False stands in for a minimized Studio window, which drops input. */
   rendering = true;
+  /**
+   * A playtest is up in this window and this peer is not in it. What the edit
+   * peer reports on a Studio that does not load the plugin into a playtest's
+   * DataModel, which is every Play on a current build.
+   */
+  testActive = false;
 
   constructor(
     private readonly port: number,
@@ -162,6 +168,7 @@ class FakePlugin {
       multiplayer: false,
       rendering: this.rendering,
       pendingStart: this.pendingStart,
+      testActive: this.running || this.testActive,
     };
   }
 
@@ -1063,7 +1070,10 @@ describe("playtest", () => {
           play.start();
           FakePlugin.all.push(play);
 
+          // What the real edit peer reports beside a live playtest: it is not
+          // running, and a test is up in its window.
           edit.pendingStart = false;
+          edit.testActive = true;
           await edit.pushState();
         })();
       }, 30);
@@ -1218,15 +1228,15 @@ describe("playtest", () => {
   });
 
   /**
-   * The state a playtest lands in when the plugin never loads into it: Studio
-   * is playing on screen, the edit peer is parked in ExecutePlayModeAsync, and
-   * nothing that can call EndTest ever connected.
+   * The state every Play lands in on a Studio that does not load the plugin
+   * into a playtest's DataModel: the game is on screen, the edit peer is parked
+   * in ExecutePlayModeAsync, and nothing that can call EndTest ever connected.
    *
    * The stop must not go to the parked edit peer: EndTest only works from a
    * running session's server DataModel, so Studio refuses and the user is told
    * a Studio API is unsupported, which is not what went wrong.
    */
-  it("says the playtest never connected rather than blaming a Studio API", async () => {
+  it("says the playtest cannot be reached rather than blaming a Studio API", async () => {
     plugin = await connectPlugin();
     plugin.pendingStart = true;
     plugin.on("run.stop", () => {
@@ -1236,11 +1246,125 @@ describe("playtest", () => {
     await plugin.pushState();
 
     await expect(server.execute("run.stop", { timeoutMs: 1500 })).rejects.toMatchObject({
-      code: "PLAYTEST_NOT_RUNNING",
+      code: "RUNTIME_CONTEXT_UNAVAILABLE",
       details: { startPending: true },
     });
 
     plugin.pendingStart = false;
+    await plugin.pushState();
+  });
+
+  /**
+   * Leaving a playtest used to leave the window reporting one for most of a
+   * minute: Studio does not always close the peer's socket, and until it does
+   * that peer keeps claiming `running`, which selectEndpoint prefers. The edit
+   * peer outlives every playtest and now says whether one is up, so its word
+   * ends the session there and then.
+   */
+  it("stops reporting a playtest as soon as the edit peer says it has ended", async () => {
+    const edit = await connectPlugin();
+    edit.testActive = true;
+    edit.on("run.state", () => edit.runState());
+    edit.start();
+
+    const play = new FakePlugin(edit.port, edit.installId, "window-finished-playtest", 123);
+    play.running = true;
+    play.realmOverride = "server";
+    const hello = await play.hello(edit.token);
+    play.sessionId = hello.body.sessionId;
+    play.token = hello.body.token;
+    play.endpointId = hello.body.endpointId;
+    play.on("run.state", () => play.runState());
+    play.start();
+    FakePlugin.all.push(play);
+
+    expect(((await server.execute("run.state", {})) as { running: boolean }).running).toBe(true);
+
+    // The playtest ends. Its peer never says another word — that is the point —
+    // so only the edit peer reports the change.
+    play.stop();
+    // Past the grace that protects a peer which has only just connected.
+    await new Promise((resolve) => setTimeout(resolve, 5100));
+
+    edit.testActive = false;
+    await edit.pushState();
+
+    const after = (await server.execute("run.state", {})) as { running: boolean; observable?: boolean };
+    expect(after.running).toBe(false);
+
+    const status = (await server.execute("session.status", {})) as { sessions: Array<{ id: string; endpoints: Array<{ realm: string }> }> };
+    const mine = status.sessions.find((entry) => entry.id === edit.sessionId);
+    expect(mine?.endpoints.map((endpoint) => endpoint.realm)).toEqual(["edit"]);
+  }, 20_000);
+
+  /**
+   * The bridge is a script written into the user's place, so the playtest
+   * permission has to gate the writing and not merely the tool. Off means the
+   * plugin is never asked; on means it is asked every time.
+   */
+  it("asks for a bridge only while the playtest permission is on", async () => {
+    plugin = await connectPlugin();
+
+    const asked: unknown[] = [];
+    plugin.on("run.start", (params: { bridge?: unknown }) => {
+      asked.push(params.bridge);
+      plugin.testActive = true;
+      void plugin.pushState();
+      return plugin.runState();
+    });
+    plugin.start();
+
+    await server.execute("run.start", { mode: "play", waitReady: false, timeoutMs: 3000 });
+    expect(asked).toEqual([true]);
+
+    plugin.testActive = false;
+    await plugin.pushState();
+
+    server.settings.setPermission("playtest", false);
+    try {
+      await expect(server.execute("run.start", { mode: "play", waitReady: false, timeoutMs: 3000 })).rejects.toMatchObject({
+        code: "PERMISSION_DENIED",
+      });
+      // Nothing reached the plugin, so nothing was written to the place.
+      expect(asked).toEqual([true]);
+    } finally {
+      server.settings.setPermission("playtest", true);
+    }
+  });
+
+  /**
+   * A playtest only the edit peer can see. Studio does not load the plugin into
+   * the DataModel a playtest creates, so `EditModeActive` is the whole of the
+   * evidence and `run.start` has to succeed on it — reporting a timeout while
+   * the game is plainly playing is what sent agents looking for a broken build.
+   */
+  it("reports a playtest the edit peer can only see the existence of", async () => {
+    plugin = await connectPlugin();
+    plugin.on("run.start", () => {
+      plugin.testActive = true;
+      void plugin.pushState();
+      return plugin.runState();
+    });
+    plugin.on("run.state", () => plugin.runState());
+    plugin.start();
+
+    const started = (await server.execute("run.start", { mode: "play", waitReady: true, timeoutMs: 3000 })) as {
+      running: boolean;
+      observable: boolean;
+      ready: boolean;
+    };
+
+    expect(started).toMatchObject({ running: true, observable: false, ready: false });
+
+    // And it must not be mistaken for a window sitting idle in edit.
+    const state = (await server.execute("run.state", {})) as { running: boolean; observable: boolean };
+    expect(state).toMatchObject({ running: true, observable: false });
+
+    await expect(server.execute("run.stop", { timeoutMs: 1500 })).rejects.toMatchObject({
+      code: "RUNTIME_CONTEXT_UNAVAILABLE",
+    });
+
+    plugin.testActive = false;
     await plugin.pushState();
   });
 

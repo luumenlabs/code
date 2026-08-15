@@ -17,6 +17,7 @@ local RunState = {}
 
 local epoch = 0
 local lastRunning: boolean? = nil
+local lastTestActive: boolean? = nil
 local listeners: { (any) -> () } = {}
 
 -- Set by RunOps while its start request is outstanding. Held here because the
@@ -56,6 +57,59 @@ end
 
 function RunState.isRunning(): boolean
 	return detectRunning()
+end
+
+-- Probed once. Services do not come and go, and this is asked four times a
+-- second.
+local studioTest: any = nil
+local studioTestProbed = false
+
+local function studioTestService(): any
+	if not studioTestProbed then
+		studioTestProbed = true
+		local ok, service = pcall(function()
+			return game:GetService("StudioTestService")
+		end)
+		studioTest = ok and service or nil
+	end
+
+	return studioTest
+end
+
+--[[
+	Is a playtest up in this Studio window?
+
+	Studio does not load the plugin into the DataModel a playtest creates, so on
+	a Play the edit peer is the only peer there is and its own `running` stays
+	false for the whole session. `EditModeActive` is the edit DataModel's answer
+	to the same question, and the only one it has.
+
+	Nil where the build has no StudioTestService. That is "cannot tell", and a
+	caller that reads it as "no playtest" reports edit through a running game.
+]]
+local function detectTestActive(running: boolean): boolean?
+	if running then
+		return true
+	end
+
+	local service = studioTestService()
+	if service == nil then
+		return nil
+	end
+
+	local ok, active = pcall(function()
+		return service.EditModeActive
+	end)
+
+	if not ok or type(active) ~= "boolean" then
+		return nil
+	end
+
+	return not active
+end
+
+function RunState.isTestActive(): boolean?
+	return detectTestActive(detectRunning())
 end
 
 local function detectRealm(running: boolean): string
@@ -101,8 +155,23 @@ function RunState.isReady(requireCharacter: boolean?): boolean
 
 	local localPlayer = Players.LocalPlayer
 	if localPlayer == nil then
-		-- Run mode: the place is up as soon as it is running.
-		return #Players:GetPlayers() == 0 or not requireCharacter
+		-- No player of this peer's own: Run mode, or the server DataModel of a
+		-- Play. The place is up as soon as it is running, and where players have
+		-- joined, once one of them has a character to act on. Waiting for a
+		-- LocalPlayer that a server peer never gets would never end.
+		local players = Players:GetPlayers()
+		if #players == 0 or not requireCharacter then
+			return true
+		end
+
+		for _, player in ipairs(players) do
+			local character = player.Character
+			if character ~= nil and character:FindFirstChildOfClass("Humanoid") ~= nil then
+				return true
+			end
+		end
+
+		return false
 	end
 
 	if requireCharacter == false then
@@ -141,6 +210,8 @@ function RunState.current(): any
 		-- frames where to send it, and refuse when nowhere can take it.
 		rendering = RenderMonitor.isRendering(),
 		pendingStart = pendingStart,
+		-- The edit peer's only sight of a playtest it is not in.
+		testActive = detectTestActive(running),
 	}
 end
 
@@ -166,18 +237,31 @@ function RunState.start()
 	-- answer. Safe in a server peer, where it simply never connects.
 	RenderMonitor.start()
 
-	lastRunning = detectRunning()
+	local running = detectRunning()
+	lastRunning = running
+	lastTestActive = detectTestActive(running)
 	-- The epoch is derived from the run state at load: a plugin that starts up
 	-- inside a playtest must not hand out handles that look edit-time.
-	epoch = lastRunning and 1 or 0
+	epoch = running and 1 or 0
 	Handles.setEpoch(epoch)
 
 	task.spawn(function()
 		while true do
 			task.wait(0.25)
 			local running = detectRunning()
+			local testActive = detectTestActive(running)
+
+			-- A playtest starting or ending elsewhere in this window. Nothing
+			-- here was replaced, so handles, marks and the frame clock all stay
+			-- good; only what this peer reports has changed.
+			if running == lastRunning and testActive ~= lastTestActive then
+				lastTestActive = testActive
+				emit()
+			end
+
 			if running ~= lastRunning then
 				lastRunning = running
+				lastTestActive = testActive
 				epoch += 1
 				Handles.setEpoch(epoch)
 				-- Held copies of deleted instances belong to the DataModel they
@@ -199,12 +283,27 @@ function RunState.start()
 	-- Character spawn flips `ready` without changing the run state, and agents
 	-- wait on that far more often than on the transition itself.
 	task.spawn(function()
+		local function watch(player: Player)
+			player.CharacterAdded:Connect(function()
+				task.wait(0.1)
+				emit()
+			end)
+		end
+
 		local localPlayer = Players.LocalPlayer
-		if localPlayer == nil then
+		if localPlayer ~= nil then
+			watch(localPlayer)
 			return
 		end
-		localPlayer.CharacterAdded:Connect(function()
-			task.wait(0.1)
+
+		-- A server peer has no player of its own, and readiness there is about
+		-- whoever joins.
+		for _, player in ipairs(Players:GetPlayers()) do
+			watch(player)
+		end
+
+		Players.PlayerAdded:Connect(function(player)
+			watch(player)
 			emit()
 		end)
 	end)

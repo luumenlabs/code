@@ -56,6 +56,20 @@ export interface RunState {
    * evidence a playtest exists when no peer loads into it. Absent on old plugins.
    */
   pendingStart?: boolean;
+  /**
+   * A playtest is up in this Studio window, whoever started it. Reported by the
+   * edit peer from `StudioTestService.EditModeActive`, because Studio does not
+   * load the plugin into the DataModel a playtest creates and the edit peer's
+   * own `running` stays false throughout one. Absent where the Studio build has
+   * no StudioTestService, which means "cannot tell" and not "no playtest".
+   */
+  testActive?: boolean;
+  /**
+   * Whether a connected DataModel is inside the running session. False during a
+   * playtest Luu Code can see the existence of and nothing else. Set by the
+   * server, never by the plugin.
+   */
+  observable?: boolean;
 }
 
 export const EDIT_RUN_STATE: RunState = {

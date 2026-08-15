@@ -16,6 +16,7 @@
 local HttpService = game:GetService("HttpService")
 local MarketplaceService = game:GetService("MarketplaceService")
 
+local Bridge = require(script.Parent.Bridge)
 local Commands = require(script.Parent.Commands)
 local Constants = require(script.Parent.Constants)
 local Net = require(script.Parent.Net)
@@ -25,6 +26,14 @@ local RunState = require(script.Parent.RunState)
 local Client = {}
 
 local pluginRef: Plugin = nil
+
+--[[
+	Set when this copy is running as the playtest bridge instead of as the
+	plugin. There is no `plugin` in a game script, so the two things it would
+	have been asked for — which port, and which game — are baked in at
+	injection time. See Bridge.
+]]
+local bridge: { port: number, installId: string }? = nil
 
 local state = {
 	status = "disconnected",
@@ -245,6 +254,12 @@ end
 	there is nothing durable to recognise it by — see placeIdentity above.
 ]]
 local function installId(): string
+	-- The bridge must join the session the edit peer already holds, and has no
+	-- settings of its own to find it by.
+	if bridge ~= nil then
+		return bridge.installId
+	end
+
 	local key = settingKey(Constants.SETTING_INSTALL_ID)
 	if key == nil then
 		return windowId
@@ -284,7 +299,9 @@ end
 
 function Client.setPort(port: number)
 	state.port = port
-	pluginRef:SetSetting(Constants.SETTING_PORT, port)
+	if pluginRef ~= nil then
+		pluginRef:SetSetting(Constants.SETTING_PORT, port)
+	end
 end
 
 local function handshake(): boolean
@@ -467,15 +484,21 @@ function Client.start(hostPlugin: Plugin)
 	started = true
 	shouldStop = false
 
-	local storedPort = pluginRef:GetSetting(Constants.SETTING_PORT)
-	if type(storedPort) == "number" then
-		state.port = storedPort
+	if pluginRef ~= nil then
+		local storedPort = pluginRef:GetSetting(Constants.SETTING_PORT)
+		if type(storedPort) == "number" then
+			state.port = storedPort
+		end
+
+		-- Tokens are not persisted, so anything a previous build wrote is a dead
+		-- credential in the user's plugin settings.
+		pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, nil)
+		pluginRef:SetSetting(Constants.SETTING_TOKEN, nil)
 	end
 
-	-- Tokens are not persisted, so anything a previous build wrote is a dead
-	-- credential in the user's plugin settings.
-	pluginRef:SetSetting(Constants.SETTING_INSTALL_ID, nil)
-	pluginRef:SetSetting(Constants.SETTING_TOKEN, nil)
+	-- What a bridge would have to be told, settled before anything can ask to
+	-- install one.
+	Bridge.describe(state.port, installId())
 
 	OutputCapture.start(function()
 		return RunState.current().realm
@@ -506,6 +529,21 @@ function Client.start(hostPlugin: Plugin)
 			Commands.prune()
 		end
 	end)
+end
+
+--[[
+	Starts the connection from inside a playtest, where this is a game script
+	with no `plugin` behind it. The port and the install id come from the edit
+	peer that installed it: the bridge has to land in that window's session
+	rather than open one of its own.
+]]
+function Client.startBridge(hostPort: number, hostInstallId: string)
+	bridge = { port = hostPort, installId = hostInstallId }
+	state.port = hostPort
+	-- The plugin's entry point does this before connecting; the bridge has no
+	-- entry point but this, and without it nothing polls the run state.
+	RunState.start()
+	Client.start(nil :: any)
 end
 
 function Client.stop()

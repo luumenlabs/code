@@ -39,6 +39,13 @@ const SWEEP_INTERVAL_MS = 5_000;
  */
 const ENDPOINT_LIVE_MS = SYNC_HOLD_MS + 10_000;
 
+/**
+ * How long a newly connected playtest peer is safe from an edit peer reporting
+ * no playtest. Covers one edit sync composed before the transition and
+ * delivered after it. See dropFinishedRuntimePeers.
+ */
+const RUNTIME_PEER_GRACE_MS = 5_000;
+
 interface PendingCommand {
   op: Op;
   deferred: Deferred<unknown>;
@@ -269,6 +276,41 @@ export class SessionRegistry {
       this.bus.emit({ type: "run", sessionId: session.id, state: run });
       this.emitStatus();
     }
+
+    // An edit peer saying no test is active settles it for the whole window, and
+    // it is the only peer that reliably outlives a playtest to say so.
+    if (run.testActive === false && !run.running) {
+      this.dropFinishedRuntimePeers(session, endpoint);
+    }
+  }
+
+  /**
+   * Drops connections left over from a playtest that has ended.
+   *
+   * Studio does not always close their sockets promptly, and until it does they
+   * keep claiming `running` — which `selectEndpoint` prefers, so the window goes
+   * on reporting a playtest for up to a staleness window after leaving one, and
+   * commands route to a DataModel that no longer exists.
+   */
+  private dropFinishedRuntimePeers(session: SessionRecord, edit: EndpointRecord): void {
+    let dropped = false;
+
+    for (const [id, other] of session.endpoints) {
+      if (other === edit || !other.run.running) continue;
+
+      // A peer that has only just connected is more likely the playtest this
+      // edit sync was composed too early to have noticed than a leftover from
+      // one that ended. The edit peer polls in fractions of a second, so a
+      // report this stale is only ever in flight across the transition itself.
+      if (Date.now() - other.connectedAt < RUNTIME_PEER_GRACE_MS) continue;
+
+      log.info(`Playtest ended; dropping its ${other.realm} connection`);
+      this.failEndpoint(other, new LuuCodeError("STUDIO_NOT_CONNECTED", "The playtest this connection belonged to has ended."));
+      session.endpoints.delete(id);
+      dropped = true;
+    }
+
+    if (dropped) this.announce(session);
   }
 
   private applyEvents(session: SessionRecord, request: StudioSyncRequest): void {
@@ -881,7 +923,7 @@ export class SessionRegistry {
       pluginVersion: session.pluginVersion,
       status: endpoints.length > 0 ? "connected" : "stale",
       endpoints,
-      run: primary?.run ?? defaultRunState(),
+      run: sessionRunState(primary, live),
       lastSeen: session.lastSeen,
       active: this.activeSessionId === session.id,
     };
@@ -902,6 +944,22 @@ export class SessionRegistry {
   emitStatus(): void {
     this.bus.emit({ type: "status", status: this.status() });
   }
+}
+
+/**
+ * What the window is doing, as opposed to what one connection is doing.
+ *
+ * Studio does not load the plugin into the DataModel a playtest creates, so on
+ * a Play the only connection left is the edit one and it reports edit for the
+ * whole session. `testActive` is its sight of the playtest beside it, and
+ * without this a window with a game plainly running reads as idle.
+ */
+function sessionRunState(primary: StudioEndpoint | null, live: StudioEndpoint[]): RunState {
+  const run = primary?.run ?? defaultRunState();
+  if (run.running) return { ...run, observable: true };
+  if (!live.some((endpoint) => endpoint.run.testActive === true)) return run;
+
+  return { ...run, running: true, edit: false, realm: "unknown", ready: false, testActive: true, observable: false };
 }
 
 /**

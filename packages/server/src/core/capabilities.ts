@@ -89,6 +89,19 @@ const OPTIONAL_IN_STUDIO: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "input.virtual",
 ]);
 
+/**
+ * Why a runtime capability is unavailable while a playtest is up, or null when
+ * that is not the situation. Studio does not load the plugin into the DataModel
+ * a playtest creates, so the only connection is the edit one and it can see the
+ * playtest without reaching into it. "Nothing is running" would be false, and
+ * would send an agent to start a second playtest.
+ */
+function unobservable(run: RunState): string | null {
+  if (run.running || run.testActive !== true) return null;
+
+  return "A playtest is running, but Studio does not load the plugin into a playtest's DataModel, so Luu Code cannot reach inside it.";
+}
+
 function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
   // Two independent capture paths, and either is enough. The in-engine one sees
   // the viewport and nothing outside it, but needs the plugin.
@@ -118,7 +131,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
       available: false,
       transient: true,
       provider: "studio-plugin",
-      reason: "Nothing is running. Start a playtest to inspect runtime state.",
+      reason: unobservable(inputs.run) ?? "Nothing is running. Start a playtest to inspect runtime state.",
     };
   }
 
@@ -141,7 +154,7 @@ function describe(id: CapabilityId, inputs: CapabilityInputs): CapabilityState {
         available: false,
         transient: true,
         provider: "studio-plugin",
-        reason: "Input can only be delivered while the experience is running.",
+        reason: unobservable(inputs.run) ?? "Input can only be delivered while the experience is running.",
       };
     }
 

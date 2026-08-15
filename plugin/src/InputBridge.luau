@@ -71,6 +71,17 @@ end
 ]]
 local function requireDeliverable()
 	if not RunState.isRunning() then
+		-- A playtest beside this DataModel rather than in it. Telling an agent
+		-- nothing is running sends it to start a second one.
+		if RunState.isTestActive() == true then
+			Errors.throw(
+				"RUNTIME_CONTEXT_UNAVAILABLE",
+				"A playtest is running and Luu Code has no connection inside it, so input has nowhere to go",
+				nil,
+				"Drive the playtest by hand, or stop it and work in edit."
+			)
+		end
+
 		Errors.throw(
 			"PLAYTEST_NOT_RUNNING",
 			"Input can only be delivered while the experience is running",

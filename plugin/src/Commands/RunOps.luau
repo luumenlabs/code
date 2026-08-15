@@ -14,6 +14,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
+local Bridge = require(script.Parent.Parent.Bridge)
 local Errors = require(script.Parent.Parent.Errors)
 local RunState = require(script.Parent.Parent.RunState)
 local Value = require(script.Parent.Parent.Value)
@@ -55,6 +56,10 @@ local START_GRACE_SECONDS = 15
 
 -- How many ExecutePlayModeAsync calls have yet to return.
 local outstandingStarts = 0
+
+-- How long to leave the bridge in the place waiting for Studio to copy it into
+-- the playtest, before taking it back regardless.
+local BRIDGE_RETRIEVE_TIMEOUT_SECONDS = 30
 
 local function startInFlight(): boolean
 	return pending.active and (os.clock() - (pending.startedAt or 0)) < START_GRACE_SECONDS
@@ -116,11 +121,15 @@ end
 	issued — the call that does the work does not return until the test is over.
 ]]
 function RunOps.start(params: any): any
-	if RunState.isRunning() then
+	local current = RunState.current()
+
+	-- `running` alone misses a playtest this DataModel is not in, which on a
+	-- Play is every playtest there is.
+	if current.running or current.testActive == true then
 		Errors.throw(
 			"PLAYTEST_ALREADY_RUNNING",
 			"A playtest is already running",
-			{ state = RunState.current() },
+			{ state = current },
 			"Use run.restart to start a fresh session, or run.stop first."
 		)
 	end
@@ -136,6 +145,15 @@ function RunOps.start(params: any): any
 
 	local mode = params.mode or "play"
 	local service = testService()
+
+	-- Only ever when asked, and the server asks only while the playtest
+	-- permission is on. A playtest without a bridge is still worth starting, so
+	-- a refusal here is reported rather than raised.
+	local bridge = if params.bridge == true then Bridge.install() else { installed = false }
+
+	if bridge.installed == false and bridge.reason ~= nil then
+		warn(string.format("[Luu Code] The playtest bridge was not installed: %s", bridge.reason))
+	end
 
 	pending.active = true
 	pending.mode = mode
@@ -173,6 +191,24 @@ function RunOps.start(params: any): any
 		RunState.setPendingStart(false)
 	end)
 
+	if bridge.installed then
+		task.spawn(function()
+			-- The playtest is copied out of this DataModel some time after the
+			-- call is issued, and taking the bridge back before then leaves the
+			-- playtest without one. `EditModeActive` turning over is Studio
+			-- saying the copy exists; the extra second is slack on that.
+			local deadline = os.clock() + BRIDGE_RETRIEVE_TIMEOUT_SECONDS
+			while os.clock() < deadline and RunState.isTestActive() ~= true do
+				task.wait(0.1)
+			end
+
+			task.wait(1)
+			-- Removed whether or not the playtest ever came up: a bridge left in
+			-- the place is worse than a playtest without one.
+			Bridge.uninstall()
+		end)
+	end
+
 	-- Give Studio a moment to reject the request, so an outright refusal is
 	-- reported here rather than as a timeout thirty seconds later.
 	task.wait(0.15)
@@ -180,6 +216,7 @@ function RunOps.start(params: any): any
 	if pending.error ~= nil then
 		local reason = pending.error
 		pending.error = nil
+		Bridge.uninstall()
 		Errors.throw(
 			"UNSUPPORTED_CAPABILITY",
 			string.format("Studio refused to start %s mode: %s", mode, reason),
@@ -190,7 +227,9 @@ function RunOps.start(params: any): any
 
 	-- Almost certainly still "not running": the transition has not landed yet,
 	-- and the server is watching for it on the peer that will report it.
-	return RunState.current()
+	local started = RunState.current()
+	started.bridge = bridge
+	return started
 end
 
 --[[
@@ -198,10 +237,23 @@ end
 	DataModel, which is why the server routes this to the running peer.
 ]]
 function RunOps.stop(): any
-	-- This DataModel asked Studio to play, so its EndTest is the only handle on
-	-- a session the plugin never landed in.
-	if not RunState.isRunning() and not pending.active then
-		return RunState.current()
+	if not RunState.isRunning() then
+		local state = RunState.current()
+
+		-- Studio refuses EndTest anywhere but the running server DataModel, and
+		-- does not load the plugin into one, so an edit peer watching a playtest
+		-- has nothing to end it with. Saying so beats a refusal that reads as a
+		-- broken build.
+		if state.testActive == true or pending.active then
+			Errors.throw(
+				"RUNTIME_CONTEXT_UNAVAILABLE",
+				"A playtest is running and Luu Code has no connection inside it, so there is nothing here that can end it",
+				{ state = state },
+				"Press Stop in Studio."
+			)
+		end
+
+		return state
 	end
 
 	local ok, err = pcall(function()
@@ -224,7 +276,18 @@ end
 
 function RunOps.waitReady(params: any): any
 	if not RunState.isRunning() then
-		Errors.throw("PLAYTEST_NOT_RUNNING", "Nothing is running to wait for", { state = RunState.current() }, "Start a playtest first.")
+		local state = RunState.current()
+
+		if state.testActive == true then
+			Errors.throw(
+				"RUNTIME_CONTEXT_UNAVAILABLE",
+				"A playtest is running and Luu Code has no connection inside it, so there is nothing here that can tell when it is ready",
+				{ state = state },
+				"Watch it in Studio."
+			)
+		end
+
+		Errors.throw("PLAYTEST_NOT_RUNNING", "Nothing is running to wait for", { state = state }, "Start a playtest first.")
 	end
 
 	local timeoutSeconds = (params.timeoutMs or 30000) / 1000

@@ -14,6 +14,7 @@ if not plugin then
 	return
 end
 
+local Bridge = require(script.Bridge)
 local Client = require(script.Client)
 local Constants = require(script.Constants)
 local RunState = require(script.RunState)
@@ -24,6 +25,16 @@ local Ui = require(script.Ui)
 local label = Constants.label()
 
 RunState.start()
+
+-- A playtest bridge only ever lives in the place between one being asked for
+-- and Studio copying it. One here now means Studio was interrupted mid-start,
+-- so it belongs to nothing and goes before the user can save it.
+if not RunState.isRunning() then
+	local swept = Bridge.sweep()
+	if swept > 0 then
+		warn(string.format("[Luu Code] Removed %d playtest bridge(s) left behind by an interrupted session.", swept))
+	end
+end
 
 -- The connection comes up first and the panel cannot take it down: Studio loads
 -- this again in the playtest's DataModel, where building a toolbar and widget

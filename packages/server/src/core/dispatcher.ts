@@ -303,9 +303,31 @@ export class Dispatcher {
       case "output.clear":
         return { cleared: this.deps.output.for(this.sessionKey(context)).clear() };
 
+      /**
+       * The peer answers for its own DataModel, which during a playtest the
+       * plugin never loaded into is the edit one — so on its own it reports
+       * edit through a running game. The window's view is laid over the top;
+       * the peer keeps the fields only it has, such as the multiplayer phase.
+       */
+      case "run.state": {
+        const reported = (await this.sendToStudio(op, params, context)) as Record<string, unknown>;
+        return { ...reported, ...this.deps.runControl.state(context) };
+      }
+
+      /**
+       * The bridge goes in under the playtest permission and nothing else. It
+       * is a script in the user's place for the moment it takes Studio to copy
+       * it, so turning playtesting off has to mean nothing is written there —
+       * not merely that the tool is refused.
+       */
       case "run.start":
         return this.deps.runControl.start(
-          { mode: params.mode, waitReady: params.waitReady, timeoutMs: params.timeoutMs },
+          {
+            mode: params.mode,
+            waitReady: params.waitReady,
+            timeoutMs: params.timeoutMs,
+            bridge: this.deps.settings.isAllowed("playtest"),
+          },
           context,
         );
 
@@ -313,7 +335,10 @@ export class Dispatcher {
         return this.deps.runControl.stop({ timeoutMs: params.timeoutMs }, context) as Promise<RunState>;
 
       case "run.restart":
-        return this.deps.runControl.restart({ mode: params.mode, timeoutMs: params.timeoutMs }, context);
+        return this.deps.runControl.restart(
+          { mode: params.mode, timeoutMs: params.timeoutMs, bridge: this.deps.settings.isAllowed("playtest") },
+          context,
+        );
 
       case "run.multiplayer":
         return this.deps.runControl.multiplayer(

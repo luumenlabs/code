@@ -233,6 +233,19 @@ end
 ]]
 local cached: { string }? = nil
 
+--[[
+	Asks one probe. A probe that raises is a capability this DataModel does not
+	have, not a bug worth propagating: several of them answer by using a
+	plugin-only API, and the bridge inside a playtest is an ordinary game script
+	where those refuse. This whole list is built on the handshake path, so one
+	probe raising used to take the connection down with it and leave the playtest
+	unobservable — which is the thing the bridge exists to fix.
+]]
+local function can(test: () -> boolean): boolean
+	local ok, available = pcall(test)
+	return ok and available == true
+end
+
 function Commands.capabilities(): { string }
 	if cached ~= nil then
 		return cached :: { string }
@@ -247,21 +260,21 @@ function Commands.capabilities(): { string }
 		"runtime.inspect",
 	}
 
-	if History.isAvailable() then
+	if can(History.isAvailable) then
 		table.insert(available, "edit.undo-history")
 	end
 
-	if Exec.isAvailable() then
+	if can(Exec.isAvailable) then
 		table.insert(available, "runtime.exec")
 	end
 
 	-- Probed by setting one and taking it back: the debugger API is behind a
 	-- Studio beta, and a build without it still hands over the service.
-	if DebugOps.isAvailable() then
+	if can(DebugOps.isAvailable) then
 		table.insert(available, "debug.breakpoints")
 	end
 
-	if NetworkOps.isAvailable() then
+	if can(NetworkOps.isAvailable) then
 		table.insert(available, "playtest.network")
 	end
 
@@ -269,14 +282,17 @@ function Commands.capabilities(): { string }
 	-- check asked whether VirtualInputManager could be fetched — which is always
 	-- true, and told us nothing about whether its methods were callable, which
 	-- they were not. Every key and click this session accepted went nowhere.
-	if InputBridge.isAvailable() then
+	if can(InputBridge.isAvailable) then
 		table.insert(available, "input.virtual")
 	end
 
 	-- Play and Run are one capability: both are StudioTestService methods, so a
 	-- build with one has the other. They were reported separately back when Play
 	-- went through a mechanism that could not work.
-	local canPlay, canMultiplayer = RunOps.capabilities()
+	local probedRun, canPlay, canMultiplayer = pcall(RunOps.capabilities)
+	if not probedRun then
+		canPlay, canMultiplayer = false, false
+	end
 
 	if canPlay then
 		table.insert(available, "playtest.play")
@@ -287,27 +303,27 @@ function Commands.capabilities(): { string }
 		table.insert(available, "playtest.multiplayer")
 	end
 
-	if Capture.isAvailable() then
+	if can(Capture.isAvailable) then
 		table.insert(available, "view.screenshot")
 	end
 
-	if ViewOps.isAvailable() then
+	if can(ViewOps.isAvailable) then
 		table.insert(available, "view.camera")
 	end
 
-	if PerfOps.isAvailable() then
+	if can(PerfOps.isAvailable) then
 		table.insert(available, "perf.stats")
 	end
 
-	if PerfOps.canProfileScripts() then
+	if can(PerfOps.canProfileScripts) then
 		table.insert(available, "perf.script-profiler")
 	end
 
-	if TestOps.isAvailable() then
+	if can(TestOps.isAvailable) then
 		table.insert(available, "test.run")
 	end
 
-	if AssetOps.isAvailable() then
+	if can(AssetOps.isAvailable) then
 		table.insert(available, "assets.insert")
 	end
 
