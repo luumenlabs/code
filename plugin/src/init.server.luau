@@ -14,8 +14,6 @@ if not plugin then
 	return
 end
 
-local RunService = game:GetService("RunService")
-
 local Client = require(script.Client)
 local Constants = require(script.Constants)
 local RunState = require(script.RunState)
@@ -32,29 +30,48 @@ RunState.start()
 -- against ids that already exist throws.
 Client.start(plugin)
 
+local unloading: (() -> ())? = nil
+
 plugin.Unloading:Connect(function()
 	Client.stop()
+	if unloading then
+		unloading()
+	end
 end)
 
 --[[
-	The panel belongs to the edit DataModel and only to it. Studio runs this
-	again inside each DataModel a playtest creates, and they share one widget —
-	so a playtest peer that drew the panel would leave it behind, frozen, when
-	that DataModel died.
-
-	The connection above is outside this: every peer connects, one draws.
+	Every DataModel claims the toolbar and the widget — a peer that skipped them
+	took the button away from edit too — and one of them fills the panel. Which
+	one is settled by whoever finds it empty and holds it until its DataModel
+	goes, because a peer that builds over another leaves rows wired to a `Client`
+	that is on its way out.
 ]]
 local panelOk, panelProblem = pcall(function()
-	if RunService:IsRunning() then
-		return
-	end
-
 	local toolbar = plugin:CreateToolbar(label)
 	local toggleButton =
 		toolbar:CreateButton("LuuCodeToggle" .. Constants.suffix(), "Show the " .. label .. " connection panel", Constants.icon(), label)
 	toggleButton.ClickableWhenViewportHidden = true
 
-	local widget = Ui.create(plugin)
+	local widget = Ui.widget(plugin)
+
+	if Ui.claim(widget) then
+		unloading = function()
+			Ui.release(widget)
+		end
+	else
+		-- The peer holding it is usually the shorter-lived one: a playtest ends
+		-- and hands back a panel the edit peer is still here to fill.
+		task.spawn(function()
+			while unloading == nil do
+				task.wait(1)
+				if Ui.claim(widget) then
+					unloading = function()
+						Ui.release(widget)
+					end
+				end
+			end
+		end)
+	end
 
 	toggleButton:SetActive(widget.Enabled)
 

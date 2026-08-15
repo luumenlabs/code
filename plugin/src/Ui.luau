@@ -49,7 +49,12 @@ local function ownerOf(place: any): string?
 	return string.format("%s %d", kind, place.creatorId)
 end
 
-function Ui.create(hostPlugin: Plugin)
+--[[
+	The widget itself, which every DataModel may ask for: Studio hands back the
+	same one for an id it has seen, so the playtest's peer gets the panel the
+	edit peer built and can wire a toggle to it without touching its contents.
+]]
+function Ui.widget(hostPlugin: Plugin)
 	-- Studio keys a widget's saved position and size on this id, so each channel
 	-- needs its own or two installed plugins fight over one docked panel.
 	local widget = hostPlugin:CreateDockWidgetPluginGui(
@@ -58,12 +63,21 @@ function Ui.create(hostPlugin: Plugin)
 	)
 	widget.Title = Constants.label()
 	widget.Name = "LuuCode" .. Constants.suffix()
+	return widget
+end
 
-	-- Studio hands back the same widget for an id it has seen, and runs this
-	-- plugin again in the playtest's DataModel. Building a second panel into it
-	-- leaves two stacked, the newer wired to a Client on its way out.
-	for _, existing in ipairs(widget:GetChildren()) do
-		existing:Destroy()
+--[[
+	Fills the widget, for one peer at a time. The rows are driven by the `Client`
+	of the DataModel that built them, and a playtest's DataModel is destroyed
+	under it — a second peer building over the first leaves the panel frozen on
+	whatever that dying one last said.
+
+	Claimed by whether the widget is empty rather than by run state, which is a
+	reading and can be wrong. Nothing else puts children here.
+]]
+function Ui.claim(widget: any): boolean
+	if #widget:GetChildren() > 0 then
+		return false
 	end
 
 	local root = Instance.new("Frame")
@@ -167,7 +181,17 @@ function Ui.create(hostPlugin: Plugin)
 	render(Client.state())
 	Client.onChanged(render)
 
-	return widget
+	return true
+end
+
+--[[
+	Hands the panel back, so a peer on its way out does not leave rows nothing
+	can update. Only ever called by whoever claimed it.
+]]
+function Ui.release(widget: any)
+	for _, existing in ipairs(widget:GetChildren()) do
+		existing:Destroy()
+	end
 end
 
 return Ui

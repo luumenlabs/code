@@ -100,6 +100,14 @@ async function handle(deps: HttpDeps, req: IncomingMessage, res: ServerResponse)
   if (path === ROUTES.sync && req.method === "POST") {
     const body = await readJson<StudioSyncRequest>(req);
 
+    // A poll that ends without a reply is a DataModel Studio destroyed under
+    // it. Nothing was ever going to answer it, and the endpoint is what the
+    // session speaks with until something says otherwise.
+    res.on("close", () => {
+      if (res.writableEnded) return;
+      deps.sessions.abandon(body.sessionId, body.endpointId, body.token);
+    });
+
     try {
       const response = await deps.sessions.sync(body);
       sendJson(res, 200, response);

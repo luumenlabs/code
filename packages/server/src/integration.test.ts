@@ -179,6 +179,35 @@ class FakePlugin {
     });
   }
 
+  /**
+   * Parks a poll and then drops the socket without reading it, which is what
+   * Studio leaves behind when it destroys the DataModel that opened it.
+   */
+  async abandonPoll(): Promise<void> {
+    const controller = new AbortController();
+
+    const request = fetch(this.url("/studio/sync"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: this.sessionId,
+        endpointId: this.endpointId,
+        token: this.token,
+        wait: true,
+        results: [],
+        events: [],
+        run: this.runState(),
+      }),
+      signal: controller.signal,
+    }).catch(() => undefined);
+
+    // Long enough for the server to have parked it. Aborting before that races
+    // the handler that registers the close.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    controller.abort();
+    await request;
+  }
+
   /** Runs the poll loop until stop() is called. */
   start(): void {
     void (async () => {
@@ -1093,6 +1122,99 @@ describe("playtest", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  /**
+   * Sweeping the dead peer only fixes the answer to a question. Nothing about
+   * the edit peer that outlived the playtest changed, so nothing was pushed,
+   * and the app sat on the last status it was sent — "Playtest · client", with
+   * Studio back in edit mode and the session agreeing if only it were asked.
+   */
+  it("says so when the peer it was speaking with is swept", async () => {
+    const edit = await connectPlugin();
+    // Parked, which is what carries it through a playtest: Studio suspends the
+    // edit DataModel's Lua, so it neither answers nor deserves to be dropped.
+    edit.start();
+    // Its first poll has to be parked before the clock moves, or it lands with
+    // a timestamp from the future and still counts as live.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const start = Date.now();
+
+    // Long enough into the playtest that the edit peer has stopped counting as
+    // live, which is what leaves the running peer speaking for the session.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(start + 40_000);
+
+    try {
+      // The playtest's own DataModel, which joins the window that owns the
+      // place. Its poll loop is never started: what a destroyed DataModel
+      // leaves behind is a peer that has said its piece and gone.
+      const play = new FakePlugin(server.port, (edit as any).installId, "window-swept-play");
+      play.running = true;
+      play.realmOverride = "client";
+      await play.connect();
+
+      expect(play.sessionId).toBe(edit.sessionId);
+      expect(server.status().sessions.find((entry) => entry.id === edit.sessionId)?.run.realm).toBe("client");
+
+      // The run event rather than the status: a status goes out whenever
+      // anything about any session moves, and what was missing here was
+      // anything at all being said about this one.
+      const modes: string[] = [];
+      const off = server.bus.subscribe((event) => {
+        if (event.type !== "run" || event.sessionId !== edit.sessionId) return;
+        modes.push(event.state.running ? `playtest:${event.state.realm}` : "edit");
+      });
+
+      // The playtest ends. Nothing about the edit peer changes.
+      clock.mockReturnValue(start + 120_000);
+
+      // Counted rather than clocked: Date.now is what the sweep is being lied
+      // to about. One sweep interval is enough; the rest is slack.
+      for (let waited = 0; waited < 40 && modes.length === 0; waited += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+
+      off();
+      expect(modes.at(-1)).toBe("edit");
+    } finally {
+      vi.restoreAllMocks();
+      edit.stop();
+    }
+  }, 20_000);
+
+  /**
+   * Waiting for the sweep is the slow path. A destroyed DataModel closes the
+   * socket its poll was parked on, and until that was noticed the endpoint sat
+   * there looking suspended — which is the one thing the sweep will not drop —
+   * for a hold and a staleness window after the playtest had ended.
+   */
+  it("drops a peer the moment its parked poll is cut off", async () => {
+    const edit = await connectPlugin();
+
+    const play = new FakePlugin(server.port, (edit as any).installId, "window-abandoned-play");
+    play.running = true;
+    play.realmOverride = "client";
+    await play.connect();
+
+    expect(play.sessionId).toBe(edit.sessionId);
+
+    const states: Array<{ running: boolean }> = [];
+    const off = server.bus.subscribe((event) => {
+      if (event.type === "run" && event.sessionId === edit.sessionId) states.push(event.state);
+    });
+
+    await play.abandonPoll();
+
+    for (let waited = 0; waited < 20 && states.length === 0; waited += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    off();
+
+    expect(states.at(-1)?.running).toBe(false);
+    // Dropped outright rather than left for the sweep, which skips a parked one.
+    const mine = server.status().sessions.find((entry) => entry.id === edit.sessionId);
+    expect(mine?.endpoints.map((endpoint) => endpoint.realm)).toEqual(["edit"]);
   });
 
   /**

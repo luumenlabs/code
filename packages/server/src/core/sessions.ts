@@ -564,15 +564,13 @@ export class SessionRegistry {
   // -------------------------------------------------------------------------
 
   /**
-   * The session a peer that is already running belongs to. Studio loads the
-   * plugin again inside the playtest's DataModel, which generates its own
-   * window id — so by window alone a playtest looks like a second Studio window
-   * and gets a session of its own, leaving the chat bound to the edit session
-   * unable to see it.
+   * The session a peer that is already running belongs to. A playtest's
+   * DataModel generates its own window id, so by window alone it looks like a
+   * second Studio window and the chat waiting on it never sees it.
    *
-   * The pending start ties the two together: the edit peer parked in
-   * ExecutePlayModeAsync is the window that asked to play. The install id is
-   * the fallback for a playtest the user started by hand.
+   * Matched on the pending start — the edit peer parked in
+   * ExecutePlayModeAsync asked to play — and on the install id for a playtest
+   * started by hand.
    */
   private sessionForRuntimePeer(request: StudioHelloRequest): string | null {
     if (request.run?.running !== true) return null;
@@ -688,10 +686,47 @@ export class SessionRegistry {
     endpoint.parkTimer = null;
   }
 
+  /**
+   * A poll's socket closed with nothing written to it. Roblox drops the
+   * connection when the DataModel that opened it is destroyed, and that is the
+   * only notice a finished playtest gives — the peer is gone now rather than in
+   * one staleness window's time, and `sweep` will not touch a parked endpoint.
+   */
+  abandon(sessionId: string, endpointId: string, token: string | undefined): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || !safeEquals(session.token, token ?? "")) return;
+
+    const endpoint = session.endpoints.get(endpointId);
+    // Only a poll still waiting. A request that was answered closes its socket
+    // too, and re-handshaking is not abandonment.
+    if (!endpoint || !endpoint.park) return;
+
+    log.info(`Studio closed a parked connection (${endpoint.realm}); dropping it`);
+    this.failEndpoint(endpoint, new LuuCodeError("STUDIO_NOT_CONNECTED", "Studio closed this connection."));
+    session.endpoints.delete(endpointId);
+
+    this.announce(session);
+  }
+
+  /**
+   * Losing a peer changes what the session reports without changing what any
+   * surviving peer says, so nothing else pushes it. The finished playtest's
+   * client goes this way, leaving the app on "Playtest · client" until
+   * something unrelated moved the status along.
+   */
+  private announce(session: SessionRecord): void {
+    const state = this.toPublicSession(session).run;
+    this.hooks.onRunState(session.id, state);
+    this.bus.emit({ type: "run", sessionId: session.id, state });
+    this.emitStatus();
+  }
+
   private sweep(): void {
     const now = Date.now();
 
     for (const [sessionId, session] of this.sessions) {
+      let dropped = false;
+
       for (const [endpointId, endpoint] of session.endpoints) {
         // A parked endpoint is holding an open request, so a stale timestamp
         // there means nothing. Without this the edit peer is dropped while
@@ -702,13 +737,17 @@ export class SessionRegistry {
         log.info(`Studio connection went quiet (${endpoint.realm}); dropping it`);
         this.failEndpoint(endpoint, new LuuCodeError("STUDIO_NOT_CONNECTED", "Studio stopped responding."));
         session.endpoints.delete(endpointId);
+        dropped = true;
       }
 
       if (session.endpoints.size === 0 && now - session.lastSeen > SESSION_STALE_MS) {
         this.forget(session);
         this.bus.emit({ type: "session.disconnected", sessionId, reason: "Studio stopped responding" });
         this.emitStatus();
+        continue;
       }
+
+      if (dropped) this.announce(session);
     }
   }
 

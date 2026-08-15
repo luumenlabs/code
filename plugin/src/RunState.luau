@@ -34,23 +34,24 @@ end
 	saying no with a playtest plainly running, which stalls every `run.start`
 	until it times out, so the flag is corroborated rather than trusted alone.
 
-	A `Player` cannot exist without a session, and a DataModel that is a server
-	but not a client, or the reverse, is half of a split runtime — which edit
-	never is. Either means the simulation is up whatever the flag says.
+	Edit says so itself, and is asked first. A published place has players in
+	`Players` while it is being edited, so a player is only corroboration
+	somewhere that has not already said it is edit — without that test every
+	edit session on a published place reported a playtest in the client realm.
 
-	Run mode in a Studio that also mis-reports the flag has nothing to
-	corroborate with, and has not been seen.
+	Being a server but not a client is not corroboration either: edit reports
+	exactly that.
 ]]
 local function detectRunning(): boolean
 	if RunService:IsRunning() then
 		return true
 	end
 
-	if Players.LocalPlayer ~= nil or #Players:GetPlayers() > 0 then
-		return true
+	if RunService:IsEdit() then
+		return false
 	end
 
-	return RunService:IsServer() ~= RunService:IsClient()
+	return Players.LocalPlayer ~= nil or #Players:GetPlayers() > 0
 end
 
 function RunState.isRunning(): boolean
