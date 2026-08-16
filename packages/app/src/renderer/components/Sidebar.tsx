@@ -62,6 +62,33 @@ export function Sidebar({
   const groups = React.useMemo(() => (harness.threads ? groupThreads(harness.threads) : []), [harness.threads]);
   const connected = (harness.snapshot?.status.sessions.length ?? 0) > 0;
 
+  /*
+    Taken off the harness rather than closing over it. These are stable for the
+    life of the app, while the harness itself changes on every streamed token —
+    a handler that depended on it would rebuild each time and defeat the memo on
+    the rows below.
+  */
+  const { openThread, renameThread, archiveThread, deleteThread } = harness;
+
+  const onOpen = React.useCallback(
+    (id: string) => {
+      onExitSettings();
+      void openThread(id);
+    },
+    [onExitSettings, openThread],
+  );
+
+  const onRename = React.useCallback(
+    (id: string, title: string, previous: string) => {
+      setRenaming(null);
+      if (title !== previous) void renameThread(id, title);
+    },
+    [renameThread],
+  );
+
+  const onArchive = React.useCallback((id: string) => void archiveThread(id, true), [archiveThread]);
+  const onDelete = React.useCallback((id: string) => void deleteThread(id), [deleteThread]);
+
   // Everything inside Settings that wants dealing with, as one number. The
   // app's own update has its own row above and is not in it.
   const waiting = settingsWaiting(harness);
@@ -139,17 +166,11 @@ export function Sidebar({
                       // Asked of the thread, not the app: chats run in parallel.
                       running={isBusyState(harness.agentStates[thread.id])}
                       renaming={renaming === thread.id}
-                      onOpen={() => {
-                        onExitSettings();
-                        void harness.openThread(thread.id);
-                      }}
-                      onStartRename={() => setRenaming(thread.id)}
-                      onRename={(title) => {
-                        setRenaming(null);
-                        if (title !== thread.title) void harness.renameThread(thread.id, title);
-                      }}
-                      onArchive={() => void harness.archiveThread(thread.id, true)}
-                      onDelete={() => void harness.deleteThread(thread.id)}
+                      onOpen={onOpen}
+                      onStartRename={setRenaming}
+                      onRename={onRename}
+                      onArchive={onArchive}
+                      onDelete={onDelete}
                     />
                   ))}
               </section>
@@ -290,7 +311,11 @@ function ArchivedSection({
   );
 }
 
-function ThreadRow({
+/**
+ * Memoised, and its handlers take the thread's id rather than closing over it,
+ * so the list does not redraw every time the open conversation streams a token.
+ */
+const ThreadRow = React.memo(function ThreadRow({
   thread,
   active,
   running,
@@ -305,11 +330,11 @@ function ThreadRow({
   active: boolean;
   running: boolean;
   renaming: boolean;
-  onOpen: () => void;
-  onStartRename: () => void;
-  onRename: (title: string) => void;
-  onArchive: () => void;
-  onDelete: () => void;
+  onOpen: (id: string) => void;
+  onStartRename: (id: string) => void;
+  onRename: (id: string, title: string, previous: string) => void;
+  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
 }): React.JSX.Element {
   const [draft, setDraft] = React.useState(thread.title);
   const input = React.useRef<HTMLInputElement>(null);
@@ -327,10 +352,10 @@ function ThreadRow({
         ref={input}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => onRename(draft)}
+        onBlur={() => onRename(thread.id, draft, thread.title)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") onRename(draft);
-          if (event.key === "Escape") onRename(thread.title);
+          if (event.key === "Enter") onRename(thread.id, draft, thread.title);
+          if (event.key === "Escape") onRename(thread.id, thread.title, thread.title);
         }}
         autoFocus
         className="mx-0.5 h-7 rounded-md border border-primary/50 bg-background px-2 text-[13px] outline-none"
@@ -342,7 +367,7 @@ function ThreadRow({
   return (
     // Two lines, so the title is not squeezed between a timestamp and a menu.
     <div className="row group flex items-start gap-1.5 py-1.5 pr-0.5 pl-2" data-active={active}>
-      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+      <button onClick={() => onOpen(thread.id)} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
         <span className="flex w-full items-center gap-2">
           {running ? (
             <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
@@ -384,7 +409,7 @@ function ThreadRow({
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={onArchive}
+          onClick={() => onArchive(thread.id)}
           className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
         >
           <Archive />
@@ -405,15 +430,18 @@ function ThreadRow({
         </Hint>
 
         <DropdownMenuContent align="end" className="min-w-[160px]">
-          <DropdownMenuItem onSelect={() => setTimeout(onStartRename, 0)}>
+          <DropdownMenuItem onSelect={() => setTimeout(() => onStartRename(thread.id), 0)}>
             <Pencil />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onArchive}>
+          <DropdownMenuItem onSelect={() => onArchive(thread.id)}>
             <Archive />
             Archive
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
+          <DropdownMenuItem
+            onSelect={() => onDelete(thread.id)}
+            className="text-destructive focus:text-destructive"
+          >
             <Trash2 />
             Delete
           </DropdownMenuItem>
@@ -421,4 +449,4 @@ function ThreadRow({
       </DropdownMenu>
     </div>
   );
-}
+});

@@ -98,7 +98,7 @@ export function SettingsView({
   }, [onClose]);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="animate-in fade-in-0 slide-in-from-bottom-1 duration-(--duration-panel) ease-out-quint flex min-h-0 min-w-0 flex-1 flex-col">
       {/* The thread list stays put, so the sections run across the top. */}
       <div className="flex h-topbar shrink-0 items-center gap-1 border-b px-3">
         <Button variant="ghost" size="icon-sm" onClick={onClose} title="Back to chat">

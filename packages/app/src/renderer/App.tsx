@@ -32,6 +32,27 @@ export function App(): React.JSX.Element {
    */
   const [viewing, setViewing] = React.useState<string[] | null>(null);
 
+  /*
+    Stable, because the sidebar builds its row handlers out of these and the
+    rows are memoised. An inline arrow here would rebuild them on every render
+    and the memo would never hold.
+  */
+  const openPalette = React.useCallback(() => setPaletteOpen(true), []);
+  const exitSettings = React.useCallback(() => setSettingsOpen(false), []);
+  const enterSettings = React.useCallback(() => setSettingsOpen(true), []);
+  const toggleSettings = React.useCallback(() => setSettingsOpen((open) => !open), []);
+  const toggleDock = React.useCallback(() => setDockOpen((open) => !open), []);
+
+  const openUpdates = React.useCallback(() => {
+    setSettingsSection("updates");
+    setSettingsOpen(true);
+  }, []);
+
+  const openPermissions = React.useCallback(() => {
+    setSettingsSection("permissions");
+    setSettingsOpen(true);
+  }, []);
+
   // Ctrl/Cmd+K opens the palette, Ctrl/Cmd+N starts a conversation.
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -126,21 +147,18 @@ export function App(): React.JSX.Element {
             dockWidth={fitted.dock}
             dockOpen={dockOpen}
             dockVisible={showDock}
-            onToggleDock={() => setDockOpen((open) => !open)}
+            onToggleDock={toggleDock}
           />
 
           <div ref={row} className="flex min-h-0 flex-1 overflow-hidden">
             <Sidebar
               harness={harness}
               width={fitted.sidebar}
-              onSearch={() => setPaletteOpen(true)}
+              onSearch={openPalette}
               settingsOpen={settingsOpen}
-              onToggleSettings={() => setSettingsOpen((open) => !open)}
-              onExitSettings={() => setSettingsOpen(false)}
-              onOpenUpdates={() => {
-                setSettingsSection("updates");
-                setSettingsOpen(true);
-              }}
+              onToggleSettings={toggleSettings}
+              onExitSettings={exitSettings}
+              onOpenUpdates={openUpdates}
             />
 
             <Resizer
@@ -164,7 +182,7 @@ export function App(): React.JSX.Element {
                 harness={harness}
                 section={settingsSection}
                 onSectionChange={setSettingsSection}
-                onClose={() => setSettingsOpen(false)}
+                onClose={exitSettings}
               />
             ) : (
               <>
@@ -189,10 +207,7 @@ export function App(): React.JSX.Element {
                       harness={harness}
                       value={draft}
                       onValueChange={setDraft}
-                      onOpenPermissions={() => {
-                        setSettingsSection("permissions");
-                        setSettingsOpen(true);
-                      }}
+                      onOpenPermissions={openPermissions}
                     />
                   </main>
                 )}
@@ -226,8 +241,8 @@ export function App(): React.JSX.Element {
           harness={harness}
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onExitSettings={() => setSettingsOpen(false)}
+          onOpenSettings={enterSettings}
+          onExitSettings={exitSettings}
         />
       </ChangesProvider>
     </TooltipProvider>

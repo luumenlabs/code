@@ -92,7 +92,12 @@ const MARKDOWN_COMPONENTS: Components = {
   td: ({ children }) => <td className="border-b px-2.5 py-1.5 align-top last:border-r-0">{children}</td>,
 };
 
-export function Markdown({ text }: { text: string }): React.JSX.Element {
+/**
+ * Memoised on the text. Parsing the AST is the most expensive thing the
+ * transcript does, and the same message is otherwise re-parsed on every event
+ * the app receives — including Studio output lines that never touch the chat.
+ */
+export const Markdown = React.memo(function Markdown({ text }: { text: string }): React.JSX.Element {
   return (
     <div className="selectable flex flex-col gap-2 text-[14px] leading-relaxed">
       <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS} components={MARKDOWN_COMPONENTS}>
@@ -100,4 +105,4 @@ export function Markdown({ text }: { text: string }): React.JSX.Element {
       </ReactMarkdown>
     </div>
   );
-}
+});

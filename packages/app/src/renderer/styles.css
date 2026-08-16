@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Supplies animate-in/animate-out. Tailwind v4 ships no keyframes of its own,
+   and without this every Radix overlay in the app opens with no transition. */
+@import "tw-animate-css";
 @import "@fontsource-variable/dm-sans";
 @import "@fontsource-variable/syne";
 @import "@fontsource-variable/jetbrains-mono";
@@ -30,6 +33,21 @@
   --transcript-fade: 56px;
   --sidebar-inset: 0.5rem;
   --row-gap: 0.125rem;
+
+  /* Motion. Named for the same reason the structural sizes are: a hover that
+     settles at one speed and a menu that opens at another reads as two apps.
+     The curves leave fast and land slow, so a control answers the pointer on
+     the first frame and the rest of the travel is what gets eased. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Hover, press, colour. Below ~120ms a change reads as instant rather than
+     as motion, which is what a pointer response should be. */
+  --duration-fast: 110ms;
+  /* Menus, popovers, tooltips — something arriving on screen. */
+  --duration-base: 160ms;
+  /* A pane resizing or swapping. Long enough to follow, short enough to
+     outrun the second click. */
+  --duration-panel: 220ms;
 
   --background: oklch(0.995 0 0);
   --foreground: oklch(0.21 0.006 285.885);
@@ -139,6 +157,29 @@
   --spacing-topbar: var(--topbar-height);
   --spacing-sidebar: var(--sidebar-width);
   --spacing-dock: var(--dock-width);
+
+  --ease-out-quint: var(--ease-out-quint);
+  --ease-out-expo: var(--ease-out-expo);
+
+  /* What a bare `transition-colors` gets. Tailwind's own default is 150ms on a
+     symmetric curve, which lands every hover in the app slightly late; setting
+     it here moves all of them at once rather than per class. */
+  --default-transition-duration: var(--duration-fast);
+  --default-transition-timing-function: var(--ease-out-quint);
+
+  /* Radix drives these through data-[state]; tw-animate-css supplies the rest. */
+  --animate-rise: rise var(--duration-base) var(--ease-out-quint);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @layer base {
@@ -222,6 +263,22 @@
 
   ::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  /*
+    Motion off. Not `animation: none` — Radix waits for `animationend` before it
+    unmounts a closing overlay, and an animation that never runs never ends, so
+    the menu would stay on screen. A duration this short ends on the next frame.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 

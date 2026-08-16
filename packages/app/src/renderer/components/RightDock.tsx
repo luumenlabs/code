@@ -65,7 +65,10 @@ export function RightDock({
   const standing = harness.changes.filter(isPending).length;
 
   return (
-    <aside style={{ width }} className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar">
+    <aside
+      style={{ width }}
+      className="animate-in slide-in-from-right-4 fade-in-0 duration-(--duration-panel) ease-out-quint flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar"
+    >
       <div className="min-h-0 flex-1">
         {tab === "studio" ? (
           <StudioTab harness={harness} />

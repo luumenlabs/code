@@ -4,8 +4,14 @@ import { cva } from "class-variance-authority";
 import type { VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/**
+ * The press is on `transform` rather than a colour so it reads on every variant,
+ * including ghost, where there is no fill to darken. It is deliberately small:
+ * this fires on every button in a dense tool, and anything deeper than a couple
+ * of percent starts to feel like the UI is flinching.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[14px] font-medium transition-colors outline-none focus-visible:ring-[2px] focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[14px] font-medium transition-[color,background-color,border-color,transform] active:scale-[0.97] outline-none focus-visible:ring-[2px] focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

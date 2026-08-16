@@ -74,7 +74,11 @@ const EXAMPLES = [
   "Brighten the lobby, then screenshot it",
 ];
 
-export function Transcript({
+/**
+ * Memoised: its props are all narrow, so Studio output, status changes, and
+ * version polling no longer redraw the conversation.
+ */
+export const Transcript = React.memo(function Transcript({
   items,
   onExample,
   showThinking,
@@ -98,7 +102,16 @@ export function Transcript({
     // Only follow along when the user is already at the bottom.
     if (!pinned.current) return;
     const element = viewport.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (!element) return;
+
+    /*
+      Smooth only for a real jump — a sent message, a reopened thread. Streaming
+      grows the column a few pixels at a time, and asking for a smooth scroll on
+      every token restarts the animation before it lands, which reads as the
+      view lagging behind the text rather than following it.
+    */
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    element.scrollTo({ top: element.scrollHeight, behavior: distance > 240 ? "smooth" : "auto" });
     // `busy` too: the working line appearing changes the height.
   }, [items, busy]);
 
@@ -141,7 +154,7 @@ export function Transcript({
       </div>
     </ScrollArea>
   );
-}
+});
 
 /**
  * One exchange: what the user asked, and everything the agent did about it.
@@ -166,7 +179,9 @@ function Turn({ items, busy, live }: { items: TimelineItem[]; busy: boolean; liv
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    // Keyed on the turn's first entry, so this plays once when the turn arrives
+    // rather than on every token that lands inside it.
+    <div className="animate-rise flex flex-col gap-3">
       {asked.map((item) => (
         <Row key={item.id} item={item} busy={busy} />
       ))}
@@ -482,7 +497,18 @@ function EmptyState({
   );
 }
 
-function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.Element | null {
+/**
+ * Memoised on the entry itself. A streaming turn replaces one entry per token
+ * and leaves the rest of the list identical, so without this every message in
+ * the conversation re-parses its Markdown on every token that arrives.
+ */
+const Row = React.memo(function Row({
+  item,
+  busy,
+}: {
+  item: TimelineItem;
+  busy: boolean;
+}): React.JSX.Element | null {
   switch (item.kind) {
     case "user":
       return (
@@ -550,7 +576,7 @@ function Row({ item, busy }: { item: TimelineItem; busy: boolean }): React.JSX.E
     default:
       return null;
   }
-}
+});
 
 /**
  * A tool call, openable. Collapsed it is a verb and its object — "Edit ·

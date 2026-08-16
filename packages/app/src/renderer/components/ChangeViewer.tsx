@@ -55,7 +55,7 @@ export function ChangeViewer({
   }, [onClose]);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="animate-in fade-in-0 slide-in-from-bottom-1 duration-(--duration-panel) ease-out-quint flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <Hint label="Back to the chat">
           <Button variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={onClose}>

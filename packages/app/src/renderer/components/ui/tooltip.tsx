@@ -16,7 +16,11 @@ export const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         "z-50 max-w-[300px] overflow-hidden rounded-md border bg-popover px-2 py-1 text-[12.5px] text-popover-foreground shadow-md",
-        "data-[state=delayed-open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95",
+        "data-[state=delayed-open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0",
+        "data-[state=delayed-open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+        "data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1",
+        // A tooltip is already behind a delay; it has to be quick once it commits.
+        "origin-(--radix-tooltip-content-transform-origin) ease-out-quint duration-(--duration-fast)",
         className,
       )}
       {...props}

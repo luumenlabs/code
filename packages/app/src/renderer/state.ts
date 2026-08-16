@@ -435,7 +435,12 @@ export function useHarness(): Harness {
     [asks, activeThreadId],
   );
 
-  return {
+  /*
+    One object, rebuilt only when something in it actually changed. It is passed
+    whole to most of the tree, so a fresh literal every render defeats every
+    `React.memo` and `useMemo` downstream that takes it as a dependency.
+  */
+  return useMemo<Harness>(() => ({
     snapshot,
     timeline,
     output,
@@ -468,5 +473,38 @@ export function useHarness(): Harness {
     renameThread,
     archiveThread,
     deleteThread,
-  };
+  }), [
+    snapshot,
+    timeline,
+    output,
+    threads,
+    activeThreadId,
+    models,
+    modelProblem,
+    settings,
+    updateSettings,
+    resetSettings,
+    versions,
+    versionAction,
+    busy,
+    agentStates,
+    runBusy,
+    changes,
+    history,
+    reverting,
+    revert,
+    pendingAsk,
+    modelSelection,
+    applyModel,
+    send,
+    interrupt,
+    refresh,
+    run,
+    clearOutput,
+    newThread,
+    openThread,
+    renameThread,
+    archiveThread,
+    deleteThread,
+  ]);
 }
