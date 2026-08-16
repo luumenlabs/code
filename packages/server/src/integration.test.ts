@@ -778,6 +778,27 @@ describe("output", () => {
     const errorsOnly = (await server.execute("output.get", { types: ["error"] })) as any;
     expect(errorsOnly.entries.every((entry: any) => entry.type === "error")).toBe(true);
   });
+
+  it("keeps history a peer re-reports out of a cleared buffer", async () => {
+    plugin = await connectPlugin();
+    plugin.start();
+
+    const old = Date.now() - 60_000;
+    await plugin.pushOutput([{ timestamp: old, type: "output", message: "before the clear", realm: "edit" }]);
+    await waitFor(async () => ((await server.execute("output.get", {})) as any).entries.length > 0);
+
+    await server.execute("output.clear", {});
+
+    // What a playtest peer does when it adopts Studio's shared log history.
+    await plugin.pushOutput([
+      { timestamp: old, type: "output", message: "before the clear", realm: "server" },
+      { timestamp: Date.now(), type: "output", message: "after the clear", realm: "server" },
+    ]);
+    await waitFor(async () => ((await server.execute("output.get", {})) as any).entries.length > 0);
+
+    const { entries } = (await server.execute("output.get", {})) as any;
+    expect(entries.map((entry: any) => entry.message)).toEqual(["after the clear"]);
+  });
 });
 
 describe("status", () => {

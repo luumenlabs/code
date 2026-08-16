@@ -28,6 +28,14 @@ export class OutputBuffer {
   private readonly entries: OutputEntry[] = [];
   private sequence = 0;
 
+  /**
+   * Cleared output stays cleared. Every peer adopts Studio's log history when
+   * it starts, and Studio shares one log across its DataModels, so a playtest
+   * joining the session re-reports lines already seen — which would put back
+   * what the user just dismissed.
+   */
+  private clearedBefore = 0;
+
   /** Cursor representing "everything up to now". */
   mark(): string {
     return String(this.sequence);
@@ -37,11 +45,14 @@ export class OutputBuffer {
     const added: OutputEntry[] = [];
 
     for (const item of raw) {
+      const timestamp = typeof item.timestamp === "number" ? item.timestamp : Date.now();
+      if (timestamp < this.clearedBefore) continue;
+
       this.sequence += 1;
 
       const entry: OutputEntry = {
         cursor: String(this.sequence),
-        timestamp: typeof item.timestamp === "number" ? item.timestamp : Date.now(),
+        timestamp,
         type: TYPES.has(item.type ?? "") ? (item.type as OutputEntry["type"]) : "output",
         message: typeof item.message === "string" ? item.message : String(item.message ?? ""),
         source: item.source ?? null,
@@ -90,6 +101,9 @@ export class OutputBuffer {
   clear(): number {
     const removed = this.entries.length;
     this.entries.length = 0;
+    // Studio stamps to the second, so the clear's own second is kept: a line
+    // printed just after it must not be mistaken for history.
+    this.clearedBefore = Math.floor(Date.now() / 1000) * 1000;
     return removed;
   }
 
